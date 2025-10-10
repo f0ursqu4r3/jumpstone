@@ -17,6 +17,7 @@ Rust-based backend implementing the homeserver, federation layer, media services
 cargo fmt
 cargo clippy --workspace --all-targets
 cargo check --workspace
+cargo test -p openguild-server
 ```
 
 See `../deploy/docker-compose.yml` for local infrastructure services.

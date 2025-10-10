@@ -16,4 +16,5 @@ Populate each section as the implementation progresses.
 ## Implemented (bootstrap)
 
 - `GET /health` — liveness probe, returns `ok`.
+- `GET /ready` — readiness probe, returns status, uptime and component list.
 - `GET /version` — returns `{ "version": "<semver>" }` from package metadata.
