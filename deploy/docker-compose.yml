@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openguild
+      POSTGRES_PASSWORD: openguild
+      POSTGRES_DB: openguild
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data
+    environment:
+      MINIO_ACCESS_KEY: openguild
+      MINIO_SECRET_KEY: openguildsecret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  nats:
+    image: nats:2
+    command: ["-js"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - natsdata:/data
+
+  server:
+    build:
+      context: ../backend
+    environment:
+      DATABASE_URL: postgres://openguild:openguild@postgres:5432/openguild
+      MEDIA_ENDPOINT: http://minio:9000
+      MEDIA_BUCKET: openguild
+      MEDIA_ACCESS_KEY: openguild
+      MEDIA_SECRET_KEY: openguildsecret
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - postgres
+      - minio
+      - nats
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
+  miniodata:
+  natsdata:

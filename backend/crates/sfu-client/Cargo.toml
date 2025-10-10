@@ -1,0 +1,11 @@
+[package]
+name = "openguild-sfu-client"
+version = "0.0.1"
+edition = "2021"
+description = "Client signaling helpers for voice SFU integrations"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

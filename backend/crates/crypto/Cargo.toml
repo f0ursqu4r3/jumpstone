@@ -1,0 +1,12 @@
+[package]
+name = "openguild-crypto"
+version = "0.0.1"
+edition = "2021"
+description = "Cryptographic helpers for OpenGuild"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+blake3 = "1.5"
+anyhow = "1.0"
+rand = "0.8"

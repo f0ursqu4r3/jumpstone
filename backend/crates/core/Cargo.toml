@@ -1,0 +1,16 @@
+[package]
+name = "openguild-core"
+version = "0.0.1"
+edition = "2021"
+description = "Core domain types and event canonicalization for OpenGuild"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+blake3 = "1.5"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+uuid = { version = "1.7", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"

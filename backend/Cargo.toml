@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/server",
+    "crates/storage",
+    "crates/media",
+    "crates/crypto",
+    "crates/sfu-client",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/example/openguild"
+description = "OpenGuild federated communications platform backend"
+authors = ["OpenGuild Contributors"]
