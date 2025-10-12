@@ -40,6 +40,19 @@ impl Default for MetricsConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
+pub struct SessionConfig {
+    /// Base64-encoded ed25519 signing key (32 bytes) used for session tokens.
+    pub signing_key: Option<String>,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self { signing_key: None }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct ServerConfig {
     pub bind_addr: Option<String>,
     pub host: String,
@@ -47,6 +60,7 @@ pub struct ServerConfig {
     pub log_format: LogFormat,
     pub metrics: MetricsConfig,
     pub database_url: Option<String>,
+    pub session: SessionConfig,
 }
 
 impl Default for ServerConfig {
@@ -58,6 +72,7 @@ impl Default for ServerConfig {
             log_format: LogFormat::Compact,
             metrics: MetricsConfig::default(),
             database_url: None,
+            session: SessionConfig::default(),
         }
     }
 }
@@ -141,6 +156,10 @@ impl ServerConfig {
             self.database_url = Some(database_url.clone());
         }
 
+        if let Some(session_signing_key) = &overrides.session_signing_key {
+            self.session.signing_key = Some(session_signing_key.clone());
+        }
+
         self.validate()
     }
 }
@@ -154,6 +173,7 @@ pub struct CliOverrides {
     pub metrics_enabled: Option<bool>,
     pub metrics_bind_addr: Option<String>,
     pub database_url: Option<String>,
+    pub session_signing_key: Option<String>,
 }
 
 impl LogFormat {
@@ -201,6 +221,7 @@ mod tests {
         assert_eq!(config.log_format, LogFormat::Compact);
         assert!(!config.metrics.enabled);
         assert!(config.database_url.is_none());
+        assert!(config.session.signing_key.is_none());
     }
 
     #[test]
@@ -267,6 +288,7 @@ mod tests {
             metrics_enabled: Some(true),
             metrics_bind_addr: Some("127.0.0.1:9100".into()),
             database_url: Some("postgres://app:secret@localhost/db".into()),
+            session_signing_key: Some("dGVzdC1rZXk=".into()),
         };
 
         cfg.apply_overrides(&overrides).expect("overrides apply");
@@ -280,6 +302,7 @@ mod tests {
             cfg.database_url.as_deref(),
             Some("postgres://app:secret@localhost/db")
         );
+        assert_eq!(cfg.session.signing_key.as_deref(), Some("dGVzdC1rZXk="));
     }
 
     #[test]

@@ -12,6 +12,7 @@ metrics = ["dep:prometheus"]
 [dependencies]
 openguild-core = { path = "../core" }
 openguild-storage = { path = "../storage" }
+openguild-crypto = { path = "../crypto" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
@@ -23,6 +24,10 @@ config = "0.14"
 thiserror = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 prometheus = { version = "0.13", optional = true }
+async-trait = "0.1"
+base64 = { version = "0.22", default-features = false, features = ["std"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
 
 [dev-dependencies]
 serial_test = "2"

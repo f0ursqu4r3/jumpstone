@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-12 19:35Z)
+Context Snapshot (updated 2025-10-12 20:34Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -6,20 +6,23 @@ Context Snapshot (updated 2025-10-12 19:35Z)
   * Structured ServerConfig loader with metrics + log format options.
   * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (exports `openguild_http_requests_total` + `openguild_db_ready`).
   * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
-  * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`).
+  * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`, `--session-signing-key`).
   * Storage crate now exposes a clonable `StoragePool` wrapper (`connect` returns it) plus a SQLx migration smoke test (skips if `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` unset).
-- Tests: `cargo test -p openguild-server` (+ `--features metrics`); `cargo test -p openguild-storage`.
+  * Session module in `server` adds `/sessions/login` (JSON) with validation + signed responses using ed25519; backing store is in-memory for now and records issued sessions.
+  * Session signing key configurable via config (`session.signing_key`), env (`OPENGUILD_SERVER__SESSION__SIGNING_KEY`), or CLI; server logs verifying key when generating an ephemeral secret.
+- Tests: `cargo test -p openguild-server` (+ `--features metrics`) covers login happy/invalid paths; `cargo test -p openguild-storage`.
 - Migrations: `backend/migrations/0001_initial.sql` placeholder committed (use `sqlx migrate`).
 - Docs touched: docs/SETUP.md (config + CLI + Makefile shortcuts + metrics exporter), docs/TIMELINE.md (Week 1-2 checklist), docs/CI_PLAN.md (matrix outline).
 - Tooling: top-level Makefile exposes `fmt`, `lint`, `check`, `test`, `test-metrics` targets.
 - Outstanding Week 3 items:
   * Extend metrics to cover WebSocket/message pipelines when implemented.
-  * Begin session/auth scaffolding (login DTOs, signing integration, persistence layer).
+  * Replace in-memory session store with SQLx-backed persistence once user schema lands; sync API contract with frontend owners (`docs/API.md` updates, curl samples).
+  * Publish login/response payload examples for frontend + QA.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
 
 Notes for next agent (2025-10-12):
-- Week 3 focus shifts to session/auth scaffolding; storage pool wrapper + migration smoke test landed.
+- Session/auth scaffolding in place (login endpoint + token signer); next step is wiring real persistence + frontend contract docs.
 - Metrics backlog: extend Prometheus coverage to WebSocket/message pipelines as they are implemented.
 - Readiness path now retains a pooled handle (via `StoragePool`) while still using eager connect at startup.
 - CI plan documented in docs/CI_PLAN.md; no workflow file yet.

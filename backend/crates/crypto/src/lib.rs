@@ -1,8 +1,10 @@
 //! Cryptographic helpers shared across the OpenGuild backend.
 
 use anyhow::Result;
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+use ed25519_dalek::Signer;
 use rand::rngs::OsRng;
+
+pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 pub fn generate_signing_key() -> SigningKey {
     SigningKey::generate(&mut OsRng)
@@ -10,6 +12,10 @@ pub fn generate_signing_key() -> SigningKey {
 
 pub fn verifying_key_from(signing_key: &SigningKey) -> VerifyingKey {
     signing_key.verifying_key()
+}
+
+pub fn sign_message(signing_key: &SigningKey, message: &[u8]) -> Signature {
+    signing_key.sign(message)
 }
 
 pub fn verify_signature(

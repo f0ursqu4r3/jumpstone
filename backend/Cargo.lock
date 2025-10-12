@@ -1429,11 +1429,15 @@ name = "openguild-server"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
+ "base64 0.22.1",
+ "chrono",
  "clap",
  "config",
  "once_cell",
  "openguild-core",
+ "openguild-crypto",
  "openguild-storage",
  "prometheus",
  "serde",
@@ -1444,6 +1448,7 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

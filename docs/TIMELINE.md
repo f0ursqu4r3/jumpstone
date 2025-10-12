@@ -31,10 +31,10 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Create SQLx migration directory with baseline schema checked in.
   - [x] Implement pooled connection manager plus readiness probe hook (storage status in /ready).
   - [x] Add migration smoke test invoking `sqlx::migrate!()` during `cargo test` (skips unless `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` set).
-- [ ] Bootstrap session/auth flows.
-  - [ ] Define login DTOs, validation, and error mapping.
-  - [ ] Integrate signing via `openguild-crypto` with configurable key source.
-  - [ ] Persist sessions and add handler tests using mock or test storage.
+- [x] Bootstrap session/auth flows.
+  - [x] Define login DTOs, validation, and error mapping (`POST /sessions/login` plus structured error responses).
+  - [x] Integrate signing via `openguild-crypto` with configurable key source (URL-safe base64 ed25519 key via config/env/CLI).
+  - [x] Persist sessions and add handler tests using mock or test storage (in-memory store with coverage in server tests).
 - [ ] Align with frontend expectations.
   - [ ] Sync with `frontend/stores/session.ts` owners on contract details.
   - [ ] Publish request/response samples in `docs/API.md`.

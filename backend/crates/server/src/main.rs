@@ -1,9 +1,14 @@
 mod config;
 #[cfg(feature = "metrics")]
 mod metrics;
+mod session;
 
 use anyhow::Result;
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
 #[cfg(feature = "metrics")]
 use axum::{
     http::{header::CONTENT_TYPE, StatusCode},
@@ -25,6 +30,7 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 use openguild_storage::{connect, StoragePool};
+use session::{InMemorySessionStore, SessionContext, SessionSigner};
 
 use crate::config::{CliOverrides, LogFormat, ServerConfig};
 #[cfg(feature = "metrics")]
@@ -131,6 +137,8 @@ struct CliOptions {
     metrics_bind_addr: Option<String>,
     #[arg(long)]
     database_url: Option<String>,
+    #[arg(long)]
+    session_signing_key: Option<String>,
 }
 
 impl CliOptions {
@@ -143,6 +151,7 @@ impl CliOptions {
             metrics_enabled: self.metrics_enabled,
             metrics_bind_addr: self.metrics_bind_addr,
             database_url: self.database_url,
+            session_signing_key: self.session_signing_key,
         }
     }
 }
@@ -174,6 +183,16 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
         None => StorageState::unconfigured(),
     };
 
+    let session_signer = SessionSigner::from_config(&config.session)?;
+    if config.session.signing_key.is_none() {
+        info!(
+            verifying_key = %session_signer.verifying_key_base64(),
+            "no session signing key supplied; generated ephemeral key"
+        );
+    }
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let session_context = Arc::new(SessionContext::new(session_signer, session_store));
+
     #[cfg(feature = "metrics")]
     let state = {
         let metrics_ctx = if config.metrics.enabled {
@@ -181,11 +200,13 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
         } else {
             None
         };
-        AppState::new(config.clone(), storage).with_metrics(metrics_ctx)
+        AppState::new(config.clone(), storage)
+            .with_session(session_context.clone())
+            .with_metrics(metrics_ctx)
     };
 
     #[cfg(not(feature = "metrics"))]
-    let state = AppState::new(config.clone(), storage);
+    let state = AppState::new(config.clone(), storage).with_session(session_context.clone());
     let app = build_app(state);
 
     let addr: SocketAddr = config.listener_addr()?;
@@ -205,6 +226,7 @@ struct AppState {
     #[allow(dead_code)]
     config: Arc<ServerConfig>,
     storage: StorageState,
+    session: Option<Arc<SessionContext>>,
     #[cfg(feature = "metrics")]
     metrics: Option<Arc<MetricsContext>>,
 }
@@ -215,6 +237,7 @@ impl AppState {
             started_at: Instant::now(),
             config,
             storage,
+            session: None,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
@@ -230,9 +253,15 @@ impl AppState {
             started_at,
             config,
             storage,
+            session: None,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
+    }
+
+    fn with_session(mut self, session: Arc<SessionContext>) -> Self {
+        self.session = Some(session);
+        self
     }
 
     #[cfg(feature = "metrics")]
@@ -253,6 +282,13 @@ impl AppState {
     #[cfg(feature = "metrics")]
     fn metrics(&self) -> Option<Arc<MetricsContext>> {
         self.metrics.clone()
+    }
+
+    fn session(&self) -> Arc<SessionContext> {
+        self.session
+            .as_ref()
+            .cloned()
+            .expect("session context not configured")
     }
 
     #[cfg(feature = "metrics")]
@@ -365,7 +401,8 @@ fn build_app(state: AppState) -> Router {
     let mut router = Router::new()
         .route("/health", get(health))
         .route("/ready", get(readiness))
-        .route("/version", get(version));
+        .route("/version", get(version))
+        .route("/sessions/login", post(session::login));
 
     #[cfg(feature = "metrics")]
     {
@@ -470,8 +507,11 @@ mod tests {
     use super::*;
     #[cfg(feature = "metrics")]
     use crate::metrics::MetricsContext;
+    use crate::session;
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
+    use base64::Engine;
+    use chrono::Utc;
     use serial_test::serial;
     use std::io::Write;
     use std::str;
@@ -493,6 +533,17 @@ mod tests {
 
     fn storage_connected() -> StorageState {
         StorageState::connected()
+    }
+
+    fn default_session_context() -> Arc<SessionContext> {
+        session::tests::empty_session_context().context.clone()
+    }
+
+    fn app_state_with_default_session(
+        config: Arc<ServerConfig>,
+        storage: StorageState,
+    ) -> AppState {
+        AppState::new(config, storage).with_session(default_session_context())
     }
 
     #[cfg(feature = "metrics")]
@@ -542,7 +593,8 @@ mod tests {
 
     #[tokio::test]
     async fn health_route_returns_ok() {
-        let app = build_app(AppState::new(test_config(), storage_unconfigured()));
+        let state = app_state_with_default_session(test_config(), storage_unconfigured());
+        let app = build_app(state);
         let response = app
             .oneshot(
                 Request::builder()
@@ -561,7 +613,8 @@ mod tests {
 
     #[tokio::test]
     async fn version_route_reports_package_version() {
-        let app = build_app(AppState::new(test_config(), storage_unconfigured()));
+        let state = app_state_with_default_session(test_config(), storage_unconfigured());
+        let app = build_app(state);
         let response = app
             .oneshot(
                 Request::builder()
@@ -583,7 +636,7 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_route_reports_degraded_until_dependencies_exist() {
-        let app_state = AppState::new(test_config(), storage_unconfigured());
+        let app_state = app_state_with_default_session(test_config(), storage_unconfigured());
         let app = build_app(app_state);
         let response = app
             .oneshot(
@@ -614,7 +667,8 @@ mod tests {
     #[tokio::test]
     async fn readiness_reports_elapsed_uptime() {
         let past = Instant::now() - Duration::from_secs(2);
-        let app_state = AppState::with_start_time(test_config(), storage_unconfigured(), past);
+        let app_state = AppState::with_start_time(test_config(), storage_unconfigured(), past)
+            .with_session(default_session_context());
         let app = build_app(app_state);
 
         let response = app
@@ -638,7 +692,8 @@ mod tests {
     async fn readiness_reports_configured_when_database_url_present() {
         let mut config = ServerConfig::default();
         config.database_url = Some("postgres://app:secret@localhost/app".into());
-        let app_state = AppState::new(Arc::new(config), storage_connected());
+        let app_state = AppState::new(Arc::new(config), storage_connected())
+            .with_session(default_session_context());
         let app = build_app(app_state);
 
         let response = app
@@ -662,8 +717,100 @@ mod tests {
 
     #[test]
     fn app_state_reports_uptime_in_seconds() {
-        let state = AppState::new(test_config(), storage_unconfigured());
+        let state = AppState::new(test_config(), storage_unconfigured())
+            .with_session(default_session_context());
         assert_eq!(state.uptime_seconds(), 0);
+    }
+
+    #[tokio::test]
+    async fn login_route_rejects_blank_inputs() {
+        let state = app_state_with_default_session(test_config(), storage_unconfigured());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sessions/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"identifier":"","secret":" "}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "validation_error");
+        let details = payload["details"].as_array().unwrap();
+        assert_eq!(details.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn login_route_returns_token_on_success() {
+        let (harness, user_id) =
+            session::tests::session_context_with_user("alice@example.org", "supersecret").await;
+        let state = AppState::new(test_config(), storage_unconfigured())
+            .with_session(harness.context.clone());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sessions/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"identifier":"alice@example.org","secret":"supersecret"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: session::LoginResponse = serde_json::from_slice(&body).unwrap();
+        assert!(!payload.token.is_empty());
+        assert!(payload.expires_at > Utc::now());
+        assert_eq!(harness.store.session_count().await, 1);
+
+        // ensure session contains expected user (decode payload portion)
+        let parts: Vec<&str> = payload.token.split('.').collect();
+        assert_eq!(parts.len(), 2);
+        let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(parts[0])
+            .expect("decode payload");
+        let claims: serde_json::Value = serde_json::from_slice(&decoded).expect("claims json");
+        assert_eq!(claims["user_id"].as_str().unwrap(), user_id.to_string());
+    }
+
+    #[tokio::test]
+    async fn login_route_returns_unauthorized_on_invalid_credentials() {
+        let harness = session::tests::empty_session_context();
+        let state = AppState::new(test_config(), storage_unconfigured())
+            .with_session(harness.context.clone());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sessions/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"identifier":"unknown@example.org","secret":"nope"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "invalid_credentials");
     }
 
     #[test]
@@ -741,6 +888,8 @@ mod tests {
             "127.0.0.1:9100",
             "--database-url",
             "postgres://app:secret@localhost/app",
+            "--session-signing-key",
+            "dGVzdC1zZXNzaW9uLWtleQ",
         ]);
 
         let overrides = cli.into_overrides();
@@ -757,6 +906,10 @@ mod tests {
             config.database_url.as_deref(),
             Some("postgres://app:secret@localhost/app")
         );
+        assert_eq!(
+            config.session.signing_key.as_deref(),
+            Some("dGVzdC1zZXNzaW9uLWtleQ")
+        );
     }
 
     #[cfg(feature = "metrics")]
@@ -764,6 +917,7 @@ mod tests {
     async fn metrics_route_exposed_when_enabled() {
         let metrics_ctx = MetricsContext::init().expect("metrics init");
         let state = AppState::new(metrics_enabled_config(), storage_unconfigured())
+            .with_session(default_session_context())
             .with_metrics(Some(metrics_ctx));
 
         // Issue a readiness check to drive counters and DB gauge.
@@ -799,7 +953,8 @@ mod tests {
     #[cfg(feature = "metrics")]
     #[tokio::test]
     async fn metrics_route_absent_when_disabled() {
-        let state = AppState::new(test_config(), storage_unconfigured());
+        let state = AppState::new(test_config(), storage_unconfigured())
+            .with_session(default_session_context());
         let app = build_app(state);
 
         let response = app
