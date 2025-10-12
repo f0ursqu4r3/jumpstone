@@ -1,20 +1,21 @@
-﻿Context Snapshot (updated 2025-10-12 12:05Z)
+﻿Context Snapshot (updated 2025-10-12 12:25Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
 - Key recent features:
   * Structured ServerConfig loader with metrics + log format options.
   * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED`.
-  * Graceful shutdown helper with test-only Notify hook; `run()` used for integration and readiness reporting includes database component.
+  * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
   * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags).
 - Tests: `cargo test -p openguild-server` (+ `--features metrics`).
 - Migrations: `backend/migrations/0001_initial.sql` placeholder committed (use `sqlx migrate`).
 - Docs touched: docs/SETUP.md (config + CLI + Makefile shortcuts + metrics exporter), docs/TIMELINE.md (Week 1-2 checklist), docs/CI_PLAN.md (matrix outline).
 - Tooling: top-level Makefile exposes `fmt`, `lint`, `check`, `test`, `test-metrics` targets.
 - Outstanding Week 3 items:
-  * Wire actual Postgres connectivity once DATABASE_URL available (pool + readiness health).
   * Expand metrics coverage beyond HTTP counters (DB pool, WebSocket, etc.).
+  * Add migration smoke test + connection pooling integration once schema stabilizes.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
+
 
 
 

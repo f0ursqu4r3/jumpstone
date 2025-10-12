@@ -24,11 +24,63 @@ use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use openguild_storage::validate_database_url;
+use openguild_storage::connect;
 
 use crate::config::{CliOverrides, LogFormat, ServerConfig};
 #[cfg(feature = "metrics")]
 use crate::metrics::MetricsContext;
+
+#[derive(Clone)]
+struct StorageState {
+    status: StorageStatus,
+}
+
+#[derive(Clone)]
+enum StorageStatus {
+    Unconfigured,
+    Connected,
+    Error(String),
+}
+
+impl StorageState {
+    fn unconfigured() -> Self {
+        Self {
+            status: StorageStatus::Unconfigured,
+        }
+    }
+
+    fn connected() -> Self {
+        Self {
+            status: StorageStatus::Connected,
+        }
+    }
+
+    fn error(message: String) -> Self {
+        Self {
+            status: StorageStatus::Error(message),
+        }
+    }
+
+    fn component(&self) -> ComponentStatus {
+        match &self.status {
+            StorageStatus::Unconfigured => ComponentStatus {
+                name: "database",
+                status: "pending",
+                details: Some("database_url not configured".to_string()),
+            },
+            StorageStatus::Connected => ComponentStatus {
+                name: "database",
+                status: "configured",
+                details: Some("connection established".to_string()),
+            },
+            StorageStatus::Error(message) => ComponentStatus {
+                name: "database",
+                status: "error",
+                details: Some(message.clone()),
+            },
+        }
+    }
+}
 
 #[derive(Parser, Debug, Default)]
 #[command(
@@ -80,6 +132,21 @@ async fn main() -> Result<()> {
 async fn run(config: Arc<ServerConfig>) -> Result<()> {
     init_tracing(&config);
 
+    let storage = match config.database_url.as_deref() {
+        Some(url) => match connect(url).await {
+            Ok(pool) => {
+                drop(pool);
+                info!("database connection established");
+                StorageState::connected()
+            }
+            Err(err) => {
+                error!(?err, "failed to establish database connection");
+                StorageState::error("failed to connect to database".into())
+            }
+        },
+        None => StorageState::unconfigured(),
+    };
+
     #[cfg(feature = "metrics")]
     let state = {
         let metrics_ctx = if config.metrics.enabled {
@@ -87,11 +154,11 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
         } else {
             None
         };
-        AppState::new(config.clone()).with_metrics(metrics_ctx)
+        AppState::new(config.clone(), storage).with_metrics(metrics_ctx)
     };
 
     #[cfg(not(feature = "metrics"))]
-    let state = AppState::new(config.clone());
+    let state = AppState::new(config.clone(), storage);
     let app = build_app(state);
 
     let addr: SocketAddr = config.listener_addr()?;
@@ -110,25 +177,32 @@ struct AppState {
     started_at: Instant,
     #[allow(dead_code)]
     config: Arc<ServerConfig>,
+    storage: StorageState,
     #[cfg(feature = "metrics")]
     metrics: Option<Arc<MetricsContext>>,
 }
 
 impl AppState {
-    fn new(config: Arc<ServerConfig>) -> Self {
+    fn new(config: Arc<ServerConfig>, storage: StorageState) -> Self {
         Self {
             started_at: Instant::now(),
             config,
+            storage,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
     }
 
     #[cfg(test)]
-    fn with_start_time(config: Arc<ServerConfig>, started_at: Instant) -> Self {
+    fn with_start_time(
+        config: Arc<ServerConfig>,
+        storage: StorageState,
+        started_at: Instant,
+    ) -> Self {
         Self {
             started_at,
             config,
+            storage,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
@@ -166,25 +240,7 @@ impl AppState {
     }
 
     fn database_component(&self) -> ComponentStatus {
-        match self.config.database_url.as_deref() {
-            None => ComponentStatus {
-                name: "database",
-                status: "pending",
-                details: Some("database_url not configured"),
-            },
-            Some(url) => match validate_database_url(url) {
-                Ok(_) => ComponentStatus {
-                    name: "database",
-                    status: "configured",
-                    details: Some("lazy connection validated"),
-                },
-                Err(_) => ComponentStatus {
-                    name: "database",
-                    status: "error",
-                    details: Some("invalid database url"),
-                },
-            },
-        }
+        self.storage.component()
     }
 }
 
@@ -344,7 +400,7 @@ struct ComponentStatus {
     name: &'static str,
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    details: Option<&'static str>,
+    details: Option<String>,
 }
 
 #[cfg(feature = "metrics")]
@@ -391,6 +447,14 @@ mod tests {
 
     fn test_config() -> Arc<ServerConfig> {
         Arc::new(ServerConfig::default())
+    }
+
+    fn storage_unconfigured() -> StorageState {
+        StorageState::unconfigured()
+    }
+
+    fn storage_connected() -> StorageState {
+        StorageState::connected()
     }
 
     #[cfg(feature = "metrics")]
@@ -440,7 +504,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_route_returns_ok() {
-        let app = build_app(AppState::new(test_config()));
+        let app = build_app(AppState::new(test_config(), storage_unconfigured()));
         let response = app
             .oneshot(
                 Request::builder()
@@ -459,7 +523,7 @@ mod tests {
 
     #[tokio::test]
     async fn version_route_reports_package_version() {
-        let app = build_app(AppState::new(test_config()));
+        let app = build_app(AppState::new(test_config(), storage_unconfigured()));
         let response = app
             .oneshot(
                 Request::builder()
@@ -481,7 +545,7 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_route_reports_degraded_until_dependencies_exist() {
-        let app_state = AppState::new(test_config());
+        let app_state = AppState::new(test_config(), storage_unconfigured());
         let app = build_app(app_state);
         let response = app
             .oneshot(
@@ -512,7 +576,7 @@ mod tests {
     #[tokio::test]
     async fn readiness_reports_elapsed_uptime() {
         let past = Instant::now() - Duration::from_secs(2);
-        let app_state = AppState::with_start_time(test_config(), past);
+        let app_state = AppState::with_start_time(test_config(), storage_unconfigured(), past);
         let app = build_app(app_state);
 
         let response = app
@@ -536,7 +600,7 @@ mod tests {
     async fn readiness_reports_configured_when_database_url_present() {
         let mut config = ServerConfig::default();
         config.database_url = Some("postgres://app:secret@localhost/app".into());
-        let app_state = AppState::new(Arc::new(config));
+        let app_state = AppState::new(Arc::new(config), storage_connected());
         let app = build_app(app_state);
 
         let response = app
@@ -554,12 +618,12 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let component = &payload["components"].as_array().unwrap()[0];
         assert_eq!(component["status"], "configured");
-        assert_eq!(component["details"], "lazy connection validated");
+        assert_eq!(component["details"], "connection established");
     }
 
     #[test]
     fn app_state_reports_uptime_in_seconds() {
-        let state = AppState::new(test_config());
+        let state = AppState::new(test_config(), storage_unconfigured());
         assert_eq!(state.uptime_seconds(), 0);
     }
 
@@ -650,14 +714,18 @@ mod tests {
         assert_eq!(config.log_format, LogFormat::Json);
         assert!(config.metrics.enabled);
         assert_eq!(config.metrics.bind_addr.as_deref(), Some("127.0.0.1:9100"));
-        assert_eq!(config.database_url.as_deref(), Some("postgres://app:secret@localhost/app"));
+        assert_eq!(
+            config.database_url.as_deref(),
+            Some("postgres://app:secret@localhost/app")
+        );
     }
 
     #[cfg(feature = "metrics")]
     #[tokio::test]
     async fn metrics_route_exposed_when_enabled() {
         let metrics_ctx = MetricsContext::init().expect("metrics init");
-        let state = AppState::new(metrics_enabled_config()).with_metrics(Some(metrics_ctx));
+        let state = AppState::new(metrics_enabled_config(), storage_unconfigured())
+            .with_metrics(Some(metrics_ctx));
 
         // Issue a health check to increment the counter.
         let health_app = build_app(state.clone());
@@ -691,7 +759,7 @@ mod tests {
     #[cfg(feature = "metrics")]
     #[tokio::test]
     async fn metrics_route_absent_when_disabled() {
-        let state = AppState::new(test_config());
+        let state = AppState::new(test_config(), storage_unconfigured());
         let app = build_app(state);
 
         let response = app

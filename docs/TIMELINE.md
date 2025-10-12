@@ -22,7 +22,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
 ## Week 3: Persistence & Session APIs (Milestone M0)
 - [ ] Scaffold Postgres connectivity and migrations.
   - [x] Create SQLx migration directory with baseline schema checked in.
-  - [ ] Implement pooled connection manager plus readiness probe hook.
+  - [x] Implement pooled connection manager plus readiness probe hook (storage status in /ready).
   - [ ] Add migration smoke test invoking `sqlx::migrate!()` during `cargo test`.
 - [ ] Bootstrap session/auth flows.
   - [ ] Define login DTOs, validation, and error mapping.

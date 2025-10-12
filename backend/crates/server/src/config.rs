@@ -276,7 +276,10 @@ mod tests {
         assert_eq!(cfg.log_format, LogFormat::Json);
         assert!(cfg.metrics.enabled);
         assert_eq!(cfg.metrics.bind_addr.as_deref(), Some("127.0.0.1:9100"));
-        assert_eq!(cfg.database_url.as_deref(), Some("postgres://app:secret@localhost/db"));
+        assert_eq!(
+            cfg.database_url.as_deref(),
+            Some("postgres://app:secret@localhost/db")
+        );
     }
 
     #[test]

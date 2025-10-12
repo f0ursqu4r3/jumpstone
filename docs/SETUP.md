@@ -67,6 +67,8 @@ Available flags:
 - `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
 - `--database-url <url>` — supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`).
 
+The `/ready` endpoint reports `database` status using these settings. When a database URL is provided, the server performs an eager connection attempt during startup and surfaces either `configured` (success) or `error` (failure details); otherwise it reports `pending`.
+
 ## Development Shortcuts
 
 A top-level `Makefile` provides common workflows:
