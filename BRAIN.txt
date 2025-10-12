@@ -16,3 +16,12 @@
   * Extend metrics to cover WebSocket/message pipelines when implemented.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
+
+Notes for next agent (2025-10-12):
+- Week 3 focus: add SQLx migration smoke test and integrate pooled storage wrapper once schema is ready.
+- Metrics backlog: extend Prometheus coverage to WebSocket/message pipelines as they are implemented.
+- Readiness currently uses eager DB connect; revisit pooling strategy to reuse PgPool for requests.
+- CI plan documented in docs/CI_PLAN.md; no workflow file yet.
+- Makefile targets available (`make fmt`, `make lint`, `make check`, `make test`, `make test-metrics`).
+- Keep BRAIN.txt updated when context changes; no official mechanism beyond this doc yet.
+
