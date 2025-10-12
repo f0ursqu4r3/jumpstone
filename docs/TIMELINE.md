@@ -13,7 +13,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
 - [ ] Introduce `ServerConfig` loader via the `config` crate.
   - [x] Model configuration struct with defaults, validation, and error messaging.
   - [x] Layer config file and environment sources; ensure precedence is deterministic.
-  - [ ] Design CLI override story (flags or subcommand) if needed.
+  - [x] Design CLI override story (flags or subcommand) if needed.
   - [x] Create table-driven tests covering valid/invalid permutations.
 - [ ] Refresh developer ergonomics and docs.
   - [ ] Add lint/test shortcuts (make targets or cargo aliases) to the repo.
@@ -98,4 +98,5 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [ ] Add coverage reporting and enforce minimum threshold.
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
+Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
 Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.

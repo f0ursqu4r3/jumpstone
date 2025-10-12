@@ -7,6 +7,7 @@ use axum::{
     http::{header::CONTENT_TYPE, StatusCode},
     response::IntoResponse,
 };
+use clap::Parser;
 use serde::Serialize;
 use std::{net::SocketAddr, sync::Arc, time::Instant};
 #[cfg(test)]
@@ -21,11 +22,49 @@ use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use crate::config::{LogFormat, ServerConfig};
+use crate::config::{CliOverrides, LogFormat, ServerConfig};
+
+#[derive(Parser, Debug, Default)]
+#[command(
+    name = "openguild-server",
+    version,
+    about = "OpenGuild homeserver gateway"
+)]
+struct CliOptions {
+    #[arg(long)]
+    bind_addr: Option<String>,
+    #[arg(long)]
+    host: Option<String>,
+    #[arg(long)]
+    port: Option<u16>,
+    #[arg(long)]
+    log_format: Option<LogFormat>,
+    #[arg(long)]
+    metrics_enabled: Option<bool>,
+    #[arg(long)]
+    metrics_bind_addr: Option<String>,
+}
+
+impl CliOptions {
+    fn into_overrides(self) -> CliOverrides {
+        CliOverrides {
+            bind_addr: self.bind_addr,
+            host: self.host,
+            port: self.port,
+            log_format: self.log_format,
+            metrics_enabled: self.metrics_enabled,
+            metrics_bind_addr: self.metrics_bind_addr,
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = Arc::new(ServerConfig::load()?);
+    let cli = CliOptions::parse();
+    let overrides = cli.into_overrides();
+    let mut config = ServerConfig::load()?;
+    config.apply_overrides(&overrides)?;
+    let config = Arc::new(config);
     run(config).await
 }
 
@@ -461,6 +500,36 @@ mod tests {
             .expect("server did not shut down in time");
         join.expect("server task panicked")
             .expect("server returned error");
+    }
+
+    #[test]
+    fn cli_overrides_convert_and_apply() {
+        let cli = CliOptions::parse_from([
+            "openguild-server",
+            "--bind-addr",
+            "127.0.0.1:5000",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "5000",
+            "--log-format",
+            "json",
+            "--metrics-enabled",
+            "true",
+            "--metrics-bind-addr",
+            "127.0.0.1:9100",
+        ]);
+
+        let overrides = cli.into_overrides();
+        let mut config = ServerConfig::default();
+        config.apply_overrides(&overrides).expect("overrides apply");
+
+        assert_eq!(config.bind_addr.as_deref(), Some("127.0.0.1:5000"));
+        assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.port, 5000);
+        assert_eq!(config.log_format, LogFormat::Json);
+        assert!(config.metrics.enabled);
+        assert_eq!(config.metrics.bind_addr.as_deref(), Some("127.0.0.1:9100"));
     }
 
     #[cfg(feature = "metrics")]

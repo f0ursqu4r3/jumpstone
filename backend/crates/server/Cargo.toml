@@ -20,6 +20,7 @@ axum = "0.7"
 tokio = { version = "1.38", features = ["full"] }
 config = "0.14"
 thiserror = "1.0"
+clap = { version = "4.5", features = ["derive"] }
 
 [dev-dependencies]
 serial_test = "2"

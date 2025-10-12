@@ -109,6 +109,44 @@ impl ServerConfig {
         }
         Ok(())
     }
+
+    pub fn apply_overrides(&mut self, overrides: &CliOverrides) -> Result<(), ConfigError> {
+        if let Some(bind_addr) = &overrides.bind_addr {
+            self.bind_addr = Some(bind_addr.clone());
+        }
+
+        if let Some(host) = &overrides.host {
+            self.host = host.clone();
+        }
+
+        if let Some(port) = overrides.port {
+            self.port = port;
+        }
+
+        if let Some(log_format) = overrides.log_format {
+            self.log_format = log_format;
+        }
+
+        if let Some(metrics_enabled) = overrides.metrics_enabled {
+            self.metrics.enabled = metrics_enabled;
+        }
+
+        if let Some(metrics_bind_addr) = &overrides.metrics_bind_addr {
+            self.metrics.bind_addr = Some(metrics_bind_addr.clone());
+        }
+
+        self.validate()
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct CliOverrides {
+    pub bind_addr: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub log_format: Option<LogFormat>,
+    pub metrics_enabled: Option<bool>,
+    pub metrics_bind_addr: Option<String>,
 }
 
 impl LogFormat {
@@ -208,5 +246,38 @@ mod tests {
         assert!(matches!(err, ConfigError::InvalidBindAddr(_)));
 
         env::remove_var("OPENGUILD_SERVER__BIND_ADDR");
+    }
+
+    #[test]
+    fn apply_overrides_updates_fields() {
+        let mut cfg = ServerConfig::default();
+        let overrides = CliOverrides {
+            bind_addr: Some("127.0.0.1:9999".into()),
+            host: Some("127.0.0.1".into()),
+            port: Some(9999),
+            log_format: Some(LogFormat::Json),
+            metrics_enabled: Some(true),
+            metrics_bind_addr: Some("127.0.0.1:9100".into()),
+        };
+
+        cfg.apply_overrides(&overrides).expect("overrides apply");
+        assert_eq!(cfg.bind_addr.as_deref(), Some("127.0.0.1:9999"));
+        assert_eq!(cfg.host, "127.0.0.1");
+        assert_eq!(cfg.port, 9999);
+        assert_eq!(cfg.log_format, LogFormat::Json);
+        assert!(cfg.metrics.enabled);
+        assert_eq!(cfg.metrics.bind_addr.as_deref(), Some("127.0.0.1:9100"));
+    }
+
+    #[test]
+    fn override_invalid_metrics_addr_errors() {
+        let mut cfg = ServerConfig::default();
+        let overrides = CliOverrides {
+            metrics_bind_addr: Some("::bad::".into()),
+            ..CliOverrides::default()
+        };
+
+        let err = cfg.apply_overrides(&overrides).unwrap_err();
+        assert!(matches!(err, ConfigError::InvalidBindAddr(_)));
     }
 }

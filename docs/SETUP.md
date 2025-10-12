@@ -43,3 +43,23 @@ Common environment overrides:
 - `RUST_LOG` — tracing filter (e.g. `info,openguild_server=debug`).
 
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` stub while instrumentation is under construction.
+
+### Command-Line Overrides
+
+You can override most runtime settings via CLI flags (highest precedence):
+
+```bash
+cargo run --bin openguild-server -- \
+  --bind-addr 0.0.0.0:8081 \
+  --log-format json \
+  --metrics-enabled true \
+  --metrics-bind-addr 127.0.0.1:9100
+```
+
+Available flags:
+
+- `--bind-addr <addr>` — overrides bind address (takes precedence over host/port).
+- `--host <host>` / `--port <port>` — override individual components.
+- `--log-format <compact|json>` — switch logging format without touching env vars.
+- `--metrics-enabled <true|false>` — toggle metrics exporter stub.
+- `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
