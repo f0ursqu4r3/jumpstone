@@ -5,7 +5,11 @@ use std::sync::Arc;
 use anyhow::Result;
 use sqlx::postgres::PgPoolOptions;
 
+pub mod session;
+
 pub use sqlx::PgPool;
+
+pub use session::{PersistedSession, SessionPersistence};
 
 /// Thin wrapper around a shared `PgPool`.
 #[derive(Clone)]

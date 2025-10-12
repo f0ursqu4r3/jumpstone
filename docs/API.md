@@ -24,7 +24,7 @@ Populate each section as the implementation progresses.
 
 ### `POST /sessions/login`
 
-Initiates a session for the supplied identifier/secret pair. The current prototype authenticates against an in-memory store (suitable for local development); persistence will move to Postgres once the user schema is finalized.
+Initiates a session for the supplied identifier/secret pair. The current prototype authenticates against an in-memory store (suitable for local development); issued sessions persist to Postgres when a database pool is available (see `backend/migrations/0002_create_sessions.sql`), otherwise they remain in-memory for the process lifetime.
 
 - **Success**: returns HTTP 200 with a JSON payload containing a signed token and expiration timestamp.
 - **Validation error**: returns HTTP 400 with a list of field errors.
@@ -77,3 +77,5 @@ curl -X POST http://127.0.0.1:8080/sessions/login \
   -H "content-type: application/json" \
   -d '{"identifier":"alice@example.org","secret":"supersecret"}'
 ```
+
+> When `DATABASE_URL` (or `OPENGUILD_SERVER__DATABASE_URL`) is set, the server will upsert each issued session into the `sessions` table in addition to returning the signed token.

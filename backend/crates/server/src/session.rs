@@ -12,6 +12,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use openguild_crypto::{generate_signing_key, sign_message, verifying_key_from, SigningKey};
+use openguild_storage::{PersistedSession, SessionPersistence, StoragePool};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -23,28 +24,34 @@ const SESSION_TTL_HOURS: i64 = 12;
 #[derive(Clone)]
 pub struct SessionContext {
     signer: SessionSigner,
-    store: Arc<dyn SessionStore>,
+    authenticator: Arc<dyn SessionAuthenticator>,
+    repository: Arc<dyn SessionRepository>,
     ttl: Duration,
 }
 
 impl SessionContext {
-    pub fn new(signer: SessionSigner, store: Arc<dyn SessionStore>) -> Self {
+    pub fn new(
+        signer: SessionSigner,
+        authenticator: Arc<dyn SessionAuthenticator>,
+        repository: Arc<dyn SessionRepository>,
+    ) -> Self {
         Self {
             signer,
-            store,
+            authenticator,
+            repository,
             ttl: Duration::hours(SESSION_TTL_HOURS),
         }
     }
 
     pub async fn login(&self, attempt: LoginAttempt) -> Result<Option<LoginResponse>> {
-        let user = match self.store.authenticate(&attempt).await? {
+        let user = match self.authenticator.authenticate(&attempt).await? {
             Some(user) => user,
             None => return Ok(None),
         };
 
         let record = self.build_record(user.user_id);
         let token = self.signer.sign(&record)?;
-        self.store.persist_session(&record).await?;
+        self.repository.persist_session(&record).await?;
 
         Ok(Some(LoginResponse {
             token,
@@ -145,9 +152,12 @@ pub struct AuthenticatedUser {
 }
 
 #[async_trait]
-pub trait SessionStore: Send + Sync {
+pub trait SessionAuthenticator: Send + Sync {
     async fn authenticate(&self, attempt: &LoginAttempt) -> Result<Option<AuthenticatedUser>>;
+}
 
+#[async_trait]
+pub trait SessionRepository: Send + Sync {
     async fn persist_session(&self, record: &SessionRecord) -> Result<()>;
 }
 
@@ -163,7 +173,7 @@ struct AccountRecord {
 }
 
 #[async_trait]
-impl SessionStore for InMemorySessionStore {
+impl SessionAuthenticator for InMemorySessionStore {
     async fn authenticate(&self, attempt: &LoginAttempt) -> Result<Option<AuthenticatedUser>> {
         let accounts = self.accounts.read().await;
         match accounts.get(&attempt.identifier) {
@@ -173,7 +183,10 @@ impl SessionStore for InMemorySessionStore {
             _ => Ok(None),
         }
     }
+}
 
+#[async_trait]
+impl SessionRepository for InMemorySessionStore {
     async fn persist_session(&self, record: &SessionRecord) -> Result<()> {
         let mut sessions = self.sessions.write().await;
         sessions.insert(record.session_id, record.clone());
@@ -205,6 +218,31 @@ impl InMemorySessionStore {
     #[cfg(test)]
     pub async fn session_count(&self) -> usize {
         self.sessions.read().await.len()
+    }
+}
+
+pub struct PostgresSessionRepository {
+    persistence: SessionPersistence,
+}
+
+impl PostgresSessionRepository {
+    pub fn new(pool: StoragePool) -> Self {
+        Self {
+            persistence: SessionPersistence::new(pool),
+        }
+    }
+}
+
+#[async_trait]
+impl SessionRepository for PostgresSessionRepository {
+    async fn persist_session(&self, record: &SessionRecord) -> Result<()> {
+        let persisted = PersistedSession {
+            session_id: record.session_id,
+            user_id: record.user_id,
+            issued_at: record.issued_at,
+            expires_at: record.expires_at,
+        };
+        self.persistence.store_session(&persisted).await
     }
 }
 
@@ -330,7 +368,7 @@ pub mod tests {
         pub fn new() -> Self {
             let store = Arc::new(InMemorySessionStore::new());
             let signer = SessionSigner::from_config(&SessionConfig::default()).expect("signer");
-            let context = Arc::new(SessionContext::new(signer, store.clone()));
+            let context = Arc::new(SessionContext::new(signer, store.clone(), store.clone()));
             Self { context, store }
         }
 

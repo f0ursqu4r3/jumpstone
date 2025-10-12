@@ -40,7 +40,7 @@ Common environment overrides:
 - `OPENGUILD_SERVER__LOG_FORMAT` — `compact` (default) or `json`.
 - `OPENGUILD_SERVER__METRICS__ENABLED` — `true`/`false` toggle for the Prometheus exporter.
 - `OPENGUILD_SERVER__METRICS__BIND_ADDR` — optional dedicated bind address for metrics exporter.
-- `OPENGUILD_SERVER__DATABASE_URL` — Postgres connection string for the storage layer (optional during bootstrap).
+- `OPENGUILD_SERVER__DATABASE_URL` — Postgres connection string for the storage layer (optional during bootstrap; required to persist issued sessions beyond process memory).
 - `OPENGUILD_SERVER__SESSION__SIGNING_KEY` — URL-safe base64 ed25519 secret (32 bytes) used to sign session tokens; if omitted the server generates an ephemeral key at startup and logs the verifying key.
 - `RUST_LOG` — tracing filter (e.g. `info,openguild_server=debug`).
 
@@ -67,7 +67,7 @@ Available flags:
 - `--log-format <compact|json>` — switch logging format without touching env vars.
 - `--metrics-enabled <true|false>` — toggle metrics exporter stub.
 - `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
-- `--database-url <url>` — supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`).
+- `--database-url <url>` — supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`); when set the server upserts issued sessions into Postgres.
 - `--session-signing-key <key>` — provide the URL-safe base64 ed25519 signing key for issued session tokens.
 
 The `/ready` endpoint reports `database` status using these settings. When a database URL is provided, the server performs an eager connection attempt during startup and surfaces either `configured` (success) or `error` (failure details); otherwise it reports `pending`.

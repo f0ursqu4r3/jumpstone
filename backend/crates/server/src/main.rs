@@ -30,7 +30,7 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 use openguild_storage::{connect, StoragePool};
-use session::{InMemorySessionStore, SessionContext, SessionSigner};
+use session::{InMemorySessionStore, PostgresSessionRepository, SessionContext, SessionSigner};
 
 use crate::config::{CliOverrides, LogFormat, ServerConfig};
 #[cfg(feature = "metrics")]
@@ -190,8 +190,16 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
             "no session signing key supplied; generated ephemeral key"
         );
     }
-    let session_store = Arc::new(InMemorySessionStore::new());
-    let session_context = Arc::new(SessionContext::new(session_signer, session_store));
+    let authenticator = Arc::new(InMemorySessionStore::new());
+    let repository: Arc<dyn session::SessionRepository> = match storage.pool() {
+        Some(pool) => Arc::new(PostgresSessionRepository::new(pool)),
+        None => authenticator.clone(),
+    };
+    let session_context = Arc::new(SessionContext::new(
+        session_signer,
+        authenticator.clone(),
+        repository,
+    ));
 
     #[cfg(feature = "metrics")]
     let state = {
