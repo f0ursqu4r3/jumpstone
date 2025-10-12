@@ -1317,6 +1317,7 @@ dependencies = [
  "anyhow",
  "axum",
  "config",
+ "once_cell",
  "openguild-core",
  "serde",
  "serde_json",

@@ -9,16 +9,27 @@ use axum::{
 };
 use serde::Serialize;
 use std::{net::SocketAddr, sync::Arc, time::Instant};
+#[cfg(test)]
+use tokio::sync::Notify;
 use tokio::{net::TcpListener, signal};
 use tracing::{error, info, Level};
 use tracing_subscriber::fmt::writer::MakeWriter;
 use tracing_subscriber::{fmt, EnvFilter};
+
+#[cfg(test)]
+use once_cell::sync::Lazy;
+#[cfg(test)]
+use std::sync::Mutex;
 
 use crate::config::{LogFormat, ServerConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = Arc::new(ServerConfig::load()?);
+    run(config).await
+}
+
+async fn run(config: Arc<ServerConfig>) -> Result<()> {
     init_tracing(&config);
 
     let state = AppState::new(config.clone());
@@ -97,7 +108,24 @@ fn init_tracing(config: &ServerConfig) {
 }
 
 async fn shutdown_signal() {
-    // Ctrl+C
+    #[cfg(test)]
+    {
+        let notify_opt = TEST_SHUTDOWN_NOTIFY.lock().unwrap().clone();
+        if let Some(notify) = notify_opt {
+            tokio::select! {
+                res = signal::ctrl_c() => {
+                    if let Err(e) = res {
+                        error!(?e, "failed to install Ctrl+C handler");
+                    }
+                }
+                _ = notify.notified() => {}
+            }
+            info!("shutdown signal received");
+            *TEST_SHUTDOWN_NOTIFY.lock().unwrap() = None;
+            return;
+        }
+    }
+
     if let Err(e) = signal::ctrl_c().await {
         error!(?e, "failed to install Ctrl+C handler");
     }
@@ -174,6 +202,16 @@ fn build_subscriber(
     }
 }
 
+#[cfg(test)]
+static TEST_SHUTDOWN_NOTIFY: Lazy<Mutex<Option<Arc<Notify>>>> = Lazy::new(|| Mutex::new(None));
+
+#[cfg(test)]
+fn install_shutdown_trigger() -> Arc<Notify> {
+    let notify = Arc::new(Notify::new());
+    *TEST_SHUTDOWN_NOTIFY.lock().unwrap() = Some(notify.clone());
+    notify
+}
+
 #[derive(Serialize)]
 struct ReadinessResponse {
     status: &'static str,
@@ -213,6 +251,7 @@ mod tests {
     use std::str;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+    use tokio::time::{sleep, timeout};
     use tower::ServiceExt; // for `oneshot`
     use tracing::info;
     use tracing_subscriber::fmt::writer::MakeWriter;
@@ -403,6 +442,25 @@ mod tests {
         let mut config = ServerConfig::default();
         config.log_format = LogFormat::Json;
         init_tracing(&config);
+    }
+
+    #[tokio::test]
+    async fn server_shuts_down_when_triggered() {
+        let notify = install_shutdown_trigger();
+        let mut config = ServerConfig::default();
+        config.bind_addr = Some("127.0.0.1:0".into());
+        let config = Arc::new(config);
+
+        let handle = tokio::spawn(run(config));
+
+        sleep(Duration::from_millis(50)).await;
+        notify.notify_one();
+
+        let join = timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("server did not shut down in time");
+        join.expect("server task panicked")
+            .expect("server returned error");
     }
 
     #[cfg(feature = "metrics")]
