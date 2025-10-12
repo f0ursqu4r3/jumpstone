@@ -11,23 +11,23 @@ This living document tracks backend-focused milestones, weekly targets, and shar
 
 ## Week 1-2: Server Foundation Hardening (Milestone M0)
 
-- [ ] Expand `openguild-server` configuration and telemetry.
+- [x] Expand `openguild-server` configuration and telemetry.
   - [x] Finalize `build_subscriber` coverage, including JSON log assertions with a captured writer.
   - [x] Expose `/metrics` behind a feature flag and document how to enable it locally.
   - [x] Add graceful shutdown integration test that simulates Ctrl+C.
-- [ ] Introduce `ServerConfig` loader via the `config` crate.
+- [x] Introduce `ServerConfig` loader via the `config` crate.
   - [x] Model configuration struct with defaults, validation, and error messaging.
   - [x] Layer config file and environment sources; ensure precedence is deterministic.
   - [x] Design CLI override story (flags or subcommand) if needed.
   - [x] Create table-driven tests covering valid/invalid permutations.
-- [ ] Refresh developer ergonomics and docs.
+- [x] Refresh developer ergonomics and docs.
   - [x] Add lint/test shortcuts (make targets or cargo aliases) to the repo.
   - [x] Update `docs/SETUP.md` with configuration schema and troubleshooting tips.
   - [x] Outline CI matrix (Linux + Windows runners) for future GitHub Actions wiring (see docs/CI_PLAN.md).
 
 ## Week 3: Persistence & Session APIs (Milestone M0)
 
-- [ ] Scaffold Postgres connectivity and migrations.
+- [x] Scaffold Postgres connectivity and migrations.
   - [x] Create SQLx migration directory with baseline schema checked in.
   - [x] Implement pooled connection manager plus readiness probe hook (storage status in /ready).
   - [x] Add migration smoke test invoking `sqlx::migrate!()` during `cargo test` (skips unless `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` set).
@@ -35,8 +35,8 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Define login DTOs, validation, and error mapping (`POST /sessions/login` plus structured error responses).
   - [x] Integrate signing via `openguild-crypto` with configurable key source (URL-safe base64 ed25519 key via config/env/CLI).
   - [x] Persist sessions via Postgres when configured (fallback to in-memory for auth; server tests cover issuance + storage).
-- [ ] Align with frontend expectations.
-  - [ ] Sync with `frontend/stores/session.ts` owners on contract details.
+- [x] Align with frontend expectations.
+  - [x] Sync with `frontend/stores/session.ts` owners on contract details (documented login contract in `docs/API.md` and circulated to frontend repo owners).
   - [x] Publish request/response samples in `docs/API.md`.
   - [x] Add curl/HTTPie snippets to accelerate manual QA.
 
