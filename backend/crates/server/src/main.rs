@@ -67,17 +67,10 @@ fn init_tracing() {
         .unwrap_or_else(|_| EnvFilter::new("info,openguild_server=info,openguild=info"));
 
     let json = env::var("LOG_FORMAT").ok().as_deref() == Some("json");
+    let subscriber = build_subscriber(json, env_filter);
 
-    let builder = fmt()
-        .with_env_filter(env_filter)
-        .with_target(true)
-        .with_level(true)
-        .with_max_level(Level::INFO);
-
-    if json {
-        builder.json().init();
-    } else {
-        builder.compact().init();
+    if let Err(err) = tracing::subscriber::set_global_default(subscriber) {
+        eprintln!("failed to install tracing subscriber: {err}");
     }
 }
 
@@ -122,6 +115,23 @@ fn build_app(state: AppState) -> Router {
         .with_state(state)
 }
 
+fn build_subscriber(
+    json: bool,
+    env_filter: EnvFilter,
+) -> Box<dyn tracing::Subscriber + Send + Sync> {
+    let builder = fmt()
+        .with_env_filter(env_filter)
+        .with_target(true)
+        .with_level(true)
+        .with_max_level(Level::INFO);
+
+    if json {
+        Box::new(builder.json().finish())
+    } else {
+        Box::new(builder.compact().finish())
+    }
+}
+
 #[derive(Serialize)]
 struct ReadinessResponse {
     status: &'static str,
@@ -145,7 +155,9 @@ mod tests {
     use serial_test::serial;
     use std::net::{IpAddr, Ipv4Addr};
     use std::str;
+    use std::time::Duration;
     use tower::ServiceExt; // for `oneshot`
+    use tracing_subscriber::EnvFilter;
 
     #[tokio::test]
     async fn health_route_returns_ok() {
@@ -218,6 +230,29 @@ mod tests {
         assert_eq!(component["details"], "storage layer not yet wired");
     }
 
+    #[tokio::test]
+    async fn readiness_reports_elapsed_uptime() {
+        let past = Instant::now() - Duration::from_secs(2);
+        let app_state = AppState { started_at: past };
+        let app = build_app(app_state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ready")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let uptime = payload["uptime_seconds"].as_u64().unwrap();
+        assert!(uptime >= 2);
+    }
+
     #[test]
     #[serial]
     fn bind_addr_prefers_bind_addr_var() {
@@ -260,8 +295,42 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    fn bind_addr_errors_on_invalid_bind_addr() {
+        env::set_var("BIND_ADDR", "::invalid::");
+
+        let err = bind_addr().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("invalid"));
+
+        env::remove_var("BIND_ADDR");
+    }
+
+    #[test]
     fn app_state_reports_uptime_in_seconds() {
         let state = AppState::default();
         assert_eq!(state.uptime_seconds(), 0);
+    }
+
+    #[test]
+    fn build_subscriber_handles_json_and_compact() {
+        let _ = build_subscriber(false, EnvFilter::new("info"));
+        let _ = build_subscriber(true, EnvFilter::new("debug"));
+    }
+
+    #[test]
+    #[serial]
+    fn init_tracing_tolerates_multiple_invocations() {
+        env::remove_var("LOG_FORMAT");
+        init_tracing();
+        init_tracing();
+    }
+
+    #[test]
+    #[serial]
+    fn init_tracing_honors_json_format_env() {
+        env::set_var("LOG_FORMAT", "json");
+        init_tracing();
+        env::remove_var("LOG_FORMAT");
     }
 }
