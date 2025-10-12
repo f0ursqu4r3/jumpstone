@@ -1,4 +1,6 @@
 mod config;
+#[cfg(feature = "metrics")]
+mod metrics;
 
 use anyhow::Result;
 use axum::{extract::State, routing::get, Json, Router};
@@ -23,6 +25,8 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 use crate::config::{CliOverrides, LogFormat, ServerConfig};
+#[cfg(feature = "metrics")]
+use crate::metrics::MetricsContext;
 
 #[derive(Parser, Debug, Default)]
 #[command(
@@ -71,6 +75,17 @@ async fn main() -> Result<()> {
 async fn run(config: Arc<ServerConfig>) -> Result<()> {
     init_tracing(&config);
 
+    #[cfg(feature = "metrics")]
+    let state = {
+        let metrics_ctx = if config.metrics.enabled {
+            Some(MetricsContext::init()?)
+        } else {
+            None
+        };
+        AppState::new(config.clone()).with_metrics(metrics_ctx)
+    };
+
+    #[cfg(not(feature = "metrics"))]
     let state = AppState::new(config.clone());
     let app = build_app(state);
 
@@ -90,6 +105,8 @@ struct AppState {
     started_at: Instant,
     #[allow(dead_code)]
     config: Arc<ServerConfig>,
+    #[cfg(feature = "metrics")]
+    metrics: Option<Arc<MetricsContext>>,
 }
 
 impl AppState {
@@ -97,12 +114,25 @@ impl AppState {
         Self {
             started_at: Instant::now(),
             config,
+            #[cfg(feature = "metrics")]
+            metrics: None,
         }
     }
 
     #[cfg(test)]
     fn with_start_time(config: Arc<ServerConfig>, started_at: Instant) -> Self {
-        Self { started_at, config }
+        Self {
+            started_at,
+            config,
+            #[cfg(feature = "metrics")]
+            metrics: None,
+        }
+    }
+
+    #[cfg(feature = "metrics")]
+    fn with_metrics(mut self, metrics: Option<Arc<MetricsContext>>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     fn uptime_seconds(&self) -> u64 {
@@ -113,9 +143,29 @@ impl AppState {
     fn metrics_enabled(&self) -> bool {
         self.config.metrics.enabled
     }
+
+    #[cfg(feature = "metrics")]
+    fn metrics(&self) -> Option<Arc<MetricsContext>> {
+        self.metrics.clone()
+    }
+
+    #[cfg(feature = "metrics")]
+    fn record_http_request(&self, route: &str, status: u16) {
+        if let Some(metrics) = &self.metrics {
+            let status_str = status.to_string();
+            metrics
+                .http_requests_total
+                .with_label_values(&[route, status_str.as_str()])
+                .inc();
+        }
+    }
 }
 
-async fn health() -> &'static str {
+async fn health(State(state): State<AppState>) -> &'static str {
+    #[cfg(feature = "metrics")]
+    state.record_http_request("health", axum::http::StatusCode::OK.as_u16());
+    #[cfg(not(feature = "metrics"))]
+    let _ = state;
     "ok"
 }
 
@@ -125,6 +175,9 @@ async fn readiness(State(state): State<AppState>) -> Json<ReadinessResponse> {
         status: "pending",
         details: Some("storage layer not yet wired"),
     }];
+
+    #[cfg(feature = "metrics")]
+    state.record_http_request("ready", axum::http::StatusCode::OK.as_u16());
 
     Json(ReadinessResponse {
         status: "degraded",
@@ -176,7 +229,12 @@ struct VersionResponse {
     version: &'static str,
 }
 
-async fn version() -> Json<VersionResponse> {
+async fn version(State(state): State<AppState>) -> Json<VersionResponse> {
+    #[cfg(feature = "metrics")]
+    state.record_http_request("version", axum::http::StatusCode::OK.as_u16());
+    #[cfg(not(feature = "metrics"))]
+    let _ = state;
+
     Json(VersionResponse {
         version: env!("CARGO_PKG_VERSION"),
     })
@@ -272,17 +330,29 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
         return StatusCode::NOT_FOUND.into_response();
     }
 
-    (
-        StatusCode::OK,
-        [(CONTENT_TYPE, "text/plain; version=0.0.4")],
-        "# HELP openguild_metrics_placeholder gauge placeholder\n# TYPE openguild_metrics_placeholder gauge\nopenguild_metrics_placeholder 1\n",
-    )
-        .into_response()
+    let Some(metrics) = state.metrics() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    match metrics.encode() {
+        Ok(body) => (
+            StatusCode::OK,
+            [(CONTENT_TYPE, "text/plain; version=0.0.4")],
+            body,
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(?err, "failed to encode metrics");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "metrics")]
+    use crate::metrics::MetricsContext;
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use serial_test::serial;
@@ -535,10 +605,23 @@ mod tests {
     #[cfg(feature = "metrics")]
     #[tokio::test]
     async fn metrics_route_exposed_when_enabled() {
-        let state = AppState::new(metrics_enabled_config());
-        let app = build_app(state);
+        let metrics_ctx = MetricsContext::init().expect("metrics init");
+        let state = AppState::new(metrics_enabled_config()).with_metrics(Some(metrics_ctx));
 
-        let response = app
+        // Issue a health check to increment the counter.
+        let health_app = build_app(state.clone());
+        health_app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let metrics_app = build_app(state);
+        let response = metrics_app
             .oneshot(
                 Request::builder()
                     .uri("/metrics")
@@ -551,7 +634,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let text = str::from_utf8(&body).unwrap();
-        assert!(text.contains("openguild_metrics_placeholder"));
+        assert!(text.contains("openguild_http_requests_total"));
     }
 
     #[cfg(feature = "metrics")]

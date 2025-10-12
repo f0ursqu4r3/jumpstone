@@ -38,11 +38,12 @@ Common environment overrides:
 - `OPENGUILD_SERVER__HOST` — interface to bind (default `0.0.0.0`).
 - `OPENGUILD_SERVER__PORT` — port number (default `8080`).
 - `OPENGUILD_SERVER__LOG_FORMAT` — `compact` (default) or `json`.
-- `OPENGUILD_SERVER__METRICS__ENABLED` — `true`/`false` toggle for metrics stub (future work).
+- `OPENGUILD_SERVER__METRICS__ENABLED` — `true`/`false` toggle for the Prometheus exporter.
 - `OPENGUILD_SERVER__METRICS__BIND_ADDR` — optional dedicated bind address for metrics exporter.
 - `RUST_LOG` — tracing filter (e.g. `info,openguild_server=debug`).
 
-> Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` stub while instrumentation is under construction.
+> Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
+> The exporter currently publishes the `openguild_http_requests_total{route,status}` counter.
 
 ### Command-Line Overrides
 
