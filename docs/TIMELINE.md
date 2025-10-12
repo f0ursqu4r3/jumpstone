@@ -16,9 +16,9 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Design CLI override story (flags or subcommand) if needed.
   - [x] Create table-driven tests covering valid/invalid permutations.
 - [ ] Refresh developer ergonomics and docs.
-  - [ ] Add lint/test shortcuts (make targets or cargo aliases) to the repo.
+  - [x] Add lint/test shortcuts (make targets or cargo aliases) to the repo.
   - [x] Update `docs/SETUP.md` with configuration schema and troubleshooting tips.
-  - [ ] Outline CI matrix (Linux + Windows runners) for future GitHub Actions wiring.
+  - [x] Outline CI matrix (Linux + Windows runners) for future GitHub Actions wiring (see docs/CI_PLAN.md).
 ## Week 3: Persistence & Session APIs (Milestone M0)
 - [ ] Scaffold Postgres connectivity and migrations.
   - [ ] Create SQLx migration directory with baseline schema checked in.
@@ -99,4 +99,4 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
 Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
-Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
+

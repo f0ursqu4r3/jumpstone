@@ -63,3 +63,15 @@ Available flags:
 - `--log-format <compact|json>` — switch logging format without touching env vars.
 - `--metrics-enabled <true|false>` — toggle metrics exporter stub.
 - `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
+
+## Development Shortcuts
+
+A top-level `Makefile` provides common workflows:
+
+```bash
+make fmt           # cargo fmt --all
+make lint          # cargo clippy with warnings as errors
+make check         # cargo check --workspace (backend)
+make test          # backend server tests
+make test-metrics  # backend server tests with metrics feature
+```

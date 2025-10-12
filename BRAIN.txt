@@ -1,0 +1,16 @@
+﻿Context Snapshot (updated 2025-10-12 11:45Z)
+-----------------------------------
+- Backend focus: openguild-server crate (Rust, Axum).
+- Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
+- Key recent features:
+  * Structured ServerConfig loader with metrics + log format options.
+  * Feature-gated /metrics stub (`--features metrics`, OPENGUILD_SERVER__METRICS__ENABLED).
+  * Graceful shutdown helper with test-only Notify hook; `run()` used for integration.
+  * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags).
+- Tests: `cargo test -p openguild-server` (+ `--features metrics`).
+- Docs touched: docs/SETUP.md (config + CLI + Makefile shortcuts), docs/TIMELINE.md (Week 1-2 checklist).
+- Tooling: top-level Makefile exposes `fmt`, `lint`, `check`, `test`, `test-metrics` targets.
+- Outstanding Week 1-2 items:
+  * Metrics instrumentation beyond stub (future).
+- CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
+
