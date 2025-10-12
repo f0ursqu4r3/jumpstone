@@ -1,10 +1,10 @@
-﻿Context Snapshot (updated 2025-10-12 12:40Z)
+﻿Context Snapshot (updated 2025-10-12 12:55Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
 - Key recent features:
   * Structured ServerConfig loader with metrics + log format options.
-  * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (now includes `openguild_http_requests_total` + `openguild_db_ready`).
+  * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (exports `openguild_http_requests_total` + `openguild_db_ready`).
   * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
   * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`).
 - Tests: `cargo test -p openguild-server` (+ `--features metrics`).
@@ -12,15 +12,7 @@
 - Docs touched: docs/SETUP.md (config + CLI + Makefile shortcuts + metrics exporter), docs/TIMELINE.md (Week 1-2 checklist), docs/CI_PLAN.md (matrix outline).
 - Tooling: top-level Makefile exposes `fmt`, `lint`, `check`, `test`, `test-metrics` targets.
 - Outstanding Week 3 items:
-  * Expand metrics coverage beyond HTTP counters (DB pool, WebSocket, etc.).
   * Add migration smoke test + pooled storage wrapper when schema stabilizes.
+  * Extend metrics to cover WebSocket/message pipelines when implemented.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
-
-
-
-
-
-
-
-
 

@@ -99,6 +99,11 @@ impl StorageState {
         }
     }
 
+    #[cfg(feature = "metrics")]
+    fn is_ready(&self) -> bool {
+        matches!(self.status, StorageStatus::Connected)
+    }
+
     #[allow(dead_code)]
     fn pool(&self) -> Option<Arc<openguild_storage::PgPool>> {
         self.pool.clone()
@@ -264,6 +269,13 @@ impl AppState {
     fn database_component(&self) -> ComponentStatus {
         self.storage.component()
     }
+
+    #[cfg(feature = "metrics")]
+    fn record_db_ready(&self, ready: bool) {
+        if let Some(metrics) = &self.metrics {
+            metrics.set_db_ready(ready);
+        }
+    }
 }
 
 async fn health(State(state): State<AppState>) -> &'static str {
@@ -277,6 +289,9 @@ async fn health(State(state): State<AppState>) -> &'static str {
 async fn readiness(State(state): State<AppState>) -> Json<ReadinessResponse> {
     let components = vec![state.database_component()];
     let status = state.storage.readiness_status();
+
+    #[cfg(feature = "metrics")]
+    state.record_db_ready(state.storage.is_ready());
 
     #[cfg(feature = "metrics")]
     state.record_http_request("ready", axum::http::StatusCode::OK.as_u16());
@@ -751,12 +766,12 @@ mod tests {
         let state = AppState::new(metrics_enabled_config(), storage_unconfigured())
             .with_metrics(Some(metrics_ctx));
 
-        // Issue a health check to increment the counter.
-        let health_app = build_app(state.clone());
-        health_app
+        // Issue a readiness check to drive counters and DB gauge.
+        let ready_app = build_app(state.clone());
+        ready_app
             .oneshot(
                 Request::builder()
-                    .uri("/health")
+                    .uri("/ready")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -778,6 +793,7 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let text = str::from_utf8(&body).unwrap();
         assert!(text.contains("openguild_http_requests_total"));
+        assert!(text.contains("openguild_db_ready"));
     }
 
     #[cfg(feature = "metrics")]
