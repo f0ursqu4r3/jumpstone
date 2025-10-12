@@ -1,0 +1,2 @@
+-- SQLx migration placeholder.
+-- Add CREATE TABLE statements and seed data here as schemas solidify.

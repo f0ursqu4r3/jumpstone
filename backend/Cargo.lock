@@ -1434,6 +1434,7 @@ dependencies = [
  "config",
  "once_cell",
  "openguild-core",
+ "openguild-storage",
  "prometheus",
  "serde",
  "serde_json",

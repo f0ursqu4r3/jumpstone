@@ -40,6 +40,7 @@ Common environment overrides:
 - `OPENGUILD_SERVER__LOG_FORMAT` — `compact` (default) or `json`.
 - `OPENGUILD_SERVER__METRICS__ENABLED` — `true`/`false` toggle for the Prometheus exporter.
 - `OPENGUILD_SERVER__METRICS__BIND_ADDR` — optional dedicated bind address for metrics exporter.
+- `OPENGUILD_SERVER__DATABASE_URL` — Postgres connection string for the storage layer (optional during bootstrap).
 - `RUST_LOG` — tracing filter (e.g. `info,openguild_server=debug`).
 
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
@@ -64,6 +65,7 @@ Available flags:
 - `--log-format <compact|json>` — switch logging format without touching env vars.
 - `--metrics-enabled <true|false>` — toggle metrics exporter stub.
 - `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
+- `--database-url <url>` — supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`).
 
 ## Development Shortcuts
 

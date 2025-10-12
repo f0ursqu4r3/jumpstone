@@ -11,3 +11,10 @@ pub async fn connect(database_url: &str) -> Result<PgPool> {
 
     Ok(pool)
 }
+
+pub fn validate_database_url(database_url: &str) -> Result<()> {
+    PgPoolOptions::new()
+        .max_connections(1)
+        .connect_lazy(database_url)?;
+    Ok(())
+}

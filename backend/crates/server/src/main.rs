@@ -24,6 +24,8 @@ use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::sync::Mutex;
 
+use openguild_storage::validate_database_url;
+
 use crate::config::{CliOverrides, LogFormat, ServerConfig};
 #[cfg(feature = "metrics")]
 use crate::metrics::MetricsContext;
@@ -47,6 +49,8 @@ struct CliOptions {
     metrics_enabled: Option<bool>,
     #[arg(long)]
     metrics_bind_addr: Option<String>,
+    #[arg(long)]
+    database_url: Option<String>,
 }
 
 impl CliOptions {
@@ -58,6 +62,7 @@ impl CliOptions {
             log_format: self.log_format,
             metrics_enabled: self.metrics_enabled,
             metrics_bind_addr: self.metrics_bind_addr,
+            database_url: self.database_url,
         }
     }
 }
@@ -159,6 +164,28 @@ impl AppState {
                 .inc();
         }
     }
+
+    fn database_component(&self) -> ComponentStatus {
+        match self.config.database_url.as_deref() {
+            None => ComponentStatus {
+                name: "database",
+                status: "pending",
+                details: Some("database_url not configured"),
+            },
+            Some(url) => match validate_database_url(url) {
+                Ok(_) => ComponentStatus {
+                    name: "database",
+                    status: "configured",
+                    details: Some("lazy connection validated"),
+                },
+                Err(_) => ComponentStatus {
+                    name: "database",
+                    status: "error",
+                    details: Some("invalid database url"),
+                },
+            },
+        }
+    }
 }
 
 async fn health(State(state): State<AppState>) -> &'static str {
@@ -170,11 +197,7 @@ async fn health(State(state): State<AppState>) -> &'static str {
 }
 
 async fn readiness(State(state): State<AppState>) -> Json<ReadinessResponse> {
-    let components = vec![ComponentStatus {
-        name: "database",
-        status: "pending",
-        details: Some("storage layer not yet wired"),
-    }];
+    let components = vec![state.database_component()];
 
     #[cfg(feature = "metrics")]
     state.record_http_request("ready", axum::http::StatusCode::OK.as_u16());
@@ -483,7 +506,7 @@ mod tests {
         let component = &components[0];
         assert_eq!(component["name"], "database");
         assert_eq!(component["status"], "pending");
-        assert_eq!(component["details"], "storage layer not yet wired");
+        assert_eq!(component["details"], "database_url not configured");
     }
 
     #[tokio::test]
@@ -507,6 +530,31 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let uptime = payload["uptime_seconds"].as_u64().unwrap();
         assert!(uptime >= 2);
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_configured_when_database_url_present() {
+        let mut config = ServerConfig::default();
+        config.database_url = Some("postgres://app:secret@localhost/app".into());
+        let app_state = AppState::new(Arc::new(config));
+        let app = build_app(app_state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ready")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let component = &payload["components"].as_array().unwrap()[0];
+        assert_eq!(component["status"], "configured");
+        assert_eq!(component["details"], "lazy connection validated");
     }
 
     #[test]
@@ -588,6 +636,8 @@ mod tests {
             "true",
             "--metrics-bind-addr",
             "127.0.0.1:9100",
+            "--database-url",
+            "postgres://app:secret@localhost/app",
         ]);
 
         let overrides = cli.into_overrides();
@@ -600,6 +650,7 @@ mod tests {
         assert_eq!(config.log_format, LogFormat::Json);
         assert!(config.metrics.enabled);
         assert_eq!(config.metrics.bind_addr.as_deref(), Some("127.0.0.1:9100"));
+        assert_eq!(config.database_url.as_deref(), Some("postgres://app:secret@localhost/app"));
     }
 
     #[cfg(feature = "metrics")]

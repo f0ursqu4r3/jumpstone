@@ -46,6 +46,7 @@ pub struct ServerConfig {
     pub port: u16,
     pub log_format: LogFormat,
     pub metrics: MetricsConfig,
+    pub database_url: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -56,6 +57,7 @@ impl Default for ServerConfig {
             port: 8080,
             log_format: LogFormat::Compact,
             metrics: MetricsConfig::default(),
+            database_url: None,
         }
     }
 }
@@ -135,6 +137,10 @@ impl ServerConfig {
             self.metrics.bind_addr = Some(metrics_bind_addr.clone());
         }
 
+        if let Some(database_url) = &overrides.database_url {
+            self.database_url = Some(database_url.clone());
+        }
+
         self.validate()
     }
 }
@@ -147,6 +153,7 @@ pub struct CliOverrides {
     pub log_format: Option<LogFormat>,
     pub metrics_enabled: Option<bool>,
     pub metrics_bind_addr: Option<String>,
+    pub database_url: Option<String>,
 }
 
 impl LogFormat {
@@ -193,6 +200,7 @@ mod tests {
         assert_eq!(config.port, 8080);
         assert_eq!(config.log_format, LogFormat::Compact);
         assert!(!config.metrics.enabled);
+        assert!(config.database_url.is_none());
     }
 
     #[test]
@@ -258,6 +266,7 @@ mod tests {
             log_format: Some(LogFormat::Json),
             metrics_enabled: Some(true),
             metrics_bind_addr: Some("127.0.0.1:9100".into()),
+            database_url: Some("postgres://app:secret@localhost/db".into()),
         };
 
         cfg.apply_overrides(&overrides).expect("overrides apply");
@@ -267,6 +276,7 @@ mod tests {
         assert_eq!(cfg.log_format, LogFormat::Json);
         assert!(cfg.metrics.enabled);
         assert_eq!(cfg.metrics.bind_addr.as_deref(), Some("127.0.0.1:9100"));
+        assert_eq!(cfg.database_url.as_deref(), Some("postgres://app:secret@localhost/db"));
     }
 
     #[test]

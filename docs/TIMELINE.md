@@ -1,4 +1,4 @@
-# OpenGuild Delivery Timeline
+﻿# OpenGuild Delivery Timeline
 This living document tracks backend-focused milestones, weekly targets, and shared to-do lists. Check off items as we complete them and append dates, owners, or notes inline.
 ## Working Assumptions
 - [ ] Scope emphasises the Rust backend; call out frontend work only when it blocks validation.
@@ -21,7 +21,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Outline CI matrix (Linux + Windows runners) for future GitHub Actions wiring (see docs/CI_PLAN.md).
 ## Week 3: Persistence & Session APIs (Milestone M0)
 - [ ] Scaffold Postgres connectivity and migrations.
-  - [ ] Create SQLx migration directory with baseline schema checked in.
+  - [x] Create SQLx migration directory with baseline schema checked in.
   - [ ] Implement pooled connection manager plus readiness probe hook.
   - [ ] Add migration smoke test invoking `sqlx::migrate!()` during `cargo test`.
 - [ ] Bootstrap session/auth flows.
@@ -98,6 +98,6 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [ ] Add coverage reporting and enforce minimum threshold.
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
-Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
+Keep this document livingâ€”after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
 
 
