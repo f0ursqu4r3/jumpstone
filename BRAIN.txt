@@ -1,4 +1,4 @@
-﻿Context Snapshot (updated 2025-10-12 12:55Z)
+Context Snapshot (updated 2025-10-12 19:35Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -7,20 +7,21 @@
   * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (exports `openguild_http_requests_total` + `openguild_db_ready`).
   * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
   * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`).
-- Tests: `cargo test -p openguild-server` (+ `--features metrics`).
+  * Storage crate now exposes a clonable `StoragePool` wrapper (`connect` returns it) plus a SQLx migration smoke test (skips if `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` unset).
+- Tests: `cargo test -p openguild-server` (+ `--features metrics`); `cargo test -p openguild-storage`.
 - Migrations: `backend/migrations/0001_initial.sql` placeholder committed (use `sqlx migrate`).
 - Docs touched: docs/SETUP.md (config + CLI + Makefile shortcuts + metrics exporter), docs/TIMELINE.md (Week 1-2 checklist), docs/CI_PLAN.md (matrix outline).
 - Tooling: top-level Makefile exposes `fmt`, `lint`, `check`, `test`, `test-metrics` targets.
 - Outstanding Week 3 items:
-  * Add migration smoke test + pooled storage wrapper when schema stabilizes.
   * Extend metrics to cover WebSocket/message pipelines when implemented.
+  * Begin session/auth scaffolding (login DTOs, signing integration, persistence layer).
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
 
 Notes for next agent (2025-10-12):
-- Week 3 focus: add SQLx migration smoke test and integrate pooled storage wrapper once schema is ready.
+- Week 3 focus shifts to session/auth scaffolding; storage pool wrapper + migration smoke test landed.
 - Metrics backlog: extend Prometheus coverage to WebSocket/message pipelines as they are implemented.
-- Readiness currently uses eager DB connect; revisit pooling strategy to reuse PgPool for requests.
+- Readiness path now retains a pooled handle (via `StoragePool`) while still using eager connect at startup.
 - CI plan documented in docs/CI_PLAN.md; no workflow file yet.
 - Makefile targets available (`make fmt`, `make lint`, `make check`, `make test`, `make test-metrics`).
 - Keep BRAIN.txt updated when context changes; no official mechanism beyond this doc yet.

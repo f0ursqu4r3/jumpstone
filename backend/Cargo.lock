@@ -1464,6 +1464,7 @@ dependencies = [
  "openguild-core",
  "serde",
  "sqlx",
+ "tokio",
 ]
 
 [[package]]

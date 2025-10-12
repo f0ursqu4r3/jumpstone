@@ -24,7 +24,7 @@ use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use openguild_storage::connect;
+use openguild_storage::{connect, StoragePool};
 
 use crate::config::{CliOverrides, LogFormat, ServerConfig};
 #[cfg(feature = "metrics")]
@@ -33,7 +33,7 @@ use crate::metrics::MetricsContext;
 #[derive(Clone)]
 struct StorageState {
     status: StorageStatus,
-    pool: Option<Arc<openguild_storage::PgPool>>,
+    pool: Option<StoragePool>,
 }
 
 #[derive(Clone)]
@@ -58,10 +58,10 @@ impl StorageState {
         }
     }
 
-    fn connected_with_pool(pool: openguild_storage::PgPool) -> Self {
+    fn connected_with_pool(pool: StoragePool) -> Self {
         Self {
             status: StorageStatus::Connected,
-            pool: Some(Arc::new(pool)),
+            pool: Some(pool),
         }
     }
 
@@ -105,7 +105,7 @@ impl StorageState {
     }
 
     #[allow(dead_code)]
-    fn pool(&self) -> Option<Arc<openguild_storage::PgPool>> {
+    fn pool(&self) -> Option<StoragePool> {
         self.pool.clone()
     }
 }
