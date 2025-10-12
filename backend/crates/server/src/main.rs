@@ -1,19 +1,30 @@
+mod config;
+
 use anyhow::Result;
 use axum::{extract::State, routing::get, Json, Router};
+#[cfg(feature = "metrics")]
+use axum::{
+    http::{header::CONTENT_TYPE, StatusCode},
+    response::IntoResponse,
+};
 use serde::Serialize;
-use std::{env, net::SocketAddr, time::Instant};
+use std::{net::SocketAddr, sync::Arc, time::Instant};
 use tokio::{net::TcpListener, signal};
 use tracing::{error, info, Level};
+use tracing_subscriber::fmt::writer::MakeWriter;
 use tracing_subscriber::{fmt, EnvFilter};
+
+use crate::config::{LogFormat, ServerConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_tracing();
+    let config = Arc::new(ServerConfig::load()?);
+    init_tracing(&config);
 
-    let state = AppState::default();
+    let state = AppState::new(config.clone());
     let app = build_app(state);
 
-    let addr: SocketAddr = bind_addr()?;
+    let addr: SocketAddr = config.listener_addr()?;
     let listener = TcpListener::bind(addr).await?;
     info!("listening on {addr}");
 
@@ -27,19 +38,30 @@ async fn main() -> Result<()> {
 #[derive(Clone)]
 struct AppState {
     started_at: Instant,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            started_at: Instant::now(),
-        }
-    }
+    #[allow(dead_code)]
+    config: Arc<ServerConfig>,
 }
 
 impl AppState {
+    fn new(config: Arc<ServerConfig>) -> Self {
+        Self {
+            started_at: Instant::now(),
+            config,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_start_time(config: Arc<ServerConfig>, started_at: Instant) -> Self {
+        Self { started_at, config }
+    }
+
     fn uptime_seconds(&self) -> u64 {
         self.started_at.elapsed().as_secs()
+    }
+
+    #[cfg(feature = "metrics")]
+    fn metrics_enabled(&self) -> bool {
+        self.config.metrics.enabled
     }
 }
 
@@ -61,31 +83,17 @@ async fn readiness(State(state): State<AppState>) -> Json<ReadinessResponse> {
     })
 }
 
-fn init_tracing() {
+fn init_tracing(config: &ServerConfig) {
     // Respect RUST_LOG if set, otherwise default to info for our crates.
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,openguild_server=info,openguild=info"));
 
-    let json = env::var("LOG_FORMAT").ok().as_deref() == Some("json");
+    let json = matches!(config.log_format(), LogFormat::Json);
     let subscriber = build_subscriber(json, env_filter);
 
     if let Err(err) = tracing::subscriber::set_global_default(subscriber) {
         eprintln!("failed to install tracing subscriber: {err}");
     }
-}
-
-fn bind_addr() -> Result<SocketAddr> {
-    // Prefer BIND_ADDR if set, otherwise compose from HOST/PORT with defaults.
-    if let Ok(addr) = env::var("BIND_ADDR") {
-        return Ok(addr.parse()?);
-    }
-
-    let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let port: u16 = env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(8080);
-    Ok(format!("{host}:{port}").parse()?)
 }
 
 async fn shutdown_signal() {
@@ -108,11 +116,45 @@ async fn version() -> Json<VersionResponse> {
 }
 
 fn build_app(state: AppState) -> Router {
-    Router::new()
+    #[cfg(feature = "metrics")]
+    let metrics_enabled = state.metrics_enabled();
+
+    #[cfg_attr(not(feature = "metrics"), allow(unused_mut))]
+    let mut router = Router::new()
         .route("/health", get(health))
         .route("/ready", get(readiness))
-        .route("/version", get(version))
-        .with_state(state)
+        .route("/version", get(version));
+
+    #[cfg(feature = "metrics")]
+    {
+        if metrics_enabled {
+            router = router.route("/metrics", get(metrics_handler));
+        }
+    }
+
+    router.with_state(state)
+}
+
+fn build_subscriber_with_writer<W>(
+    json: bool,
+    env_filter: EnvFilter,
+    writer: W,
+) -> Box<dyn tracing::Subscriber + Send + Sync>
+where
+    W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+{
+    let builder = fmt()
+        .with_env_filter(env_filter)
+        .with_target(true)
+        .with_level(true)
+        .with_max_level(Level::INFO)
+        .with_writer(writer);
+
+    if json {
+        Box::new(builder.json().finish())
+    } else {
+        Box::new(builder.compact().finish())
+    }
 }
 
 fn build_subscriber(
@@ -147,21 +189,87 @@ struct ComponentStatus {
     details: Option<&'static str>,
 }
 
+#[cfg(feature = "metrics")]
+async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+    if !state.metrics_enabled() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    (
+        StatusCode::OK,
+        [(CONTENT_TYPE, "text/plain; version=0.0.4")],
+        "# HELP openguild_metrics_placeholder gauge placeholder\n# TYPE openguild_metrics_placeholder gauge\nopenguild_metrics_placeholder 1\n",
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use serial_test::serial;
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::io::Write;
     use std::str;
-    use std::time::Duration;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
     use tower::ServiceExt; // for `oneshot`
+    use tracing::info;
+    use tracing_subscriber::fmt::writer::MakeWriter;
     use tracing_subscriber::EnvFilter;
+
+    fn test_config() -> Arc<ServerConfig> {
+        Arc::new(ServerConfig::default())
+    }
+
+    #[cfg(feature = "metrics")]
+    fn metrics_enabled_config() -> Arc<ServerConfig> {
+        let mut config = ServerConfig::default();
+        config.metrics.enabled = true;
+        Arc::new(config)
+    }
+
+    #[derive(Clone, Default)]
+    struct CaptureWriter {
+        buffer: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl CaptureWriter {
+        fn contents(&self) -> String {
+            let data = self.buffer.lock().expect("lock");
+            String::from_utf8_lossy(&data).to_string()
+        }
+    }
+
+    struct CaptureHandle {
+        buffer: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl<'a> MakeWriter<'a> for CaptureWriter {
+        type Writer = CaptureHandle;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            CaptureHandle {
+                buffer: self.buffer.clone(),
+            }
+        }
+    }
+
+    impl Write for CaptureHandle {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let mut guard = self.buffer.lock().expect("lock");
+            guard.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn health_route_returns_ok() {
-        let app = build_app(AppState::default());
+        let app = build_app(AppState::new(test_config()));
         let response = app
             .oneshot(
                 Request::builder()
@@ -180,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn version_route_reports_package_version() {
-        let app = build_app(AppState::default());
+        let app = build_app(AppState::new(test_config()));
         let response = app
             .oneshot(
                 Request::builder()
@@ -202,7 +310,7 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_route_reports_degraded_until_dependencies_exist() {
-        let app_state = AppState::default();
+        let app_state = AppState::new(test_config());
         let app = build_app(app_state);
         let response = app
             .oneshot(
@@ -233,7 +341,7 @@ mod tests {
     #[tokio::test]
     async fn readiness_reports_elapsed_uptime() {
         let past = Instant::now() - Duration::from_secs(2);
-        let app_state = AppState { started_at: past };
+        let app_state = AppState::with_start_time(test_config(), past);
         let app = build_app(app_state);
 
         let response = app
@@ -254,83 +362,87 @@ mod tests {
     }
 
     #[test]
-    #[serial]
-    fn bind_addr_prefers_bind_addr_var() {
-        env::set_var("BIND_ADDR", "127.0.0.1:4000");
-        env::remove_var("HOST");
-        env::remove_var("PORT");
-
-        let addr = bind_addr().unwrap();
-        assert_eq!(addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
-        assert_eq!(addr.port(), 4000);
-
-        env::remove_var("BIND_ADDR");
-    }
-
-    #[test]
-    #[serial]
-    fn bind_addr_composes_from_host_and_port() {
-        env::remove_var("BIND_ADDR");
-        env::set_var("HOST", "192.168.1.10");
-        env::set_var("PORT", "9000");
-
-        let addr = bind_addr().unwrap();
-        assert_eq!(addr.to_string(), "192.168.1.10:9000");
-
-        env::remove_var("HOST");
-        env::remove_var("PORT");
-    }
-
-    #[test]
-    #[serial]
-    fn bind_addr_falls_back_to_defaults_on_invalid_values() {
-        env::remove_var("BIND_ADDR");
-        env::remove_var("HOST");
-        env::set_var("PORT", "not_a_number");
-
-        let addr = bind_addr().unwrap();
-        assert_eq!(addr.to_string(), "0.0.0.0:8080");
-
-        env::remove_var("PORT");
-    }
-
-    #[test]
-    #[serial]
-    fn bind_addr_errors_on_invalid_bind_addr() {
-        env::set_var("BIND_ADDR", "::invalid::");
-
-        let err = bind_addr().unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("invalid"));
-
-        env::remove_var("BIND_ADDR");
-    }
-
-    #[test]
     fn app_state_reports_uptime_in_seconds() {
-        let state = AppState::default();
+        let state = AppState::new(test_config());
         assert_eq!(state.uptime_seconds(), 0);
     }
 
     #[test]
-    fn build_subscriber_handles_json_and_compact() {
-        let _ = build_subscriber(false, EnvFilter::new("info"));
-        let _ = build_subscriber(true, EnvFilter::new("debug"));
+    fn build_subscriber_emits_expected_formats() {
+        let json_writer = CaptureWriter::default();
+        let json_subscriber =
+            build_subscriber_with_writer(true, EnvFilter::new("info"), json_writer.clone());
+        tracing::subscriber::with_default(json_subscriber, || {
+            info!(message = "json-output");
+        });
+        let json_output = json_writer.contents();
+        assert!(json_output.contains("\"message\":\"json-output\""));
+
+        let compact_writer = CaptureWriter::default();
+        let compact_subscriber =
+            build_subscriber_with_writer(false, EnvFilter::new("info"), compact_writer.clone());
+        tracing::subscriber::with_default(compact_subscriber, || {
+            info!("compact-output");
+        });
+        let compact_output = compact_writer.contents();
+        assert!(compact_output.contains("compact-output"));
+        assert!(!compact_output.contains("\"compact-output\""));
     }
 
     #[test]
     #[serial]
     fn init_tracing_tolerates_multiple_invocations() {
-        env::remove_var("LOG_FORMAT");
-        init_tracing();
-        init_tracing();
+        let config = ServerConfig::default();
+        init_tracing(&config);
+        init_tracing(&config);
     }
 
     #[test]
     #[serial]
     fn init_tracing_honors_json_format_env() {
-        env::set_var("LOG_FORMAT", "json");
-        init_tracing();
-        env::remove_var("LOG_FORMAT");
+        let mut config = ServerConfig::default();
+        config.log_format = LogFormat::Json;
+        init_tracing(&config);
+    }
+
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn metrics_route_exposed_when_enabled() {
+        let state = AppState::new(metrics_enabled_config());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = str::from_utf8(&body).unwrap();
+        assert!(text.contains("openguild_metrics_placeholder"));
+    }
+
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn metrics_route_absent_when_disabled() {
+        let state = AppState::new(test_config());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
