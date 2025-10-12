@@ -4,7 +4,7 @@
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
 - Key recent features:
   * Structured ServerConfig loader with metrics + log format options.
-  * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED`.
+  * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (now includes `openguild_http_requests_total` + `openguild_db_ready`).
   * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
   * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`).
 - Tests: `cargo test -p openguild-server` (+ `--features metrics`).
@@ -15,6 +15,7 @@
   * Expand metrics coverage beyond HTTP counters (DB pool, WebSocket, etc.).
   * Add migration smoke test + pooled storage wrapper when schema stabilizes.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
+
 
 
 
