@@ -1,7 +1,9 @@
 //! Storage helpers for Postgres access.
 
 use anyhow::Result;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::postgres::PgPoolOptions;
+
+pub use sqlx::PgPool;
 
 pub async fn connect(database_url: &str) -> Result<PgPool> {
     let pool = PgPoolOptions::new()

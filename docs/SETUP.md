@@ -1,4 +1,4 @@
-# Development Environment Setup (Draft)
+﻿# Development Environment Setup (Draft)
 
 > This document will be expanded as services land. For now it captures base prerequisites.
 
@@ -28,20 +28,20 @@ _Add detailed steps as services are implemented._
 
 The server now loads configuration via the `config` crate with layered sources:
 
-- `config/server.(toml|yaml|json)` — optional project-level defaults.
-- `config/server.local.*` — optional overrides for local development (not checked in).
-- Environment variables prefixed with `OPENGUILD_SERVER__` — highest precedence.
+- `config/server.(toml|yaml|json)` â€” optional project-level defaults.
+- `config/server.local.*` â€” optional overrides for local development (not checked in).
+- Environment variables prefixed with `OPENGUILD_SERVER__` â€” highest precedence.
 
 Common environment overrides:
 
-- `OPENGUILD_SERVER__BIND_ADDR` — full socket address (e.g. `0.0.0.0:8080`). Overrides host/port.
-- `OPENGUILD_SERVER__HOST` — interface to bind (default `0.0.0.0`).
-- `OPENGUILD_SERVER__PORT` — port number (default `8080`).
-- `OPENGUILD_SERVER__LOG_FORMAT` — `compact` (default) or `json`.
-- `OPENGUILD_SERVER__METRICS__ENABLED` — `true`/`false` toggle for the Prometheus exporter.
-- `OPENGUILD_SERVER__METRICS__BIND_ADDR` — optional dedicated bind address for metrics exporter.
-- `OPENGUILD_SERVER__DATABASE_URL` — Postgres connection string for the storage layer (optional during bootstrap).
-- `RUST_LOG` — tracing filter (e.g. `info,openguild_server=debug`).
+- `OPENGUILD_SERVER__BIND_ADDR` â€” full socket address (e.g. `0.0.0.0:8080`). Overrides host/port.
+- `OPENGUILD_SERVER__HOST` â€” interface to bind (default `0.0.0.0`).
+- `OPENGUILD_SERVER__PORT` â€” port number (default `8080`).
+- `OPENGUILD_SERVER__LOG_FORMAT` â€” `compact` (default) or `json`.
+- `OPENGUILD_SERVER__METRICS__ENABLED` â€” `true`/`false` toggle for the Prometheus exporter.
+- `OPENGUILD_SERVER__METRICS__BIND_ADDR` â€” optional dedicated bind address for metrics exporter.
+- `OPENGUILD_SERVER__DATABASE_URL` â€” Postgres connection string for the storage layer (optional during bootstrap).
+- `RUST_LOG` â€” tracing filter (e.g. `info,openguild_server=debug`).
 
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
 > The exporter currently publishes the `openguild_http_requests_total{route,status}` counter.
@@ -60,12 +60,12 @@ cargo run --bin openguild-server -- \
 
 Available flags:
 
-- `--bind-addr <addr>` — overrides bind address (takes precedence over host/port).
-- `--host <host>` / `--port <port>` — override individual components.
-- `--log-format <compact|json>` — switch logging format without touching env vars.
-- `--metrics-enabled <true|false>` — toggle metrics exporter stub.
-- `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
-- `--database-url <url>` — supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`).
+- `--bind-addr <addr>` â€” overrides bind address (takes precedence over host/port).
+- `--host <host>` / `--port <port>` â€” override individual components.
+- `--log-format <compact|json>` â€” switch logging format without touching env vars.
+- `--metrics-enabled <true|false>` â€” toggle metrics exporter stub.
+- `--metrics-bind-addr <addr>` â€” dedicate a bind address for metrics (when enabled).
+- `--database-url <url>` â€” supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`).
 
 The `/ready` endpoint reports `database` status using these settings. When a database URL is provided, the server performs an eager connection attempt during startup and surfaces either `configured` (success) or `error` (failure details); otherwise it reports `pending`.
 

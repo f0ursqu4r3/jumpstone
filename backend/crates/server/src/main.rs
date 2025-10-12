@@ -33,6 +33,7 @@ use crate::metrics::MetricsContext;
 #[derive(Clone)]
 struct StorageState {
     status: StorageStatus,
+    pool: Option<Arc<openguild_storage::PgPool>>,
 }
 
 #[derive(Clone)]
@@ -46,18 +47,28 @@ impl StorageState {
     fn unconfigured() -> Self {
         Self {
             status: StorageStatus::Unconfigured,
+            pool: None,
         }
     }
 
     fn connected() -> Self {
         Self {
             status: StorageStatus::Connected,
+            pool: None,
+        }
+    }
+
+    fn connected_with_pool(pool: openguild_storage::PgPool) -> Self {
+        Self {
+            status: StorageStatus::Connected,
+            pool: Some(Arc::new(pool)),
         }
     }
 
     fn error(message: String) -> Self {
         Self {
             status: StorageStatus::Error(message),
+            pool: None,
         }
     }
 
@@ -79,6 +90,18 @@ impl StorageState {
                 details: Some(message.clone()),
             },
         }
+    }
+
+    fn readiness_status(&self) -> &'static str {
+        match self.status {
+            StorageStatus::Connected => "ready",
+            StorageStatus::Unconfigured | StorageStatus::Error(_) => "degraded",
+        }
+    }
+
+    #[allow(dead_code)]
+    fn pool(&self) -> Option<Arc<openguild_storage::PgPool>> {
+        self.pool.clone()
     }
 }
 
@@ -135,13 +158,12 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
     let storage = match config.database_url.as_deref() {
         Some(url) => match connect(url).await {
             Ok(pool) => {
-                drop(pool);
                 info!("database connection established");
-                StorageState::connected()
+                StorageState::connected_with_pool(pool)
             }
             Err(err) => {
                 error!(?err, "failed to establish database connection");
-                StorageState::error("failed to connect to database".into())
+                StorageState::error(err.to_string())
             }
         },
         None => StorageState::unconfigured(),
@@ -254,12 +276,13 @@ async fn health(State(state): State<AppState>) -> &'static str {
 
 async fn readiness(State(state): State<AppState>) -> Json<ReadinessResponse> {
     let components = vec![state.database_component()];
+    let status = state.storage.readiness_status();
 
     #[cfg(feature = "metrics")]
     state.record_http_request("ready", axum::http::StatusCode::OK.as_u16());
 
     Json(ReadinessResponse {
-        status: "degraded",
+        status,
         uptime_seconds: state.uptime_seconds(),
         components,
     })
@@ -616,6 +639,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["status"], "ready");
         let component = &payload["components"].as_array().unwrap()[0];
         assert_eq!(component["status"], "configured");
         assert_eq!(component["details"], "connection established");
