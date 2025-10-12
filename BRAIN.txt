@@ -12,17 +12,16 @@ Context Snapshot (updated 2025-10-12 20:34Z)
   * Session signing key configurable via config (`session.signing_key`), env (`OPENGUILD_SERVER__SESSION__SIGNING_KEY`), or CLI; server logs verifying key when generating an ephemeral secret.
 - Tests: `cargo test -p openguild-server` (+ `--features metrics`) covers login happy/invalid paths; `cargo test -p openguild-storage`.
 - Migrations: `backend/migrations/0001_initial.sql` placeholder committed (use `sqlx migrate`).
-- Docs touched: docs/SETUP.md (config + CLI + Makefile shortcuts + metrics exporter), docs/TIMELINE.md (Week 1-2 checklist), docs/CI_PLAN.md (matrix outline).
+- Docs touched: docs/SETUP.md (config + CLI + session signing key notes), docs/TIMELINE.md (Week 1-3 checklist), docs/API.md (sessions login contract), docs/CI_PLAN.md (matrix outline).
 - Tooling: top-level Makefile exposes `fmt`, `lint`, `check`, `test`, `test-metrics` targets.
 - Outstanding Week 3 items:
   * Extend metrics to cover WebSocket/message pipelines when implemented.
-  * Replace in-memory session store with SQLx-backed persistence once user schema lands; sync API contract with frontend owners (`docs/API.md` updates, curl samples).
-  * Publish login/response payload examples for frontend + QA.
+  * Replace in-memory session store with SQLx-backed persistence once user schema lands; coordinate with frontend owners on durable contract.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
 
 Notes for next agent (2025-10-12):
-- Session/auth scaffolding in place (login endpoint + token signer); next step is wiring real persistence + frontend contract docs.
+- Session/auth scaffolding in place (login endpoint + token signer); next step is wiring real persistence + coordinating contract details with frontend.
 - Metrics backlog: extend Prometheus coverage to WebSocket/message pipelines as they are implemented.
 - Readiness path now retains a pooled handle (via `StoragePool`) while still using eager connect at startup.
 - CI plan documented in docs/CI_PLAN.md; no workflow file yet.

@@ -34,14 +34,15 @@ The server now loads configuration via the `config` crate with layered sources:
 
 Common environment overrides:
 
-- `OPENGUILD_SERVER__BIND_ADDR` â€” full socket address (e.g. `0.0.0.0:8080`). Overrides host/port.
-- `OPENGUILD_SERVER__HOST` â€” interface to bind (default `0.0.0.0`).
-- `OPENGUILD_SERVER__PORT` â€” port number (default `8080`).
-- `OPENGUILD_SERVER__LOG_FORMAT` â€” `compact` (default) or `json`.
-- `OPENGUILD_SERVER__METRICS__ENABLED` â€” `true`/`false` toggle for the Prometheus exporter.
-- `OPENGUILD_SERVER__METRICS__BIND_ADDR` â€” optional dedicated bind address for metrics exporter.
-- `OPENGUILD_SERVER__DATABASE_URL` â€” Postgres connection string for the storage layer (optional during bootstrap).
-- `RUST_LOG` â€” tracing filter (e.g. `info,openguild_server=debug`).
+- `OPENGUILD_SERVER__BIND_ADDR` — full socket address (e.g. `0.0.0.0:8080`). Overrides host/port.
+- `OPENGUILD_SERVER__HOST` — interface to bind (default `0.0.0.0`).
+- `OPENGUILD_SERVER__PORT` — port number (default `8080`).
+- `OPENGUILD_SERVER__LOG_FORMAT` — `compact` (default) or `json`.
+- `OPENGUILD_SERVER__METRICS__ENABLED` — `true`/`false` toggle for the Prometheus exporter.
+- `OPENGUILD_SERVER__METRICS__BIND_ADDR` — optional dedicated bind address for metrics exporter.
+- `OPENGUILD_SERVER__DATABASE_URL` — Postgres connection string for the storage layer (optional during bootstrap).
+- `OPENGUILD_SERVER__SESSION__SIGNING_KEY` — URL-safe base64 ed25519 secret (32 bytes) used to sign session tokens; if omitted the server generates an ephemeral key at startup and logs the verifying key.
+- `RUST_LOG` — tracing filter (e.g. `info,openguild_server=debug`).
 
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
 > The exporter currently publishes the `openguild_http_requests_total{route,status}` counter.
@@ -55,17 +56,19 @@ cargo run --bin openguild-server -- \
   --bind-addr 0.0.0.0:8081 \
   --log-format json \
   --metrics-enabled true \
-  --metrics-bind-addr 127.0.0.1:9100
+  --metrics-bind-addr 127.0.0.1:9100 \
+  --session-signing-key AbCdEf...==
 ```
 
 Available flags:
 
-- `--bind-addr <addr>` â€” overrides bind address (takes precedence over host/port).
-- `--host <host>` / `--port <port>` â€” override individual components.
-- `--log-format <compact|json>` â€” switch logging format without touching env vars.
-- `--metrics-enabled <true|false>` â€” toggle metrics exporter stub.
-- `--metrics-bind-addr <addr>` â€” dedicate a bind address for metrics (when enabled).
-- `--database-url <url>` â€” supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`).
+- `--bind-addr <addr>` — overrides bind address (takes precedence over host/port).
+- `--host <host>` / `--port <port>` — override individual components.
+- `--log-format <compact|json>` — switch logging format without touching env vars.
+- `--metrics-enabled <true|false>` — toggle metrics exporter stub.
+- `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
+- `--database-url <url>` — supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`).
+- `--session-signing-key <key>` — provide the URL-safe base64 ed25519 signing key for issued session tokens.
 
 The `/ready` endpoint reports `database` status using these settings. When a database URL is provided, the server performs an eager connection attempt during startup and surfaces either `configured` (success) or `error` (failure details); otherwise it reports `pending`.
 

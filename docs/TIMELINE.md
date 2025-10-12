@@ -37,8 +37,8 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Persist sessions and add handler tests using mock or test storage (in-memory store with coverage in server tests).
 - [ ] Align with frontend expectations.
   - [ ] Sync with `frontend/stores/session.ts` owners on contract details.
-  - [ ] Publish request/response samples in `docs/API.md`.
-  - [ ] Add curl/HTTPie snippets to accelerate manual QA.
+  - [x] Publish request/response samples in `docs/API.md`.
+  - [x] Add curl/HTTPie snippets to accelerate manual QA.
 
 ## Week 4: Messaging Core (Milestone M0)
 
