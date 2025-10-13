@@ -81,13 +81,25 @@ This living document tracks backend-focused milestones, weekly targets, and shar
 ## Week 6-7: Security/Posture Hardening (Milestone M1 setup)
 
 - [ ] Formalize auth token lifecycle with refresh + revocation.
-  - [ ] Implement signing key rotation plumbing in `openguild-crypto` + server config.
-  - [ ] Persist refresh tokens with device binding metadata and auditing hooks.
-  - [ ] Add integration tests for refresh/revoke flows, including clock skew handling.
+  - [ ] Implement ed25519 signing key rotation plumbing in `openguild-crypto` and surface CLI/env config overrides.
+  - [ ] Persist refresh sessions via `StoragePool` with device metadata + audit timestamps; reuse `UserRepository` for credential verification.
+  - [ ] Add integration tests that cover multi-device refresh, revoke, and skew handling (unit + end-to-end via `cargo xtask test`).
+- [ ] Expand account management and credential hygiene.
+  - [ ] Ship CLI seeding + `/users/register` path that reuses the new storage plumbing.
+  - [ ] Document credential bootstrap + password policy updates in `docs/API.md` and `docs/SETUP.md`; add onboarding guidance for ops.
+  - [ ] Schedule follow-up to revisit refresh token design decisions once telemetry lands.
+- [ ] Lock down messaging surface area.
+  - [ ] Enforce authz checks on messaging CRUD/WebSocket routes and align `docs/PROTOCOL.md` with required identity.
+  - [ ] Finalize payload validation and size limits; wire metrics/alerts for abuse detection.
+  - [ ] Extend integration tests to cover unauthorized access, missing identity, and rate-limit boundaries.
 - [ ] Level up threat modelling and security headers.
-  - [ ] Extend `docs/THREATMODEL.md` with new attack surfaces and mitigations.
-  - [ ] Add middleware for CSP, rate limiting, and audit logging stubs.
-  - [ ] Write tests asserting security headers and rate limiting behaviour under burst.
+  - [ ] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations.
+  - [ ] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md`.
+  - [ ] Add tests asserting security headers + burst rate limiting, and capture Grafana/Alertmanager follow-ups for ops adoption.
+- [ ] Close out observability adoption gaps blocking M1.
+  - [ ] Publish request ID usage guidance and confirm log sinks preserve `request_id`.
+  - [ ] Promote Prometheus/Grafana deployment beyond local dev (CI + staging) and define alert thresholds for new security metrics.
+  - [ ] Ensure `server_name` is surfaced in deployment manifests and ops docs.
 
 ## Week 8 and Beyond: Federation & MLS (Milestones M1-M2)
 
