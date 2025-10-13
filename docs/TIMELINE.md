@@ -100,8 +100,8 @@ This living document tracks backend-focused milestones, weekly targets, and shar
     - [x] Assert WebSocket connection limits reject excess concurrent sessions (2025-10-13).
 - [ ] Level up threat modelling and security headers.
   - [ ] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations.
-  - [ ] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md`.
-  - [ ] Add tests asserting security headers + burst rate limiting, and capture Grafana/Alertmanager follow-ups for ops adoption.
+  - [x] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md` (2025-10-13) *(audit logging TBD, middleware + docs shipped)*.
+  - [x] Add tests asserting security headers + burst rate limiting, and capture Grafana/Alertmanager follow-ups for ops adoption (2025-10-13).
 - [ ] Close out observability adoption gaps blocking M1.
   - [ ] Publish request ID usage guidance and confirm log sinks preserve `request_id`.
   - [ ] Promote Prometheus/Grafana deployment beyond local dev (CI + staging) and define alert thresholds for new security metrics.

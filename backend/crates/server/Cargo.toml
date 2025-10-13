@@ -30,7 +30,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["request-id", "trace", "propagate-header"] }
+tower-http = { version = "0.5", features = ["request-id", "trace", "propagate-header", "set-header"] }
 
 [dev-dependencies]
 serial_test = "2"

@@ -66,6 +66,16 @@ This playbook captures day-to-day runbook items for the OpenGuild backend. Treat
 3. Add scraping rules or dashboard panels as needed.
 4. Update alert thresholds when promoting to production.
 
+## HTTP Security Headers
+
+- The gateway injects baseline headers on every response:  
+  `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`  
+  `Referrer-Policy: no-referrer`  
+  `X-Content-Type-Options: nosniff`  
+  `X-Frame-Options: DENY`
+- These defaults live in `build_app` (`backend/crates/server/src/main.rs`). Adjustments require a code change and security review; avoid ad-hoc overrides without re-running the threat model.
+- Confirm downstream proxies/CDNs preserve the headers. If a proxy rewrites responses, make sure it re-applies the same policy set.
+
 ## Incident Response
 
 1. **Triage**

@@ -6,6 +6,11 @@ mod session;
 mod users;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
+const CONTENT_SECURITY_POLICY: &str =
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+const REFERRER_POLICY: &str = "no-referrer";
+const X_CONTENT_TYPE_OPTIONS: &str = "nosniff";
+const X_FRAME_OPTIONS: &str = "DENY";
 
 #[cfg(feature = "metrics")]
 use anyhow::Context;
@@ -13,7 +18,7 @@ use anyhow::{anyhow, Result};
 use axum::{
     body::HttpBody,
     extract::{MatchedPath, State},
-    http::header::HeaderName,
+    http::{header::HeaderName, HeaderValue},
     routing::{get, post},
     Json, Router,
 };
@@ -42,6 +47,7 @@ use tower::ServiceBuilder;
 use tower_http::{
     propagate_header::PropagateHeaderLayer,
     request_id::{MakeRequestUuid, RequestId, SetRequestIdLayer},
+    set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 use tracing::field::{Field, Visit};
@@ -650,6 +656,22 @@ fn build_app(state: AppState) -> Router {
         .on_response(HttpOnResponse::new());
 
     let builder = ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("content-security-policy"),
+            HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static(REFERRER_POLICY),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static(X_CONTENT_TYPE_OPTIONS),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static(X_FRAME_OPTIONS),
+        ))
         .layer(PropagateHeaderLayer::new(request_id_header.clone()))
         .layer(trace_layer)
         .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid));
@@ -1159,6 +1181,33 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+        {
+            let headers = response.headers();
+            assert_eq!(
+                headers
+                    .get("content-security-policy")
+                    .and_then(|value| value.to_str().ok()),
+                Some(CONTENT_SECURITY_POLICY)
+            );
+            assert_eq!(
+                headers
+                    .get("referrer-policy")
+                    .and_then(|value| value.to_str().ok()),
+                Some(REFERRER_POLICY)
+            );
+            assert_eq!(
+                headers
+                    .get("x-content-type-options")
+                    .and_then(|value| value.to_str().ok()),
+                Some(X_CONTENT_TYPE_OPTIONS)
+            );
+            assert_eq!(
+                headers
+                    .get("x-frame-options")
+                    .and_then(|value| value.to_str().ok()),
+                Some(X_FRAME_OPTIONS)
+            );
+        }
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let message = str::from_utf8(&body).unwrap();
         assert_eq!(message, "ok");
