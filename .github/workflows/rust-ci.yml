@@ -7,7 +7,6 @@ on:
   pull_request:
     branches:
       - main
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -46,3 +45,7 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace
+
+      - name: Verify metrics endpoint
+        run: |
+          cargo run --bin xtask -- ci-metrics-smoke

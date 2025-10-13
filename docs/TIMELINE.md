@@ -72,7 +72,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
 - [x] Upgrade local + CI observability tooling.
   - [x] Extend Docker Compose with Prometheus and Grafana services.
   - [x] Document Grafana dashboards plus default alert thresholds.
-  - [ ] Prototype CI sanity check that fails when metrics regress (stretch goal).
+  - [x] Prototype CI sanity check that fails when metrics regress (stretch goal).
 - [x] Draft operations playbook.
   - [x] Create `docs/OPERATIONS.md` (or expand `docs/SETUP.md`) with deploy/rollback workflows.
   - [x] Include monitoring runbooks and alert escalation paths.

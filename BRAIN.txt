@@ -19,7 +19,7 @@ Context Snapshot (updated 2025-10-13 04:39Z)
   * Messaging HTTP routes map missing resources to HTTP 404, preserve validation 400s, and record request metrics; docs/API updated to reflect new statuses.
   * Integration test (`websocket_broadcasts_events`) exercises fan-out via `tokio_tungstenite` to guard regressions.
   * Persistent credential storage: added `0004_create_users.sql` with Argon2 hashed passwords and a SQLx-backed `UserRepository`; login now verifies against Postgres when available.
-  * Developer tooling now ships a dedicated `xtask` binary (fmt/lint/test/ci) for cross-platform workflows.
+  * Developer tooling now ships a dedicated `xtask` binary (`fmt`, `lint`, `test`, `ci`, `ci-metrics-smoke`) for cross-platform workflows.
 - Week 5 observability prep:
   * Request IDs now flow through tracing/log spans for both HTTP requests and WebSocket upgrades (capture tests verify span enrichment + header propagation); next step is documenting downstream usage and validating log-sink adoption.
   * Added a tower-based latency recorder so `MetricsContext` captures duration histograms alongside counters; new messaging counters (delivered/no_subscribers/dropped) and WebSocket queue depth gauges surface via `/metrics`.
@@ -28,13 +28,12 @@ Context Snapshot (updated 2025-10-13 04:39Z)
 - Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (metrics gating optional). WebSocket integration test requires Tokio runtime (runs by default).
 - Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql`, `0004_create_users.sql`.
 - Docs touched: docs/SETUP.md (session key + DB persistence notes), docs/TIMELINE.md (Weeks 1-5 updates + credential storage notes), docs/OBSERVABILITY.md (local Prometheus/Grafana stack), docs/OPERATIONS.md (deploy/rollback playbook), docs/API.md (sessions + guild/channel/message routes + WebSocket), docs/PROTOCOL.md (event envelope + guardrails), docs/CI_PLAN.md (matrix outline).
-- Tooling: `backend/xtask` crate provides `fmt`, `lint`, `test`, `ci` tasks; legacy Makefile targets now shell out to xtask.
+- Tooling: `backend/xtask` crate provides `fmt`, `lint`, `test`, `ci`, and `ci-metrics-smoke`; legacy Makefile targets now shell out to xtask.
 - Outstanding follow-ups (pre-Week 5 checkpoints):
   * Publish request ID usage guidance for frontend/ops teams and confirm log aggregation retains the `request_id` field.
-  * Stand up Prometheus/Grafana in local/CI environments; define alert thresholds for latency histograms, messaging counters, and queue depth gauges.
+  * Promote Prometheus/Grafana beyond local dev (CI + staging), add alertmanager + finalized thresholds for latency, messaging counters, and queue depth gauges.
   * SQLx-backed credential storage now powers login when a database is configured; next up is wiring user registration flows (API + CLI seeding) and revisiting refresh token design.
   * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
-  * Prototype a lightweight CI metrics scrape (e.g., curl `/metrics`) to catch regressions until Alertmanager-based checks are available.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
 Notes for next agent (2025-10-13 04:39Z):
@@ -48,6 +47,11 @@ Notes for next agent (2025-10-13 04:39Z):
 - CI plan lives in docs/CI_PLAN.md; workflows still missing.
 - Prefer `cargo xtask fmt|lint|test|ci` for routine Rust workflows; legacy Makefile targets now wrap xtask.
 - Keep BRAIN.txt current; still our ad-hoc handoff channel.
+
+
+
+
+
 
 
 
