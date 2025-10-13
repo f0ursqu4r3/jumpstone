@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-13 00:12Z)
+Context Snapshot (updated 2025-10-13 01:19Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -12,24 +12,29 @@ Context Snapshot (updated 2025-10-13 00:12Z)
   * Messaging core (Week 4): REST CRUD for guilds/channels, optimistic message persistence, and WebSocket fan-out with bounded broadcast/backpressure and replay window. In-memory fallback mirrors semantics when DATABASE_URL is absent.
   * `openguild-core::messaging` introduces message payload builders + proptests to ensure canonical event IDs remain unique; `openguild-storage::messaging` wires SQLx repositories for guilds/channels/events.
   * Integration test (`websocket_broadcasts_events`) exercises fan-out via `tokio_tungstenite` to guard regressions.
+- Week 5 observability prep (in flight):
+  * No request/span ID propagation yet; plan to add a middleware (likely `tower-http`'s `SetRequestIdLayer` + `PropagateRequestIdLayer`) and expose the ID via response headers + tracing spans so downstream logs/tests can assert correlation.
+  * `AppState::record_http_request` relies on hard-coded route labels; consider using `axum::extract::MatchedPath` inside middleware so metrics stay consistent once more routes land.
+  * `MetricsContext` currently holds only `http_requests_total` and `db_ready`; extend with histograms (latency), gauges (WebSocket connection depth), and counters for message flow/backpressure once instrumentation design settles.
+  * `ServerConfig.metrics.bind_addr` is validated but unused - decide whether to spin a distinct metrics listener or drop the field before we freeze config.
+  * WebSocket fan-out has no metrics/log correlation; plan to emit per-channel connection/change events (gated behind metrics feature) and capture queue depth/backpressure stats.
 - Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (metrics gating optional). WebSocket integration test requires Tokio runtime (runs by default).
 - Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql` (guilds/channels/channel_events schema).
 - Docs touched: docs/SETUP.md (session key + DB persistence notes), docs/TIMELINE.md (Weeks 1-4 updated), docs/API.md (sessions + guild/channel/message routes + WebSocket), docs/PROTOCOL.md (event envelope + guardrails), docs/CI_PLAN.md (matrix outline).
 - Tooling: top-level Makefile exposes `fmt`, `lint`, `check`, `test`, `test-metrics` targets.
-- Outstanding follow-ups:
-  * Extend metrics instrumentation to cover messaging/WebSocket paths (histograms + queue depth gauges) once the observability sprint starts.
-  * Replace the in-memory authenticator with SQLx-backed credential storage when the user schema lands; revisit session issuance to include refresh tokens + revocation plumbing.
-  * Finalise payload validation/size limits and authz checks on messaging endpoints (currently accept any sender string); align with upcoming auth/session work.
+- Outstanding follow-ups (pre-Week 5 checkpoints):
+  * Lock observability approach: add request ID middleware + tracing propagation, ensure WebSocket upgrades inherit the same span/ID, and extend tests to capture log snapshots.
+  * Flesh out metrics backlog (HTTP latency histograms, messaging counters/gauges, queue depth) and decide on naming/label strategy before wiring into `MetricsContext`.
+  * Replace the in-memory authenticator with SQLx-backed credential storage once user schema exists; at that point revisit session issuance for refresh tokens/revocation.
+  * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
-
-Notes for next agent (2025-10-13):
-- Messaging CRUD/WebSocket stack is live; coordinate with frontend to consume the new REST + WS APIs documented in docs/API.md and capture any schema tweaks they need (e.g., sender identity shape, pagination).
-- Metrics backlog: extend Prometheus coverage to WebSocket/message pipelines and channel broadcast saturation once we enter Week 5 observability work.
-- Begin drafting the credential storage schema (users + memberships) so Week 5 auth hardening can start quickly; confirm with product how guild/channel membership should be authorised.
-- Consider preparing migration scaffolding/tests for the upcoming user tables and message retention knobs.
-- Readiness path now retains a pooled handle (via `StoragePool`) while still using eager connect at startup.
-- CI plan documented in docs/CI_PLAN.md; no workflow file yet.
-- Makefile targets available (`make fmt`, `make lint`, `make check`, `make test`, `make test-metrics`).
-- Keep BRAIN.txt updated when context changes; no official mechanism beyond this doc yet.
-
+Notes for next agent (2025-10-13 01:19Z):
+- Messaging CRUD/WebSocket stack is live; sync with frontend on any schema tweaks (sender identity, pagination cursors) as they build against docs/API.md.
+- Prioritise observability sprint kickoff: introduce request ID/tracing layers, wire Prometheus metrics for HTTP + WebSocket flows, and capture regression tests (log snapshot + metrics scrape).
+- Revisit `ServerConfig.metrics.bind_addr` usage before adding new listeners - either honour it (spawn secondary Axum server) or remove from config to avoid drift.
+- Start drafting credential storage schema + migrations so auth hardening (refresh tokens, memberships) can follow; tee up openguild-storage interfaces for user tables.
+- Readiness path keeps a pooled DB handle (StoragePool clone) while logging eager connect errors - preserve this behaviour when refactoring.
+- CI plan lives in docs/CI_PLAN.md; workflows still missing.
+- Use Makefile helpers (`make fmt`, `make lint`, `make check`, `make test`, `make test-metrics`) to keep the workspace tidy.
+- Keep BRAIN.txt current; still our ad-hoc handoff channel.
