@@ -453,6 +453,10 @@ impl MessagingService {
                 })
             }
             Err(_) => {
+                #[cfg(feature = "metrics")]
+                if let Some(metrics) = self.metrics() {
+                    metrics.increment_messaging_rejection("websocket_limit");
+                }
                 tracing::warn!(
                     channel_id = %channel_id,
                     request_id = %request_id_label,
@@ -587,6 +591,9 @@ pub async fn create_guild(
     };
 
     if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        if status == StatusCode::UNAUTHORIZED {
+            state.record_messaging_rejection("unauthorized");
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -599,6 +606,7 @@ pub async fn create_guild(
     let name_length = name.chars().count();
 
     if name.is_empty() {
+        state.record_messaging_rejection("guild_name_empty");
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
@@ -651,6 +659,9 @@ pub async fn list_guilds(
     };
 
     if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        if status == StatusCode::UNAUTHORIZED {
+            state.record_messaging_rejection("unauthorized");
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -699,6 +710,9 @@ pub async fn create_channel(
     };
 
     if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        if status == StatusCode::UNAUTHORIZED {
+            state.record_messaging_rejection("unauthorized");
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -710,6 +724,7 @@ pub async fn create_channel(
     let name = body.name.trim();
     let name_length = name.chars().count();
     if name.is_empty() {
+        state.record_messaging_rejection("channel_name_empty");
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
@@ -723,6 +738,7 @@ pub async fn create_channel(
             guild_id = %guild_id,
             "channel name exceeds maximum length"
         );
+        state.record_messaging_rejection("channel_name_length");
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
@@ -770,6 +786,9 @@ pub async fn list_channels(
     };
 
     if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        if status == StatusCode::UNAUTHORIZED {
+            state.record_messaging_rejection("unauthorized");
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -827,6 +846,9 @@ pub async fn post_message(
     let claims = match session::authenticate_bearer(&state, &headers) {
         Ok(claims) => claims,
         Err(status) => {
+            if status == StatusCode::UNAUTHORIZED {
+                state.record_messaging_rejection("unauthorized");
+            }
             #[cfg(feature = "metrics")]
             state.record_http_request(matched_path.as_str(), status.as_u16());
             return Err(status);
@@ -842,6 +864,7 @@ pub async fn post_message(
     let content_length = content.chars().count();
 
     if content.is_empty() {
+        state.record_messaging_rejection("message_empty");
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
@@ -866,6 +889,7 @@ pub async fn post_message(
         sender_claim.clone()
     } else {
         if requested_sender != sender_claim {
+            state.record_messaging_rejection("sender_mismatch");
             let status = StatusCode::FORBIDDEN;
             #[cfg(feature = "metrics")]
             state.record_http_request(matched_path.as_str(), status.as_u16());
@@ -919,6 +943,9 @@ pub async fn channel_socket(
     };
 
     if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        if status == StatusCode::UNAUTHORIZED {
+            state.record_messaging_rejection("unauthorized");
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);

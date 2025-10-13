@@ -1064,8 +1064,7 @@ mod tests {
     const TEST_USER_SECRET: &str = "test-secret";
     const TEST_DEVICE_ID: &str = "test-device";
 
-    async fn session_with_logged_in_user(
-    ) -> (session::tests::SessionTestHarness, String, Uuid) {
+    async fn session_with_logged_in_user() -> (session::tests::SessionTestHarness, String, Uuid) {
         let harness = session::tests::empty_session_context();
         let user_id = Uuid::new_v4();
         harness
@@ -1629,12 +1628,10 @@ mod tests {
                     .uri(&message_uri)
                     .header("content-type", "application/json")
                     .header("authorization", authorization)
-                    .body(Body::from(
-                        format!(
-                            "{{\"sender\":\"{}\",\"content\":\"hello world\"}}",
-                            user_id
-                        ),
-                    ))
+                    .body(Body::from(format!(
+                        "{{\"sender\":\"{}\",\"content\":\"hello world\"}}",
+                        user_id
+                    )))
                     .unwrap(),
             )
             .await
@@ -1955,12 +1952,10 @@ mod tests {
                     .uri(format!("/channels/{channel_id}/messages"))
                     .header("content-type", "application/json")
                     .header("authorization", authorization)
-                    .body(Body::from(
-                        format!(
-                            "{{\"sender\":\"{}\",\"content\":\"hello world\"}}",
-                            user_id
-                        ),
-                    ))
+                    .body(Body::from(format!(
+                        "{{\"sender\":\"{}\",\"content\":\"hello world\"}}",
+                        user_id
+                    )))
                     .unwrap(),
             )
             .await
@@ -1992,12 +1987,10 @@ mod tests {
 
         let url = format!("ws://{}/channels/{}/ws", addr, Uuid::new_v4());
         let mut request = url.into_client_request().unwrap();
-        request
-            .headers_mut()
-            .insert(
-                "authorization",
-                HeaderValue::from_str(&auth_header).expect("authorization header"),
-            );
+        request.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_str(&auth_header).expect("authorization header"),
+        );
         match connect_async(request).await {
             Ok(_) => panic!("handshake unexpectedly succeeded"),
             Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
@@ -2049,12 +2042,10 @@ mod tests {
         request
             .headers_mut()
             .insert("x-request-id", request_id.parse().unwrap());
-        request
-            .headers_mut()
-            .insert(
-                "authorization",
-                HeaderValue::from_str(&auth_header).expect("authorization header"),
-            );
+        request.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_str(&auth_header).expect("authorization header"),
+        );
 
         match connect_async(request).await {
             Ok(_) => panic!("handshake unexpectedly succeeded"),
@@ -2071,6 +2062,60 @@ mod tests {
             logs.contains(&format!("\"request_id\":\"{request_id}\"")),
             "logs missing request id: {logs}"
         );
+    }
+
+    #[tokio::test]
+    async fn websocket_rejects_when_capacity_reached() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let config = test_config();
+        let mut messaging = messaging::MessagingService::new_in_memory(config.server_name.clone());
+        messaging.set_max_websocket_connections(1);
+        let messaging = Arc::new(messaging);
+
+        let guild = messaging.create_guild("Capacity Guild").await.unwrap();
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .unwrap();
+
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
+            .with_session(session_harness.context.clone());
+        let app = build_app(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service())
+                .await
+                .expect("websocket capacity test server error");
+        });
+
+        let url = format!("ws://{}/channels/{}/ws", addr, channel.channel_id);
+        let mut first = url.clone().into_client_request().unwrap();
+        first.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_str(&auth_header).expect("authorization header"),
+        );
+        let (first_socket, _) = connect_async(first).await.expect("first connection");
+
+        let mut second = url.into_client_request().unwrap();
+        second.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_str(&auth_header).expect("authorization header"),
+        );
+
+        match connect_async(second).await {
+            Ok(_) => panic!("second websocket connection should be rate limited"),
+            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            }
+            Err(err) => panic!("unexpected websocket error: {err:?}"),
+        }
+
+        drop(first_socket);
+        server.abort();
     }
 
     #[tokio::test]
@@ -2102,12 +2147,10 @@ mod tests {
 
         let url = format!("ws://{}/channels/{}/ws", addr, channel.channel_id);
         let mut request = url.into_client_request().unwrap();
-        request
-            .headers_mut()
-            .insert(
-                "authorization",
-                HeaderValue::from_str(&auth_header).expect("authorization header"),
-            );
+        request.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_str(&auth_header).expect("authorization header"),
+        );
         let (mut socket, _) = connect_async(request).await.unwrap();
 
         messaging

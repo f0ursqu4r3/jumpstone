@@ -97,6 +97,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
     - [x] Add metrics counters and alert guidance for messaging rejections (2025-10-13).
   - [ ] Extend integration tests to cover unauthorized access, missing identity, and rate-limit boundaries.
     - [x] Add coverage for missing bearer tokens across guild/channel/message APIs and WebSocket upgrades (2025-10-13).
+    - [x] Assert WebSocket connection limits reject excess concurrent sessions (2025-10-13).
 - [ ] Level up threat modelling and security headers.
   - [ ] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations.
   - [ ] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md`.
