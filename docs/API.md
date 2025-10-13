@@ -132,6 +132,7 @@ Creates a channel within the specified guild.
 ### `GET /guilds/{guild_id}/channels`
 
 Lists channels for the guild (HTTP 200, empty array when none exist).
+
 - **Errors**: returns HTTP 404 if the guild ID is unknown.
 
 ### `POST /channels/{channel_id}/messages`

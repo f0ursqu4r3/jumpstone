@@ -8,6 +8,7 @@ mod session;
 use anyhow::Context;
 use anyhow::Result;
 use axum::{
+    body::HttpBody,
     extract::{MatchedPath, State},
     routing::{get, post},
     Json, Router,
@@ -19,11 +20,25 @@ use axum::{
 };
 use clap::Parser;
 use serde::Serialize;
-use std::{net::SocketAddr, sync::Arc, time::Instant};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+#[cfg(feature = "metrics")]
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 #[cfg(test)]
 use tokio::sync::Notify;
 use tokio::{net::TcpListener, signal};
-use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
+use tower::ServiceBuilder;
+use tower_http::{
+    request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
+    trace::TraceLayer,
+};
 use tracing::{error, info, Level};
 use tracing_subscriber::fmt::writer::MakeWriter;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -207,19 +222,27 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
         authenticator.clone(),
         repository,
     ));
+    #[cfg(feature = "metrics")]
+    let metrics_ctx = if config.metrics.enabled {
+        Some(MetricsContext::init()?)
+    } else {
+        None
+    };
+
+    #[cfg(feature = "metrics")]
+    let messaging_service = Arc::new(messaging::init_messaging_service(
+        &config,
+        storage.pool(),
+        metrics_ctx.clone(),
+    ));
+
+    #[cfg(not(feature = "metrics"))]
     let messaging_service = Arc::new(messaging::init_messaging_service(&config, storage.pool()));
 
     #[cfg(feature = "metrics")]
-    let state = {
-        let metrics_ctx = if config.metrics.enabled {
-            Some(MetricsContext::init()?)
-        } else {
-            None
-        };
-        AppState::new(config.clone(), storage.clone(), messaging_service.clone())
-            .with_session(session_context.clone())
-            .with_metrics(metrics_ctx)
-    };
+    let state = AppState::new(config.clone(), storage.clone(), messaging_service.clone())
+        .with_session(session_context.clone())
+        .with_metrics(metrics_ctx.clone());
 
     #[cfg(not(feature = "metrics"))]
     let state = AppState::new(config.clone(), storage, messaging_service.clone())
@@ -362,6 +385,11 @@ impl AppState {
             metrics.set_db_ready(ready);
         }
     }
+
+    #[cfg(feature = "metrics")]
+    fn metrics_context(&self) -> Option<Arc<MetricsContext>> {
+        self.metrics.clone()
+    }
 }
 
 async fn health(matched_path: MatchedPath, State(state): State<AppState>) -> &'static str {
@@ -462,6 +490,8 @@ fn build_app(state: AppState) -> Router {
     let metrics_enabled = state.metrics_enabled();
     #[cfg(feature = "metrics")]
     let expose_metrics_here = metrics_enabled && state.config.metrics.bind_addr.is_none();
+    #[cfg(feature = "metrics")]
+    let metrics_ctx = state.metrics_context();
 
     #[cfg_attr(not(feature = "metrics"), allow(unused_mut))]
     let mut router = Router::new()
@@ -490,11 +520,159 @@ fn build_app(state: AppState) -> Router {
         }
     }
 
-    let router = router
-        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
-        .layer(PropagateRequestIdLayer::x_request_id());
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(HttpSpanMaker::default())
+        .on_response(HttpOnResponse::new());
+
+    let builder = ServiceBuilder::new()
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(trace_layer)
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
+
+    #[cfg(feature = "metrics")]
+    let builder = builder.layer(MetricsRecorderLayer::new(metrics_ctx.clone()));
+
+    let instrumentation_layers = builder.into_inner();
+
+    let router = router.layer(instrumentation_layers);
 
     router.with_state(state)
+}
+
+#[derive(Clone, Default)]
+struct HttpSpanMaker;
+
+impl<B> tower_http::trace::MakeSpan<B> for HttpSpanMaker
+where
+    B: HttpBody + Send + 'static,
+    B::Data: Send,
+{
+    fn make_span(&mut self, request: &axum::http::Request<B>) -> tracing::Span {
+        let method = request.method().clone();
+        let uri_path = request.uri().path().to_string();
+        let route = request
+            .extensions()
+            .get::<MatchedPath>()
+            .map(|matched| matched.as_str().to_string())
+            .unwrap_or_else(|| uri_path.clone());
+        let request_id = request
+            .extensions()
+            .get::<RequestId>()
+            .and_then(|rid| rid.header_value().to_str().ok())
+            .unwrap_or("unknown");
+
+        tracing::info_span!(
+            "http.request",
+            method = %method,
+            route = %route,
+            request_id = %request_id,
+            status_code = tracing::field::Empty,
+            latency_ms = tracing::field::Empty
+        )
+    }
+}
+
+#[derive(Clone, Default)]
+struct HttpOnResponse;
+
+impl HttpOnResponse {
+    fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(feature = "metrics")]
+#[derive(Clone)]
+struct MetricsRecorderLayer {
+    metrics: Option<Arc<MetricsContext>>,
+}
+
+#[cfg(feature = "metrics")]
+impl MetricsRecorderLayer {
+    fn new(metrics: Option<Arc<MetricsContext>>) -> Self {
+        Self { metrics }
+    }
+}
+
+#[cfg(feature = "metrics")]
+impl<S> tower::Layer<S> for MetricsRecorderLayer {
+    type Service = MetricsRecorderService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        MetricsRecorderService {
+            inner,
+            metrics: self.metrics.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "metrics")]
+#[derive(Clone)]
+struct MetricsRecorderService<S> {
+    inner: S,
+    metrics: Option<Arc<MetricsContext>>,
+}
+
+#[cfg(feature = "metrics")]
+impl<S, B> tower::Service<axum::http::Request<B>> for MetricsRecorderService<S>
+where
+    S: tower::Service<axum::http::Request<B>>,
+    S::Future: Send + 'static,
+    B: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: axum::http::Request<B>) -> Self::Future {
+        let metrics = self.metrics.clone();
+        let route = request
+            .extensions()
+            .get::<MatchedPath>()
+            .map(|matched| matched.as_str().to_string())
+            .unwrap_or_else(|| request.uri().path().to_string());
+        let start = Instant::now();
+
+        let future = self.inner.call(request);
+
+        Box::pin(async move {
+            let response = future.await?;
+            if let Some(metrics) = metrics {
+                metrics.observe_http_latency(&route, response.status().as_u16(), start.elapsed());
+            }
+            Ok(response)
+        })
+    }
+}
+
+impl<B> tower_http::trace::OnResponse<B> for HttpOnResponse
+where
+    B: HttpBody + Send + 'static,
+    B::Data: Send,
+{
+    fn on_response(
+        self,
+        response: &axum::http::Response<B>,
+        latency: Duration,
+        span: &tracing::Span,
+    ) {
+        let latency_ms = latency.as_secs_f64() * 1000.0;
+        let status = response.status().as_u16();
+
+        span.record("status_code", &tracing::field::display(status));
+        span.record("latency_ms", &tracing::field::display(latency_ms));
+
+        tracing::debug!(
+            parent: span,
+            status = status,
+            latency_ms,
+            "request completed"
+        );
+    }
 }
 
 fn build_subscriber_with_writer<W>(
@@ -716,6 +894,117 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let message = str::from_utf8(&body).unwrap();
         assert_eq!(message, "ok");
+    }
+
+    #[tokio::test]
+    async fn request_id_propagates_into_traces_for_http() {
+        use tower::ServiceExt;
+        use tower_http::trace::MakeSpan;
+        let state = app_state_with_default_session(test_config(), storage_unconfigured());
+        let app = build_app(state);
+
+        let request_id = "test-observability".to_string();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .header("x-request-id", request_id.as_str())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-request-id")
+                .and_then(|value| value.to_str().ok()),
+            Some(request_id.as_str())
+        );
+
+        use tracing::field::Visit;
+        use tracing_subscriber::{
+            layer::{Context as LayerContext, SubscriberExt},
+            registry::LookupSpan,
+            Layer,
+        };
+
+        #[derive(Default, Clone)]
+        struct RequestIdCapture {
+            ids: Arc<Mutex<Vec<String>>>,
+        }
+
+        impl<S> Layer<S> for RequestIdCapture
+        where
+            S: tracing::Subscriber + for<'lookup> LookupSpan<'lookup>,
+        {
+            fn on_new_span(
+                &self,
+                attrs: &tracing::span::Attributes<'_>,
+                _id: &tracing::span::Id,
+                _ctx: LayerContext<'_, S>,
+            ) {
+                if attrs.metadata().name() != "http.request" {
+                    return;
+                }
+                let mut visitor = RequestIdVisitor::default();
+                attrs.record(&mut visitor);
+                if let Some(request_id) = visitor.request_id {
+                    self.ids.lock().expect("lock").push(request_id);
+                }
+            }
+        }
+
+        #[derive(Default)]
+        struct RequestIdVisitor {
+            request_id: Option<String>,
+        }
+
+        impl Visit for RequestIdVisitor {
+            fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                if field.name() == "request_id" {
+                    self.request_id = Some(value.to_string());
+                }
+            }
+
+            fn record_debug(
+                &mut self,
+                field: &tracing::field::Field,
+                value: &dyn std::fmt::Debug,
+            ) {
+                if field.name() == "request_id" && self.request_id.is_none() {
+                    let rendered = format!("{value:?}");
+                    self.request_id = Some(rendered.trim_matches('"').to_string());
+                }
+            }
+        }
+
+        use axum::http::HeaderValue;
+        use tower_http::request_id::RequestId;
+
+        let capture = RequestIdCapture::default();
+        let subscriber = tracing_subscriber::registry().with(capture.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let mut span_maker = HttpSpanMaker::default();
+        let header_value = HeaderValue::from_str(request_id.as_str()).unwrap();
+        let mut span_request = Request::builder()
+            .uri("/health")
+            .header("x-request-id", header_value.clone())
+            .body(Body::empty())
+            .unwrap();
+        span_request
+            .extensions_mut()
+            .insert(RequestId::new(header_value));
+        let span = span_maker.make_span(&span_request);
+        drop(span);
+
+        let captured = capture.ids.lock().expect("lock");
+        assert!(
+            captured.iter().any(|value| value == request_id.as_str()),
+            "span did not capture request id"
+        );
     }
 
     #[tokio::test]
@@ -1106,6 +1395,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn websocket_connection_limit_logs_request_id() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let config = test_config();
+        let mut messaging =
+            messaging::MessagingService::new_in_memory(config.server_name.clone());
+        messaging.set_max_websocket_connections(0);
+        let messaging = Arc::new(messaging);
+
+        let guild = messaging.create_guild("Limit Guild").await.unwrap();
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .unwrap();
+
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
+            .with_session(default_session_context());
+
+        let writer = CaptureWriter::default();
+        let subscriber =
+            build_subscriber_with_writer(true, EnvFilter::new("debug"), writer.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let app = build_app(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service())
+                .await
+                .expect("websocket limit test server error");
+        });
+
+        let request_id = "ws-test-id";
+        let url = format!("ws://{}/channels/{}/ws", addr, channel.channel_id);
+        let mut request = url.into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert("x-request-id", request_id.parse().unwrap());
+
+        match connect_async(request).await {
+            Ok(_) => panic!("handshake unexpectedly succeeded"),
+            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            }
+            Err(err) => panic!("unexpected websocket error: {err:?}"),
+        }
+
+        server.abort();
+
+        let logs = writer.contents();
+        assert!(
+            logs.contains(&format!("\"request_id\":\"{request_id}\"")),
+            "logs missing request id: {logs}"
+        );
+    }
+
+    #[tokio::test]
     async fn websocket_broadcasts_events() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
@@ -1299,6 +1646,7 @@ mod tests {
         let text = str::from_utf8(&body).unwrap();
         assert!(text.contains("openguild_http_requests_total"));
         assert!(text.contains("openguild_db_ready"));
+        assert!(text.contains("openguild_http_request_duration_seconds_bucket"));
     }
 
     #[cfg(feature = "metrics")]
@@ -1363,5 +1711,54 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn messaging_metrics_reflect_event_activity() {
+        use tower::ServiceExt;
+
+        let metrics_ctx = MetricsContext::init().expect("metrics init");
+        let config = metrics_enabled_config();
+        let storage = storage_unconfigured();
+        let messaging = Arc::new(messaging::init_messaging_service(
+            &config,
+            storage.pool(),
+            Some(metrics_ctx.clone()),
+        ));
+        let state = AppState::new(config.clone(), storage, messaging.clone())
+            .with_session(default_session_context())
+            .with_metrics(Some(metrics_ctx));
+        let mut app = build_app(state);
+
+        let guild = messaging.create_guild("Metrics Guild").await.unwrap();
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .unwrap();
+        messaging
+            .append_message(channel.channel_id, "@user:example.org", "hi there")
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = str::from_utf8(&body).unwrap();
+
+        let channel_id = channel.channel_id.to_string();
+        assert!(text.contains("openguild_messaging_events_total{outcome=\"dropped\"} 1"));
+        assert!(text.contains(&format!(
+            "openguild_websocket_queue_depth{{channel_id=\"{channel_id}\"}} 0"
+        )));
     }
 }

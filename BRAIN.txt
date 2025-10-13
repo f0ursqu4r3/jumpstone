@@ -18,10 +18,10 @@ Context Snapshot (updated 2025-10-13 04:39Z)
   * Metrics recording now keys on `MatchedPath` instead of hard-coded strings, keeping Prometheus labels aligned with router definitions.
   * Messaging HTTP routes map missing resources to HTTP 404, preserve validation 400s, and record request metrics; docs/API updated to reflect new statuses.
   * Integration test (`websocket_broadcasts_events`) exercises fan-out via `tokio_tungstenite` to guard regressions.
-- Week 5 observability prep (in flight):
-  * Request ID middleware is in place; next step is to enrich tracing spans/log contexts (including WebSocket flows) and audit downstream services for header adoption.
-  * HTTP metrics now use `MatchedPath`; follow up with latency histograms, messaging counters/gauges, and WebSocket queue depth instrumentation once the design settles.
-  * `MetricsContext` currently holds only `http_requests_total` and `db_ready`; extend with histograms (latency), gauges (WebSocket connection depth), and counters for message flow/backpressure once instrumentation design settles.
+- Week 5 observability prep:
+  * Request IDs now flow through tracing/log spans for both HTTP requests and WebSocket upgrades (capture tests assert span enrichment + header propagation); still need to confirm downstream consumers adopt the header.
+  * Added a tower-based latency recorder so `MetricsContext` captures duration histograms alongside counters; new messaging counters (delivered/no_subscribers/dropped) and WebSocket queue depth gauges surface via `/metrics` with coverage over append + broadcast paths.
+  * `MetricsContext` grows latency histograms plus messaging/backpressure instruments; future work: fold remaining observability backlog (downstream audits, queue depth alerting, span sampling strategy).
   * WebSocket fan-out still needs correlation IDs in logs/traces and queue depth telemetry (metrics scaffolding now exists).
 - Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (metrics gating optional). WebSocket integration test requires Tokio runtime (runs by default).
 - Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql` (guilds/channels/channel_events schema).

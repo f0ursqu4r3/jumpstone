@@ -15,7 +15,7 @@ use axum::{
     },
     http::StatusCode,
     response::Response,
-    Json,
+    Extension, Json,
 };
 use openguild_core::messaging::MessagePayload;
 use openguild_storage::{Channel, ChannelEvent, Guild, MessagingRepository, StoragePool};
@@ -27,7 +27,11 @@ use tokio::{
 };
 use uuid::Uuid;
 
+#[cfg(feature = "metrics")]
+use crate::metrics::MetricsContext;
 use crate::{config::ServerConfig, AppState};
+use tower_http::request_id::RequestId;
+use tracing::Instrument;
 
 const BROADCAST_CAPACITY: usize = 256;
 const MAX_WS_CONNECTIONS: usize = 256;
@@ -264,6 +268,8 @@ pub struct MessagingService {
     broadcasters: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Arc<OutboundEvent>>>>>,
     semaphore: Arc<Semaphore>,
     origin_server: String,
+    #[cfg(feature = "metrics")]
+    metrics: Option<Arc<MetricsContext>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -289,7 +295,25 @@ impl MessagingService {
             broadcasters: Arc::new(RwLock::new(HashMap::new())),
             semaphore: Arc::new(Semaphore::new(MAX_WS_CONNECTIONS)),
             origin_server,
+            #[cfg(feature = "metrics")]
+            metrics: None,
         }
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn with_metrics(mut self, metrics: Option<Arc<MetricsContext>>) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
+    #[cfg(feature = "metrics")]
+    fn metrics(&self) -> Option<&Arc<MetricsContext>> {
+        self.metrics.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_max_websocket_connections(&mut self, max: usize) {
+        self.semaphore = Arc::new(Semaphore::new(max));
     }
 
     pub async fn create_guild(&self, name: &str) -> Result<Guild, MessagingError> {
@@ -339,7 +363,21 @@ impl MessagingService {
             channel_id,
             event: body,
         });
-        self.broadcast(channel_id, broadcast_event).await;
+        let send_result = self.broadcast(channel_id, broadcast_event).await;
+
+        #[cfg(feature = "metrics")]
+        if let Some(metrics) = self.metrics() {
+            let outcome = match &send_result {
+                Ok(delivered) if *delivered == 0 => "no_subscribers",
+                Ok(_) => "delivered",
+                Err(_) => "dropped",
+            };
+            metrics.increment_messaging_events(outcome);
+        }
+
+        if let Err(err) = send_result {
+            tracing::warn!(?err, channel_id = %channel_id, "failed to broadcast event");
+        }
 
         Ok(stored)
     }
@@ -348,7 +386,11 @@ impl MessagingService {
         self.store.channel_exists(channel_id).await
     }
 
-    async fn broadcast(&self, channel_id: Uuid, event: Arc<OutboundEvent>) {
+    async fn broadcast(
+        &self,
+        channel_id: Uuid,
+        event: Arc<OutboundEvent>,
+    ) -> Result<usize, broadcast::error::SendError<Arc<OutboundEvent>>> {
         let sender = {
             let read = self.broadcasters.read().await;
             read.get(&channel_id).cloned()
@@ -365,7 +407,14 @@ impl MessagingService {
             }
         };
 
-        let _ = sender.send(event);
+        let result = sender.send(event);
+
+        #[cfg(feature = "metrics")]
+        if let Some(metrics) = self.metrics() {
+            metrics.set_websocket_queue_depth(&channel_id.to_string(), sender.len());
+        }
+
+        result
     }
 
     async fn subscribe(&self, channel_id: Uuid) -> broadcast::Receiver<Arc<OutboundEvent>> {
@@ -379,14 +428,38 @@ impl MessagingService {
     pub async fn open_websocket(
         self: Arc<Self>,
         channel_id: Uuid,
+        request_id: Option<String>,
         ws: WebSocketUpgrade,
     ) -> Response {
+        let request_id_label = request_id.unwrap_or_else(|| "unknown".to_string());
+
         match self.semaphore.clone().try_acquire_owned() {
-            Ok(permit) => ws.on_upgrade(move |socket| self.run_socket(channel_id, socket, permit)),
-            Err(_) => Response::builder()
-                .status(StatusCode::TOO_MANY_REQUESTS)
-                .body(axum::body::Body::from("connection limit reached"))
-                .unwrap(),
+            Ok(permit) => {
+                let svc = self.clone();
+                let request_id_for_span = request_id_label.clone();
+                ws.on_upgrade(move |socket| {
+                    let span = tracing::info_span!(
+                        "websocket.session",
+                        channel_id = %channel_id,
+                        request_id = %request_id_for_span
+                    );
+                    async move {
+                        svc.run_socket(channel_id, socket, permit).await;
+                    }
+                    .instrument(span)
+                })
+            }
+            Err(_) => {
+                tracing::warn!(
+                    channel_id = %channel_id,
+                    request_id = %request_id_label,
+                    "websocket connection limit reached"
+                );
+                Response::builder()
+                    .status(StatusCode::TOO_MANY_REQUESTS)
+                    .body(axum::body::Body::from("connection limit reached"))
+                    .unwrap()
+            }
         }
     }
 
@@ -733,6 +806,7 @@ pub async fn channel_socket(
     matched_path: MatchedPath,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
+    Extension(request_id): Extension<RequestId>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
     let Some(messaging) = state.messaging() else {
@@ -762,9 +836,33 @@ pub async fn channel_socket(
         }
     }
 
-    Ok(messaging.open_websocket(channel_id, ws).await)
+    let request_id_value = request_id
+        .header_value()
+        .to_str()
+        .ok()
+        .map(|value| value.to_string());
+
+    Ok(messaging
+        .open_websocket(channel_id, request_id_value, ws)
+        .await)
 }
 
+#[cfg(feature = "metrics")]
+pub fn init_messaging_service(
+    config: &ServerConfig,
+    pool: Option<StoragePool>,
+    metrics: Option<Arc<MetricsContext>>,
+) -> MessagingService {
+    let origin = config.server_name().to_string();
+    let service = if let Some(pool) = pool {
+        MessagingService::new_with_pool(pool, origin)
+    } else {
+        MessagingService::new_in_memory(origin)
+    };
+    service.with_metrics(metrics)
+}
+
+#[cfg(not(feature = "metrics"))]
 pub fn init_messaging_service(
     config: &ServerConfig,
     pool: Option<StoragePool>,
