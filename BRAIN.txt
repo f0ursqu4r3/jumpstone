@@ -19,13 +19,15 @@ Context Snapshot (updated 2025-10-13 00:12Z)
 - Outstanding follow-ups:
   * Extend metrics instrumentation to cover messaging/WebSocket paths (histograms + queue depth gauges) once the observability sprint starts.
   * Replace the in-memory authenticator with SQLx-backed credential storage when the user schema lands; revisit session issuance to include refresh tokens + revocation plumbing.
-  * Finalise payload validation/size limits and authz checks on messaging endpoints (currently accept any sender string).
+  * Finalise payload validation/size limits and authz checks on messaging endpoints (currently accept any sender string); align with upcoming auth/session work.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
 
 Notes for next agent (2025-10-13):
-- Messaging CRUD/WebSocket stack is live; coordinate with frontend to consume the new REST + WS APIs documented in docs/API.md. Consider adding auth/ACLs before exposing beyond dev environments.
+- Messaging CRUD/WebSocket stack is live; coordinate with frontend to consume the new REST + WS APIs documented in docs/API.md and capture any schema tweaks they need (e.g., sender identity shape, pagination).
 - Metrics backlog: extend Prometheus coverage to WebSocket/message pipelines and channel broadcast saturation once we enter Week 5 observability work.
+- Begin drafting the credential storage schema (users + memberships) so Week 5 auth hardening can start quickly; confirm with product how guild/channel membership should be authorised.
+- Consider preparing migration scaffolding/tests for the upcoming user tables and message retention knobs.
 - Readiness path now retains a pooled handle (via `StoragePool`) while still using eager connect at startup.
 - CI plan documented in docs/CI_PLAN.md; no workflow file yet.
 - Makefile targets available (`make fmt`, `make lint`, `make check`, `make test`, `make test-metrics`).
