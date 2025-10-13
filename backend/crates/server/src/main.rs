@@ -20,16 +20,16 @@ use axum::{
 };
 use clap::Parser;
 use serde::Serialize;
-use std::{
-    net::SocketAddr,
-    sync::Arc,
-    time::{Duration, Instant},
-};
 #[cfg(feature = "metrics")]
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
+};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 #[cfg(test)]
 use tokio::sync::Notify;
@@ -968,11 +968,7 @@ mod tests {
                 }
             }
 
-            fn record_debug(
-                &mut self,
-                field: &tracing::field::Field,
-                value: &dyn std::fmt::Debug,
-            ) {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
                 if field.name() == "request_id" && self.request_id.is_none() {
                     let rendered = format!("{value:?}");
                     self.request_id = Some(rendered.trim_matches('"').to_string());
@@ -1399,8 +1395,7 @@ mod tests {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
         let config = test_config();
-        let mut messaging =
-            messaging::MessagingService::new_in_memory(config.server_name.clone());
+        let mut messaging = messaging::MessagingService::new_in_memory(config.server_name.clone());
         messaging.set_max_websocket_connections(0);
         let messaging = Arc::new(messaging);
 
