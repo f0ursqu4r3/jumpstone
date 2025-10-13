@@ -57,14 +57,14 @@ This living document tracks backend-focused milestones, weekly targets, and shar
 
 ## Week 5: Observability & Reliability (Milestone M0 to M1 prep)
 
-- [ ] Implement structured tracing propagation and request IDs.
-  - [ ] Add middleware injecting correlation IDs and span context.
-  - [ ] Propagate identifiers through HTTP responses and WebSocket frames.
-  - [ ] Snapshot logs within tests to prove propagation.
-- [ ] Establish metrics and alerting baseline.
-  - [ ] Integrate Prometheus exporter and expose `/metrics` route.
-  - [ ] Instrument DB pool, WebSocket clients, and request latencies.
-  - [ ] Write tests that scrape metrics and assert key counters/gauges.
+- [x] Implement structured tracing propagation and request IDs.
+  - [x] Add middleware injecting correlation IDs and span context.
+  - [x] Propagate identifiers through HTTP responses and WebSocket frames.
+  - [x] Snapshot logs within tests to prove propagation.
+- [x] Establish metrics and alerting baseline.
+  - [x] Integrate Prometheus exporter and expose `/metrics` route.
+  - [x] Instrument DB pool, WebSocket clients, and request latencies.
+  - [x] Write tests that scrape metrics and assert key counters/gauges.
 - [ ] Upgrade local + CI observability tooling.
   - [ ] Extend Docker Compose with Prometheus and Grafana services.
   - [ ] Document Grafana dashboards plus default alert thresholds.
