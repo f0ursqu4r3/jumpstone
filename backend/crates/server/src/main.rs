@@ -1015,7 +1015,7 @@ mod tests {
     use crate::metrics::MetricsContext;
     use crate::{messaging, session};
     use axum::body::{to_bytes, Body};
-    use axum::http::{Request, StatusCode};
+    use axum::http::{HeaderValue, Request, StatusCode};
     use base64::Engine;
     use chrono::Utc;
     use futures::StreamExt;
@@ -1047,6 +1047,36 @@ mod tests {
 
     fn default_session_context() -> Arc<SessionContext> {
         session::tests::empty_session_context().context.clone()
+    }
+
+    const TEST_USER_IDENTIFIER: &str = "tester@example.org";
+    const TEST_USER_SECRET: &str = "test-secret";
+    const TEST_DEVICE_ID: &str = "test-device";
+
+    async fn session_with_logged_in_user(
+    ) -> (session::tests::SessionTestHarness, String, Uuid) {
+        let harness = session::tests::empty_session_context();
+        let user_id = Uuid::new_v4();
+        harness
+            .register_user(TEST_USER_IDENTIFIER, TEST_USER_SECRET, user_id)
+            .await;
+        let attempt = session::LoginAttempt {
+            identifier: TEST_USER_IDENTIFIER.to_string(),
+            secret: TEST_USER_SECRET.to_string(),
+            device: session::DeviceContext {
+                device_id: TEST_DEVICE_ID.to_string(),
+                device_name: Some("Test Device".to_string()),
+                user_agent: Some("server-tests".to_string()),
+                ip_address: None,
+            },
+        };
+        let login = harness
+            .context
+            .login(attempt)
+            .await
+            .expect("login succeeds")
+            .expect("login response");
+        (harness, format!("Bearer {}", login.access_token), user_id)
     }
 
     fn app_state_with_default_session(
@@ -1520,9 +1550,11 @@ mod tests {
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
             config.server_name.clone(),
         ));
+        let (session_harness, auth_header, user_id) = session_with_logged_in_user().await;
         let state = AppState::new(config, storage_unconfigured(), messaging)
-            .with_session(default_session_context());
+            .with_session(session_harness.context.clone());
         let app = build_app(state);
+        let authorization = auth_header.as_str();
 
         let response = app
             .clone()
@@ -1531,6 +1563,7 @@ mod tests {
                     .method("POST")
                     .uri("/guilds")
                     .header("content-type", "application/json")
+                    .header("authorization", authorization)
                     .body(Body::from(r#"{"name":"Test Guild"}"#))
                     .unwrap(),
             )
@@ -1547,6 +1580,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri("/guilds")
+                    .header("authorization", authorization)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1565,6 +1599,7 @@ mod tests {
                     .method("POST")
                     .uri(&create_channel_uri)
                     .header("content-type", "application/json")
+                    .header("authorization", authorization)
                     .body(Body::from(r#"{"name":"general"}"#))
                     .unwrap(),
             )
@@ -1582,8 +1617,12 @@ mod tests {
                     .method("POST")
                     .uri(&message_uri)
                     .header("content-type", "application/json")
+                    .header("authorization", authorization)
                     .body(Body::from(
-                        r#"{"sender":"@user:example.org","content":"hello world"}"#,
+                        format!(
+                            "{{\"sender\":\"{}\",\"content\":\"hello world\"}}",
+                            user_id
+                        ),
                     ))
                     .unwrap(),
             )
@@ -1601,9 +1640,11 @@ mod tests {
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
             config.server_name.clone(),
         ));
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
         let state = AppState::new(config, storage_unconfigured(), messaging)
-            .with_session(default_session_context());
+            .with_session(session_harness.context.clone());
         let app = build_app(state);
+        let authorization = auth_header.as_str();
 
         let bogus_guild = Uuid::new_v4();
         let response = app
@@ -1612,6 +1653,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/guilds/{bogus_guild}/channels"))
                     .header("content-type", "application/json")
+                    .header("authorization", authorization)
                     .body(Body::from(r#"{"name":"general"}"#))
                     .unwrap(),
             )
@@ -1627,9 +1669,11 @@ mod tests {
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
             config.server_name.clone(),
         ));
+        let (session_harness, auth_header, user_id) = session_with_logged_in_user().await;
         let state = AppState::new(config, storage_unconfigured(), messaging)
-            .with_session(default_session_context());
+            .with_session(session_harness.context.clone());
         let app = build_app(state);
+        let authorization = auth_header.as_str();
 
         let channel_id = Uuid::new_v4();
         let response = app
@@ -1638,8 +1682,12 @@ mod tests {
                     .method("POST")
                     .uri(format!("/channels/{channel_id}/messages"))
                     .header("content-type", "application/json")
+                    .header("authorization", authorization)
                     .body(Body::from(
-                        r#"{"sender":"@user:example.org","content":"hello world"}"#,
+                        format!(
+                            "{{\"sender\":\"{}\",\"content\":\"hello world\"}}",
+                            user_id
+                        ),
                     ))
                     .unwrap(),
             )
@@ -1651,12 +1699,15 @@ mod tests {
 
     #[tokio::test]
     async fn channel_socket_returns_not_found_for_unknown_channel() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
             config.server_name.clone(),
         ));
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
         let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
-            .with_session(default_session_context());
+            .with_session(session_harness.context.clone());
         let app = build_app(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1668,7 +1719,14 @@ mod tests {
         });
 
         let url = format!("ws://{}/channels/{}/ws", addr, Uuid::new_v4());
-        match connect_async(url).await {
+        let mut request = url.into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert(
+                "authorization",
+                HeaderValue::from_str(&auth_header).expect("authorization header"),
+            );
+        match connect_async(request).await {
             Ok(_) => panic!("handshake unexpectedly succeeded"),
             Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
                 assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -1694,8 +1752,9 @@ mod tests {
             .await
             .unwrap();
 
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
         let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
-            .with_session(default_session_context());
+            .with_session(session_harness.context.clone());
 
         let writer = CaptureWriter::default();
         let subscriber =
@@ -1718,6 +1777,12 @@ mod tests {
         request
             .headers_mut()
             .insert("x-request-id", request_id.parse().unwrap());
+        request
+            .headers_mut()
+            .insert(
+                "authorization",
+                HeaderValue::from_str(&auth_header).expect("authorization header"),
+            );
 
         match connect_async(request).await {
             Ok(_) => panic!("handshake unexpectedly succeeded"),
@@ -1738,6 +1803,8 @@ mod tests {
 
     #[tokio::test]
     async fn websocket_broadcasts_events() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
             config.server_name.clone(),
@@ -1748,8 +1815,9 @@ mod tests {
             .await
             .unwrap();
 
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
         let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
-            .with_session(default_session_context());
+            .with_session(session_harness.context.clone());
         let app = build_app(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1761,7 +1829,14 @@ mod tests {
         });
 
         let url = format!("ws://{}/channels/{}/ws", addr, channel.channel_id);
-        let (mut socket, _) = connect_async(url).await.unwrap();
+        let mut request = url.into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert(
+                "authorization",
+                HeaderValue::from_str(&auth_header).expect("authorization header"),
+            );
+        let (mut socket, _) = connect_async(request).await.unwrap();
 
         messaging
             .append_message(channel.channel_id, "@user:example.org", "hi there")

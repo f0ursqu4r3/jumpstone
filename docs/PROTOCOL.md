@@ -14,7 +14,7 @@ This document expands on the federation model outlined in `../BRIEF.md`.
   - `event_id`: `$`-prefixed UUID v4 string generated client-side by the homeserver.
   - `room_id`: stringified `channel_id` (`UUID`), reused for future multi-homeserver rooms.
   - `event_type`: `"message"` for chat payloads (more types will follow).
-  - `sender`: fully-qualified user identifier (proto format `@user:server`).
+  - `sender`: authenticated user identifier (currently a UUID string sourced from the access token subject).
   - `origin_server`: hostname reported by the current server instance (`ServerConfig::host`).
   - `origin_ts`: millisecond timestamp captured when the event is built.
   - `content`: JSON object containing domain-specific payload (`{ "content": "<body>" }` for MVP).

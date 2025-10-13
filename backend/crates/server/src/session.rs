@@ -4,14 +4,19 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use axum::{
     extract::State,
-    http::{header::USER_AGENT, HeaderMap, StatusCode},
+    http::{
+        header::{AUTHORIZATION, USER_AGENT},
+        HeaderMap, StatusCode,
+    },
     response::{IntoResponse, Response},
     Json,
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
-use openguild_crypto::{signing_key_from_base64, verifying_key_from_base64, SigningKeyRing};
+use openguild_crypto::{
+    signing_key_from_base64, verifying_key_from_base64, Signature, SigningKeyRing,
+};
 use openguild_storage::{
     CredentialError, DeviceMetadata, NewRefreshSession, PersistedSession, RefreshSessionRecord,
     RefreshSessionStore, SessionPersistence, StoragePool, UserRepository,
@@ -106,6 +111,14 @@ pub struct RefreshTokenRecord {
     pub device: DeviceContext,
 }
 
+#[derive(Debug, Clone)]
+pub struct AccessTokenClaims {
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    pub issued_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
 #[derive(Clone)]
 pub struct SessionContext {
     signer: SessionSigner,
@@ -171,6 +184,10 @@ impl SessionContext {
             return Ok(None);
         }
 
+        self.repository
+            .touch_refresh_session(refresh_id, Utc::now())
+            .await?;
+
         let session_record = self.build_record(stored.user_id);
         let access_token = self.signer.sign(&session_record)?;
         self.repository.persist_session(&session_record).await?;
@@ -190,6 +207,22 @@ impl SessionContext {
             refresh_token,
             refresh_expires_at: stored_refresh.expires_at,
         }))
+    }
+
+    pub fn verify_access_token(&self, token: &str) -> Result<Option<AccessTokenClaims>> {
+        match self.signer.verify(token) {
+            Ok(claims) => {
+                if claims.expires_at <= Utc::now() {
+                    Ok(None)
+                } else {
+                    Ok(Some(claims))
+                }
+            }
+            Err(err) => {
+                tracing::debug!(?err, "access token verification failed");
+                Ok(None)
+            }
+        }
     }
 
     pub async fn revoke(&self, token: &str) -> Result<bool> {
@@ -261,6 +294,37 @@ fn decode_refresh_token(token: &str) -> Result<Uuid> {
     Ok(Uuid::from_bytes(arr))
 }
 
+pub fn authenticate_bearer(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<AccessTokenClaims, StatusCode> {
+    let header = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim);
+
+    let value = match header {
+        Some(value) if !value.is_empty() => value,
+        _ => return Err(StatusCode::UNAUTHORIZED),
+    };
+
+    let token = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    match state.session().verify_access_token(token) {
+        Ok(Some(claims)) => Ok(claims),
+        Ok(None) => Err(StatusCode::UNAUTHORIZED),
+        Err(err) => {
+            tracing::error!(?err, "failed to verify access token");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SessionSigner {
     key_ring: SigningKeyRing,
@@ -303,6 +367,42 @@ impl SessionSigner {
         );
         Ok(token)
     }
+
+    pub fn verify(&self, token: &str) -> Result<AccessTokenClaims> {
+        let mut components = token.split('.');
+        let payload_b64 = components
+            .next()
+            .ok_or_else(|| anyhow!("access token missing payload"))?;
+        let signature_b64 = components
+            .next()
+            .ok_or_else(|| anyhow!("access token missing signature"))?;
+        if components.next().is_some() {
+            return Err(anyhow!("access token contains unexpected components"));
+        }
+
+        let payload = URL_SAFE_NO_PAD
+            .decode(payload_b64.as_bytes())
+            .map_err(|_| anyhow!("failed to decode access token payload"))?;
+        let signature_bytes = URL_SAFE_NO_PAD
+            .decode(signature_b64.as_bytes())
+            .map_err(|_| anyhow!("failed to decode access token signature"))?;
+        if signature_bytes.len() != 64 {
+            return Err(anyhow!("invalid access token signature length"));
+        }
+        let mut sig_arr = [0u8; 64];
+        sig_arr.copy_from_slice(&signature_bytes);
+        let signature = Signature::from_bytes(&sig_arr);
+
+        self.key_ring.verify(&payload, &signature)?;
+
+        let claims: SessionClaimsOwned = serde_json::from_slice(&payload)?;
+        Ok(AccessTokenClaims {
+            session_id: claims.session_id,
+            user_id: claims.user_id,
+            issued_at: claims.issued_at,
+            expires_at: claims.expires_at,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -332,6 +432,14 @@ impl<'a> From<&'a SessionRecord> for SessionClaims<'a> {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct SessionClaimsOwned {
+    session_id: Uuid,
+    user_id: Uuid,
+    issued_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone)]
 pub struct LoginAttempt {
     pub identifier: String,
@@ -356,15 +464,12 @@ pub trait SessionRepository: Send + Sync {
         &self,
         record: &RefreshTokenRecord,
     ) -> Result<RefreshTokenRecord>;
-    #[allow(dead_code)]
     async fn touch_refresh_session(&self, refresh_id: Uuid, used_at: DateTime<Utc>) -> Result<()>;
-    #[allow(dead_code)]
     async fn revoke_refresh_session(
         &self,
         refresh_id: Uuid,
         revoked_at: DateTime<Utc>,
     ) -> Result<()>;
-    #[allow(dead_code)]
     async fn find_refresh_session(&self, refresh_id: Uuid) -> Result<Option<RefreshTokenRecord>>;
 }
 

@@ -13,7 +13,7 @@ use axum::{
         ws::{Message as WsMessage, WebSocket},
         MatchedPath, Path, State, WebSocketUpgrade,
     },
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::Response,
     Extension, Json,
 };
@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 #[cfg(feature = "metrics")]
 use crate::metrics::MetricsContext;
-use crate::{config::ServerConfig, AppState};
+use crate::{config::ServerConfig, session, AppState};
 use tower_http::request_id::RequestId;
 use tracing::Instrument;
 
@@ -573,6 +573,7 @@ pub struct PostMessageResponse {
 pub async fn create_guild(
     matched_path: MatchedPath,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<CreateGuildRequest>,
 ) -> Result<Json<CreateGuildResponse>, StatusCode> {
     let Some(messaging) = state.messaging() else {
@@ -581,6 +582,12 @@ pub async fn create_guild(
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
 
     let name = body.name.trim();
     #[cfg(not(feature = "metrics"))]
@@ -616,6 +623,7 @@ pub async fn create_guild(
 pub async fn list_guilds(
     matched_path: MatchedPath,
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<Vec<CreateGuildResponse>>, StatusCode> {
     let Some(messaging) = state.messaging() else {
         let status = StatusCode::SERVICE_UNAVAILABLE;
@@ -623,6 +631,12 @@ pub async fn list_guilds(
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
@@ -655,6 +669,7 @@ pub async fn list_guilds(
 pub async fn create_channel(
     matched_path: MatchedPath,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(guild_id): Path<Uuid>,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Json<CreateChannelResponse>, StatusCode> {
@@ -664,6 +679,12 @@ pub async fn create_channel(
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
@@ -706,6 +727,7 @@ pub async fn create_channel(
 pub async fn list_channels(
     matched_path: MatchedPath,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(guild_id): Path<Uuid>,
 ) -> Result<Json<Vec<CreateChannelResponse>>, StatusCode> {
     let Some(messaging) = state.messaging() else {
@@ -714,6 +736,12 @@ pub async fn list_channels(
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
@@ -753,6 +781,7 @@ pub async fn list_channels(
 pub async fn post_message(
     matched_path: MatchedPath,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(channel_id): Path<Uuid>,
     Json(body): Json<PostMessageRequest>,
 ) -> Result<Json<PostMessageResponse>, StatusCode> {
@@ -763,20 +792,45 @@ pub async fn post_message(
         return Err(status);
     };
 
+    let claims = match session::authenticate_bearer(&state, &headers) {
+        Ok(claims) => claims,
+        Err(status) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+    };
+
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
 
-    let sender = body.sender.trim();
+    let sender_claim = claims.user_id.to_string();
+    let requested_sender = body.sender.trim();
     let content = body.content.trim();
 
-    if sender.is_empty() || content.is_empty() {
+    if content.is_empty() {
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     }
 
-    match messaging.append_message(channel_id, sender, content).await {
+    let sender = if requested_sender.is_empty() {
+        sender_claim.clone()
+    } else {
+        if requested_sender != sender_claim {
+            let status = StatusCode::FORBIDDEN;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+        sender_claim.clone()
+    };
+
+    match messaging
+        .append_message(channel_id, sender.as_str(), content)
+        .await
+    {
         Ok(event) => {
             #[cfg(feature = "metrics")]
             state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
@@ -805,6 +859,7 @@ pub async fn post_message(
 pub async fn channel_socket(
     matched_path: MatchedPath,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(channel_id): Path<Uuid>,
     Extension(request_id): Extension<RequestId>,
     ws: WebSocketUpgrade,
@@ -815,6 +870,12 @@ pub async fn channel_socket(
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;

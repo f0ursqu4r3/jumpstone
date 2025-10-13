@@ -91,7 +91,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Document credential bootstrap + password policy updates in `docs/API.md` and `docs/SETUP.md`.
   - [ ] Schedule follow-up to revisit refresh token design decisions once telemetry lands.
 - [ ] Lock down messaging surface area.
-  - [ ] Enforce authz checks on messaging CRUD/WebSocket routes and align `docs/PROTOCOL.md` with required identity.
+  - [x] Enforce authz checks on messaging CRUD/WebSocket routes and align `docs/PROTOCOL.md` with required identity (2025-10-13).
   - [ ] Finalize payload validation and size limits; wire metrics/alerts for abuse detection.
   - [ ] Extend integration tests to cover unauthorized access, missing identity, and rate-limit boundaries.
 - [ ] Level up threat modelling and security headers.
