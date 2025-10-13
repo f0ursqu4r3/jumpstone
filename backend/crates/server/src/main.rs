@@ -1671,6 +1671,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_guilds_requires_bearer_token() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/guilds")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn create_channel_requires_bearer_token() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Authz Guild")
+            .await
+            .expect("guild creation");
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/guilds/{}/channels", guild.guild_id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"general"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn post_message_requires_bearer_token() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Authz Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/channels/{}/messages", channel.channel_id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"sender":"00000000-0000-0000-0000-000000000000","content":"hello"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
     async fn create_channel_rejects_long_name() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
@@ -1778,6 +1866,44 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn websocket_requires_bearer_token() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Unauthorized Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service())
+                .await
+                .expect("unauthorized websocket test server error");
+        });
+
+        let url = format!("ws://{}/channels/{}/ws", addr, channel.channel_id);
+        match connect_async(url).await {
+            Ok(_) => panic!("handshake unexpectedly succeeded without authorization"),
+            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            }
+            Err(err) => panic!("unexpected websocket error: {err:?}"),
+        }
+
+        server.abort();
     }
 
     #[tokio::test]
