@@ -4,12 +4,15 @@ mod messaging;
 mod metrics;
 mod session;
 
+const REQUEST_ID_HEADER: &str = "x-request-id";
+
 #[cfg(feature = "metrics")]
 use anyhow::Context;
 use anyhow::Result;
 use axum::{
     body::HttpBody,
     extract::{MatchedPath, State},
+    http::header::HeaderName,
     routing::{get, post},
     Json, Router,
 };
@@ -36,12 +39,19 @@ use tokio::sync::Notify;
 use tokio::{net::TcpListener, signal};
 use tower::ServiceBuilder;
 use tower_http::{
-    request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
+    propagate_header::PropagateHeaderLayer,
+    request_id::{MakeRequestUuid, RequestId, SetRequestIdLayer},
     trace::TraceLayer,
 };
-use tracing::{error, info, Level};
-use tracing_subscriber::fmt::writer::MakeWriter;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing::field::{Field, Visit};
+use tracing::{error, info, Event, Subscriber};
+use tracing_subscriber::fmt::{
+    format::Format as FmtFormat, format::Writer as FmtWriter, writer::MakeWriter, FmtContext,
+    FormatEvent, FormatFields,
+};
+use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::{EnvFilter, Layer};
 
 #[cfg(test)]
 use once_cell::sync::Lazy;
@@ -533,14 +543,16 @@ fn build_app(state: AppState) -> Router {
         }
     }
 
+    let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
+
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(HttpSpanMaker::default())
         .on_response(HttpOnResponse::new());
 
     let builder = ServiceBuilder::new()
-        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(PropagateHeaderLayer::new(request_id_header.clone()))
         .layer(trace_layer)
-        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
+        .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid));
 
     #[cfg(feature = "metrics")]
     let builder = builder.layer(MetricsRecorderLayer::new(metrics_ctx.clone()));
@@ -572,7 +584,8 @@ where
             .extensions()
             .get::<RequestId>()
             .and_then(|rid| rid.header_value().to_str().ok())
-            .unwrap_or("unknown");
+            .map(|value| value.to_owned())
+            .unwrap_or_else(|| "unknown".to_string());
 
         tracing::info_span!(
             "http.request",
@@ -675,12 +688,18 @@ where
     ) {
         let latency_ms = latency.as_secs_f64() * 1000.0;
         let status = response.status().as_u16();
+        let request_id = response
+            .headers()
+            .get(REQUEST_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unknown");
 
         span.record("status_code", &tracing::field::display(status));
         span.record("latency_ms", &tracing::field::display(latency_ms));
 
         tracing::debug!(
             parent: span,
+            request_id = %request_id,
             status = status,
             latency_ms,
             "request completed"
@@ -694,36 +713,143 @@ fn build_subscriber_with_writer<W>(
     writer: W,
 ) -> Box<dyn tracing::Subscriber + Send + Sync>
 where
-    W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+    W: for<'a> MakeWriter<'a> + Send + Sync + Clone + 'static,
 {
-    let builder = fmt()
-        .with_env_filter(env_filter)
-        .with_target(true)
-        .with_level(true)
-        .with_max_level(Level::INFO)
-        .with_writer(writer);
-
-    if json {
-        Box::new(builder.json().finish())
-    } else {
-        Box::new(builder.compact().finish())
-    }
+    build_subscriber_inner(json, env_filter, writer)
 }
 
 fn build_subscriber(
     json: bool,
     env_filter: EnvFilter,
 ) -> Box<dyn tracing::Subscriber + Send + Sync> {
-    let builder = fmt()
-        .with_env_filter(env_filter)
-        .with_target(true)
-        .with_level(true)
-        .with_max_level(Level::INFO);
+    build_subscriber_inner(json, env_filter, || std::io::stderr())
+}
 
+#[derive(Default)]
+struct RequestIdStorageLayer;
+
+#[derive(Clone)]
+struct RequestIdExtension(String);
+
+impl RequestIdExtension {
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Default)]
+struct RequestIdVisitor {
+    request_id: Option<String>,
+}
+
+impl Visit for RequestIdVisitor {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "request_id" {
+            self.request_id = Some(value.to_string());
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "request_id" && self.request_id.is_none() {
+            self.request_id = Some(format!("{value:?}"));
+        }
+    }
+}
+
+impl<S> Layer<S> for RequestIdStorageLayer
+where
+    S: Subscriber + for<'span> LookupSpan<'span>,
+{
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        id: &tracing::Id,
+        ctx: LayerContext<'_, S>,
+    ) {
+        if let Some(span) = ctx.span(id) {
+            let mut visitor = RequestIdVisitor::default();
+            attrs.record(&mut visitor);
+            if let Some(mut request_id) = visitor.request_id {
+                if request_id.starts_with('"') && request_id.ends_with('"') && request_id.len() >= 2
+                {
+                    request_id = request_id.trim_matches('"').to_string();
+                }
+                span.extensions_mut().insert(RequestIdExtension(request_id));
+            }
+        }
+    }
+}
+
+struct RequestIdEventFormat<E> {
+    inner: E,
+}
+
+impl<E> RequestIdEventFormat<E> {
+    fn new(inner: E) -> Self {
+        Self { inner }
+    }
+}
+
+impl<S, N, E> FormatEvent<S, N> for RequestIdEventFormat<E>
+where
+    S: Subscriber + for<'span> LookupSpan<'span>,
+    N: for<'writer> FormatFields<'writer> + 'static,
+    E: FormatEvent<S, N>,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: FmtWriter<'_>,
+        event: &Event<'_>,
+    ) -> std::fmt::Result {
+        if let Some(span) = ctx.lookup_current() {
+            if let Some(request_id) = span.extensions().get::<RequestIdExtension>() {
+                write!(writer, "[request_id={}] ", request_id.as_str())?;
+            }
+        }
+
+        self.inner.format_event(ctx, writer, event)
+    }
+}
+
+fn build_subscriber_inner<W>(
+    json: bool,
+    env_filter: EnvFilter,
+    make_writer: W,
+) -> Box<dyn tracing::Subscriber + Send + Sync>
+where
+    W: for<'a> MakeWriter<'a> + Send + Sync + Clone + 'static,
+{
     if json {
-        Box::new(builder.json().finish())
+        let format = FmtFormat::default()
+            .with_target(true)
+            .with_level(true)
+            .json();
+
+        Box::new(
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(RequestIdStorageLayer::default())
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .json()
+                        .event_format(RequestIdEventFormat::new(format))
+                        .with_writer(make_writer),
+                ),
+        )
     } else {
-        Box::new(builder.compact().finish())
+        let format = FmtFormat::default().with_target(true).with_level(true);
+
+        Box::new(
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(RequestIdStorageLayer::default())
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .event_format(RequestIdEventFormat::new(format))
+                        .with_writer(make_writer),
+                ),
+        )
     }
 }
 
