@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-13 01:19Z)
+Context Snapshot (updated 2025-10-13 01:22Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -18,6 +18,7 @@ Context Snapshot (updated 2025-10-13 01:19Z)
   * `MetricsContext` currently holds only `http_requests_total` and `db_ready`; extend with histograms (latency), gauges (WebSocket connection depth), and counters for message flow/backpressure once instrumentation design settles.
   * `ServerConfig.metrics.bind_addr` is validated but unused - decide whether to spin a distinct metrics listener or drop the field before we freeze config.
   * WebSocket fan-out has no metrics/log correlation; plan to emit per-channel connection/change events (gated behind metrics feature) and capture queue depth/backpressure stats.
+  * Docs vs implementation: `docs/PROTOCOL.md` claims event IDs derive from BLAKE3 hashes, but `EventBuilder::build` still emits `$`-prefixed UUID v4 strings; either update the spec or wire the hash-based ID before federation work ramps.
 - Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (metrics gating optional). WebSocket integration test requires Tokio runtime (runs by default).
 - Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql` (guilds/channels/channel_events schema).
 - Docs touched: docs/SETUP.md (session key + DB persistence notes), docs/TIMELINE.md (Weeks 1-4 updated), docs/API.md (sessions + guild/channel/message routes + WebSocket), docs/PROTOCOL.md (event envelope + guardrails), docs/CI_PLAN.md (matrix outline).
@@ -29,7 +30,7 @@ Context Snapshot (updated 2025-10-13 01:19Z)
   * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
-Notes for next agent (2025-10-13 01:19Z):
+Notes for next agent (2025-10-13 01:22Z):
 - Messaging CRUD/WebSocket stack is live; sync with frontend on any schema tweaks (sender identity, pagination cursors) as they build against docs/API.md.
 - Prioritise observability sprint kickoff: introduce request ID/tracing layers, wire Prometheus metrics for HTTP + WebSocket flows, and capture regression tests (log snapshot + metrics scrape).
 - Revisit `ServerConfig.metrics.bind_addr` usage before adding new listeners - either honour it (spawn secondary Axum server) or remove from config to avoid drift.
@@ -38,3 +39,4 @@ Notes for next agent (2025-10-13 01:19Z):
 - CI plan lives in docs/CI_PLAN.md; workflows still missing.
 - Use Makefile helpers (`make fmt`, `make lint`, `make check`, `make test`, `make test-metrics`) to keep the workspace tidy.
 - Keep BRAIN.txt current; still our ad-hoc handoff channel.
+- Align documentation with implementation: either update `docs/PROTOCOL.md` to note `$`-prefixed UUID event IDs or implement the advertised BLAKE3-derived identifiers before frontend/federation consumers rely on them.
