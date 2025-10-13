@@ -20,6 +20,7 @@ Context Snapshot (updated 2025-10-13 04:39Z)
   * Integration test (`websocket_broadcasts_events`) exercises fan-out via `tokio_tungstenite` to guard regressions.
   * Persistent credential storage: added `0004_create_users.sql` with Argon2 hashed passwords and a SQLx-backed `UserRepository`; login now verifies against Postgres when available.
   * Developer tooling now ships a dedicated `xtask` binary (`fmt`, `lint`, `test`, `ci`, `ci-metrics-smoke`) for cross-platform workflows.
+  * Week 6 kickoff: implemented refresh-token lifecycle (SigningKeyRing + CLI/env fallbacks), new `refresh_sessions` table with device metadata, and login responses now emit paired access/refresh tokens (unit tests cover issuance).
 - Week 5 observability prep:
   * Request IDs now flow through tracing/log spans for both HTTP requests and WebSocket upgrades (capture tests verify span enrichment + header propagation); next step is documenting downstream usage and validating log-sink adoption.
   * Added a tower-based latency recorder so `MetricsContext` captures duration histograms alongside counters; new messaging counters (delivered/no_subscribers/dropped) and WebSocket queue depth gauges surface via `/metrics`.
@@ -47,6 +48,10 @@ Notes for next agent (2025-10-13 04:39Z):
 - CI plan lives in docs/CI_PLAN.md; workflows still missing.
 - Prefer `cargo xtask fmt|lint|test|ci` for routine Rust workflows; legacy Makefile targets now wrap xtask.
 - Keep BRAIN.txt current; still our ad-hoc handoff channel.
+
+Week 6 current gaps / TODOs:
+- [ ] Document the refreshed login contract (device metadata requirement + refresh token response) in docs/API.md and docs/PROTOCOL.md; coordinate with frontend for `device_id` enforcement.
+- [ ] Plan revoke/rotate flows (API surface + CLI tooling) building on refresh session store scaffolding.
 
 
 
