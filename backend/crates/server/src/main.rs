@@ -21,7 +21,7 @@ use axum::{
     http::{header::CONTENT_TYPE, StatusCode},
     response::IntoResponse,
 };
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use serde::Serialize;
 #[cfg(feature = "metrics")]
 use std::{
@@ -173,10 +173,17 @@ struct CliOptions {
     database_url: Option<String>,
     #[arg(long)]
     session_signing_key: Option<String>,
+    #[arg(long = "session-fallback-verifying-key", action = ArgAction::Append)]
+    session_fallback_verifying_key: Vec<String>,
 }
 
 impl CliOptions {
     fn into_overrides(self) -> CliOverrides {
+        let fallback_keys = if self.session_fallback_verifying_key.is_empty() {
+            None
+        } else {
+            Some(self.session_fallback_verifying_key)
+        };
         CliOverrides {
             bind_addr: self.bind_addr,
             host: self.host,
@@ -187,6 +194,7 @@ impl CliOptions {
             metrics_bind_addr: self.metrics_bind_addr,
             database_url: self.database_url,
             session_signing_key: self.session_signing_key,
+            session_fallback_verifying_keys: fallback_keys,
         }
     }
 }
@@ -219,11 +227,29 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
     };
 
     let session_signer = SessionSigner::from_config(&config.session)?;
-    if config.session.signing_key.is_none() {
-        info!(
-            verifying_key = %session_signer.verifying_key_base64(),
-            "no session signing key supplied; generated ephemeral key"
-        );
+    match (
+        config.session.active_signing_key.is_some(),
+        config.session.fallback_verifying_keys.is_empty(),
+    ) {
+        (false, _) => {
+            info!(
+                verifying_key = %session_signer.verifying_key_base64(),
+                "no session signing key supplied; generated ephemeral key"
+            );
+        }
+        (true, false) => {
+            info!(
+                active_verifying_key = %session_signer.verifying_key_base64(),
+                fallback_keys = %config.session.fallback_verifying_keys.len(),
+                "session signing key configured with rotation fallbacks"
+            );
+        }
+        (true, true) => {
+            info!(
+                verifying_key = %session_signer.verifying_key_base64(),
+                "session signing key loaded from configuration"
+            );
+        }
     }
     let (authenticator, repository): (
         Arc<dyn session::SessionAuthenticator>,
@@ -1276,7 +1302,9 @@ mod tests {
                     .method("POST")
                     .uri("/sessions/login")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"identifier":"","secret":" "}"#))
+                    .body(Body::from(
+                        r#"{"identifier":"","secret":" ","device":{"device_id":"cli"}}"#,
+                    ))
                     .unwrap(),
             )
             .await
@@ -1309,7 +1337,7 @@ mod tests {
                     .uri("/sessions/login")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"identifier":"alice@example.org","secret":"supersecret"}"#,
+                        r#"{"identifier":"alice@example.org","secret":"supersecret","device":{"device_id":"cli","device_name":"CLI"}}"#,
                     ))
                     .unwrap(),
             )
@@ -1319,12 +1347,14 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let payload: session::LoginResponse = serde_json::from_slice(&body).unwrap();
-        assert!(!payload.token.is_empty());
-        assert!(payload.expires_at > Utc::now());
+        assert!(!payload.access_token.is_empty());
+        assert!(payload.access_expires_at > Utc::now());
+        assert!(!payload.refresh_token.is_empty());
+        assert!(payload.refresh_expires_at > Utc::now());
         assert_eq!(harness.store.session_count().await, 1);
 
         // ensure session contains expected user (decode payload portion)
-        let parts: Vec<&str> = payload.token.split('.').collect();
+        let parts: Vec<&str> = payload.access_token.split('.').collect();
         assert_eq!(parts.len(), 2);
         let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(parts[0])
@@ -1351,7 +1381,7 @@ mod tests {
                     .uri("/sessions/login")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"identifier":"unknown@example.org","secret":"nope"}"#,
+                        r#"{"identifier":"unknown@example.org","secret":"nope","device":{"device_id":"cli"}}"#,
                     ))
                     .unwrap(),
             )
@@ -1697,26 +1727,36 @@ mod tests {
 
     #[test]
     fn cli_overrides_convert_and_apply() {
-        let cli = CliOptions::parse_from([
-            "openguild-server",
-            "--bind-addr",
-            "127.0.0.1:5000",
-            "--host",
-            "127.0.0.1",
-            "--server-name",
-            "app.openguild.test",
-            "--port",
-            "5000",
-            "--log-format",
-            "json",
-            "--metrics-enabled",
-            "true",
-            "--metrics-bind-addr",
-            "127.0.0.1:9100",
-            "--database-url",
-            "postgres://app:secret@localhost/app",
-            "--session-signing-key",
-            "dGVzdC1zZXNzaW9uLWtleQ",
+        let active_signer = openguild_crypto::generate_signing_key();
+        let signing_base64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(active_signer.to_bytes());
+        let fallback_signer = openguild_crypto::generate_signing_key();
+        let fallback_verifier = openguild_crypto::verifying_key_from(&fallback_signer);
+        let fallback_base64 =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(fallback_verifier.to_bytes());
+
+        let cli = CliOptions::parse_from(vec![
+            "openguild-server".into(),
+            "--bind-addr".into(),
+            "127.0.0.1:5000".into(),
+            "--host".into(),
+            "127.0.0.1".into(),
+            "--server-name".into(),
+            "app.openguild.test".into(),
+            "--port".into(),
+            "5000".into(),
+            "--log-format".into(),
+            "json".into(),
+            "--metrics-enabled".into(),
+            "true".into(),
+            "--metrics-bind-addr".into(),
+            "127.0.0.1:9100".into(),
+            "--database-url".into(),
+            "postgres://app:secret@localhost/app".into(),
+            "--session-signing-key".into(),
+            signing_base64.clone(),
+            "--session-fallback-verifying-key".into(),
+            fallback_base64.clone(),
         ]);
 
         let overrides = cli.into_overrides();
@@ -1735,8 +1775,12 @@ mod tests {
             Some("postgres://app:secret@localhost/app")
         );
         assert_eq!(
-            config.session.signing_key.as_deref(),
-            Some("dGVzdC1zZXNzaW9uLWtleQ")
+            config.session.active_signing_key.as_deref(),
+            Some(signing_base64.as_str())
+        );
+        assert_eq!(
+            config.session.fallback_verifying_keys,
+            vec![fallback_base64]
         );
     }
 

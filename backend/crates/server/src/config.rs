@@ -1,5 +1,7 @@
 use std::{net::SocketAddr, str::FromStr};
 
+use base64::Engine;
+use openguild_crypto::{signing_key_from_base64, verifying_key_from_base64};
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, thiserror::Error)]
@@ -8,6 +10,8 @@ pub enum ConfigError {
     Build(#[from] config::ConfigError),
     #[error("invalid bind address: {0}")]
     InvalidBindAddr(String),
+    #[error("invalid session key material: {0}")]
+    InvalidSessionKey(String),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -41,13 +45,19 @@ impl Default for MetricsConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct SessionConfig {
-    /// Base64-encoded ed25519 signing key (32 bytes) used for session tokens.
-    pub signing_key: Option<String>,
+    /// Base64-encoded ed25519 signing key (32 bytes) used for session token signing.
+    #[serde(alias = "signing_key", rename = "signing_key")]
+    pub active_signing_key: Option<String>,
+    /// Optional fallback verifying keys (base64) that remain valid during key rotation.
+    pub fallback_verifying_keys: Vec<String>,
 }
 
 impl Default for SessionConfig {
     fn default() -> Self {
-        Self { signing_key: None }
+        Self {
+            active_signing_key: None,
+            fallback_verifying_keys: Vec::new(),
+        }
     }
 }
 
@@ -131,6 +141,14 @@ impl ServerConfig {
             addr.parse::<SocketAddr>()
                 .map_err(|_| ConfigError::InvalidBindAddr(addr.clone()))?;
         }
+        if let Some(active) = &self.session.active_signing_key {
+            signing_key_from_base64(active)
+                .map_err(|err| ConfigError::InvalidSessionKey(err.to_string()))?;
+        }
+        for key in &self.session.fallback_verifying_keys {
+            verifying_key_from_base64(key)
+                .map_err(|err| ConfigError::InvalidSessionKey(err.to_string()))?;
+        }
         Ok(())
     }
 
@@ -168,7 +186,11 @@ impl ServerConfig {
         }
 
         if let Some(session_signing_key) = &overrides.session_signing_key {
-            self.session.signing_key = Some(session_signing_key.clone());
+            self.session.active_signing_key = Some(session_signing_key.clone());
+        }
+
+        if let Some(fallbacks) = &overrides.session_fallback_verifying_keys {
+            self.session.fallback_verifying_keys = fallbacks.clone();
         }
 
         self.validate()
@@ -186,6 +208,7 @@ pub struct CliOverrides {
     pub metrics_bind_addr: Option<String>,
     pub database_url: Option<String>,
     pub session_signing_key: Option<String>,
+    pub session_fallback_verifying_keys: Option<Vec<String>>,
 }
 
 impl LogFormat {
@@ -225,6 +248,8 @@ mod tests {
     use serial_test::serial;
     use std::env;
 
+    use openguild_crypto::{generate_signing_key, verifying_key_from};
+
     #[test]
     fn defaults_match_expectations() {
         let config = ServerConfig::default();
@@ -233,7 +258,8 @@ mod tests {
         assert_eq!(config.log_format, LogFormat::Compact);
         assert!(!config.metrics.enabled);
         assert!(config.database_url.is_none());
-        assert!(config.session.signing_key.is_none());
+        assert!(config.session.active_signing_key.is_none());
+        assert!(config.session.fallback_verifying_keys.is_empty());
     }
 
     #[test]
@@ -292,6 +318,12 @@ mod tests {
     #[test]
     fn apply_overrides_updates_fields() {
         let mut cfg = ServerConfig::default();
+        let signing_key = generate_signing_key();
+        let signing_base64 =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signing_key.to_bytes());
+        let verifying_key = verifying_key_from(&signing_key);
+        let verifying_base64 =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(verifying_key.to_bytes());
         let overrides = CliOverrides {
             bind_addr: Some("127.0.0.1:9999".into()),
             host: Some("127.0.0.1".into()),
@@ -301,7 +333,8 @@ mod tests {
             metrics_enabled: Some(true),
             metrics_bind_addr: Some("127.0.0.1:9100".into()),
             database_url: Some("postgres://app:secret@localhost/db".into()),
-            session_signing_key: Some("dGVzdC1rZXk=".into()),
+            session_signing_key: Some(signing_base64.clone()),
+            session_fallback_verifying_keys: Some(vec![verifying_base64.clone()]),
         };
 
         cfg.apply_overrides(&overrides).expect("overrides apply");
@@ -316,7 +349,11 @@ mod tests {
             cfg.database_url.as_deref(),
             Some("postgres://app:secret@localhost/db")
         );
-        assert_eq!(cfg.session.signing_key.as_deref(), Some("dGVzdC1rZXk="));
+        assert_eq!(
+            cfg.session.active_signing_key.as_deref(),
+            Some(signing_base64.as_str())
+        );
+        assert_eq!(cfg.session.fallback_verifying_keys, vec![verifying_base64]);
     }
 
     #[test]

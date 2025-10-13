@@ -1,19 +1,20 @@
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header::USER_AGENT, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
-use openguild_crypto::{generate_signing_key, sign_message, verifying_key_from, SigningKey};
+use openguild_crypto::{signing_key_from_base64, verifying_key_from_base64, SigningKeyRing};
 use openguild_storage::{
-    CredentialError, PersistedSession, SessionPersistence, StoragePool, UserRepository,
+    CredentialError, DeviceMetadata, NewRefreshSession, PersistedSession, RefreshSessionRecord,
+    RefreshSessionStore, SessionPersistence, StoragePool, UserRepository,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -22,6 +23,88 @@ use uuid::Uuid;
 use crate::{config::SessionConfig, AppState};
 
 const SESSION_TTL_HOURS: i64 = 12;
+const REFRESH_TTL_DAYS: i64 = 30;
+
+#[derive(Debug, Clone)]
+pub struct DeviceContext {
+    pub device_id: String,
+    pub device_name: Option<String>,
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
+}
+
+impl DeviceContext {
+    fn new(
+        device_id: impl Into<String>,
+        device_name: Option<impl Into<String>>,
+        ip_address: Option<impl Into<String>>,
+    ) -> Self {
+        Self {
+            device_id: device_id.into(),
+            device_name: device_name.map(Into::into),
+            user_agent: None,
+            ip_address: ip_address.map(Into::into).and_then(|ip| {
+                if ip.trim().is_empty() {
+                    None
+                } else {
+                    Some(ip)
+                }
+            }),
+        }
+    }
+
+    fn set_user_agent<S: Into<String>>(&mut self, user_agent: Option<S>) {
+        self.user_agent =
+            user_agent
+                .map(Into::into)
+                .and_then(|ua| if ua.trim().is_empty() { None } else { Some(ua) });
+    }
+
+    fn set_ip_address<S: Into<String>>(&mut self, ip_address: Option<S>) {
+        if let Some(value) = ip_address {
+            let trimmed = value.into();
+            if trimmed.trim().is_empty() {
+                self.ip_address = None;
+            } else {
+                self.ip_address = Some(trimmed);
+            }
+        } else {
+            self.ip_address = None;
+        }
+    }
+
+    fn to_metadata(&self) -> DeviceMetadata {
+        DeviceMetadata::new(
+            self.device_id.clone(),
+            self.device_name.clone(),
+            self.user_agent.clone(),
+            self.ip_address.clone(),
+        )
+    }
+
+    fn from_storage(record: &RefreshSessionRecord) -> Self {
+        Self {
+            device_id: record.device_id.clone(),
+            device_name: record.device_name.clone(),
+            user_agent: record.user_agent.clone(),
+            ip_address: record.ip_address.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RefreshTokenRecord {
+    pub refresh_id: Uuid,
+    pub user_id: Uuid,
+    pub session_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    #[allow(dead_code)]
+    pub last_used_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    #[allow(dead_code)]
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub device: DeviceContext,
+}
 
 #[derive(Clone)]
 pub struct SessionContext {
@@ -29,6 +112,7 @@ pub struct SessionContext {
     authenticator: Arc<dyn SessionAuthenticator>,
     repository: Arc<dyn SessionRepository>,
     ttl: Duration,
+    refresh_ttl: Duration,
 }
 
 impl SessionContext {
@@ -42,6 +126,7 @@ impl SessionContext {
             authenticator,
             repository,
             ttl: Duration::hours(SESSION_TTL_HOURS),
+            refresh_ttl: Duration::days(REFRESH_TTL_DAYS),
         }
     }
 
@@ -52,12 +137,22 @@ impl SessionContext {
         };
 
         let record = self.build_record(user.user_id);
-        let token = self.signer.sign(&record)?;
+        let access_token = self.signer.sign(&record)?;
         self.repository.persist_session(&record).await?;
 
+        let refresh_record =
+            self.build_refresh_record(user.user_id, record.session_id, &attempt.device);
+        let stored_refresh = self
+            .repository
+            .upsert_refresh_session(&refresh_record)
+            .await?;
+        let refresh_token = encode_refresh_token(stored_refresh.refresh_id);
+
         Ok(Some(LoginResponse {
-            token,
-            expires_at: record.expires_at,
+            access_token,
+            access_expires_at: record.expires_at,
+            refresh_token,
+            refresh_expires_at: stored_refresh.expires_at,
         }))
     }
 
@@ -71,40 +166,66 @@ impl SessionContext {
             expires_at,
         }
     }
+
+    fn build_refresh_record(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        device: &DeviceContext,
+    ) -> RefreshTokenRecord {
+        let created_at = Utc::now();
+        let expires_at = created_at + self.refresh_ttl;
+        RefreshTokenRecord {
+            refresh_id: Uuid::new_v4(),
+            user_id,
+            session_id,
+            created_at,
+            last_used_at: created_at,
+            expires_at,
+            revoked_at: None,
+            device: device.clone(),
+        }
+    }
+}
+
+fn encode_refresh_token(refresh_id: Uuid) -> String {
+    URL_SAFE_NO_PAD.encode(refresh_id.as_bytes())
 }
 
 #[derive(Clone)]
 pub struct SessionSigner {
-    signing_key: SigningKey,
+    key_ring: SigningKeyRing,
 }
 
 impl SessionSigner {
     pub fn from_config(config: &SessionConfig) -> Result<Self> {
-        match config.signing_key.as_deref() {
+        let key_ring = match config.active_signing_key.as_deref() {
             Some(raw) => {
-                let decoded = URL_SAFE_NO_PAD.decode(raw.trim()).with_context(|| {
-                    "failed to decode session signing key from base64 (URL-safe)"
+                let signing_key = signing_key_from_base64(raw).with_context(|| {
+                    "failed to decode session signing key from config (url-safe base64 expected)"
                 })?;
-                let bytes: [u8; 32] = decoded
-                    .try_into()
-                    .map_err(|_| anyhow!("session signing key must be 32 bytes"))?;
-                let signing_key = SigningKey::from_bytes(&bytes);
-                Ok(Self { signing_key })
+                let mut fallbacks = Vec::new();
+                for key in &config.fallback_verifying_keys {
+                    let verifier = verifying_key_from_base64(key).with_context(|| {
+                        "failed to decode fallback verifying key (url-safe base64 expected)"
+                    })?;
+                    fallbacks.push(verifier);
+                }
+                SigningKeyRing::new(signing_key, fallbacks)
             }
-            None => Ok(Self {
-                signing_key: generate_signing_key(),
-            }),
-        }
+            None => SigningKeyRing::default(),
+        };
+        Ok(Self { key_ring })
     }
 
     pub fn verifying_key_base64(&self) -> String {
-        let verifying = verifying_key_from(&self.signing_key);
+        let verifying = self.key_ring.active_verifying_key();
         URL_SAFE_NO_PAD.encode(verifying.as_bytes())
     }
 
     pub fn sign(&self, record: &SessionRecord) -> Result<String> {
         let payload = serde_json::to_vec(&SessionClaims::from(record))?;
-        let signature = sign_message(&self.signing_key, &payload);
+        let signature = self.key_ring.sign(&payload);
 
         let token = format!(
             "{}.{}",
@@ -146,6 +267,7 @@ impl<'a> From<&'a SessionRecord> for SessionClaims<'a> {
 pub struct LoginAttempt {
     pub identifier: String,
     pub secret: String,
+    pub device: DeviceContext,
 }
 
 #[derive(Debug, Clone)]
@@ -161,12 +283,38 @@ pub trait SessionAuthenticator: Send + Sync {
 #[async_trait]
 pub trait SessionRepository: Send + Sync {
     async fn persist_session(&self, record: &SessionRecord) -> Result<()>;
+    async fn upsert_refresh_session(
+        &self,
+        record: &RefreshTokenRecord,
+    ) -> Result<RefreshTokenRecord>;
+    #[allow(dead_code)]
+    async fn touch_refresh_session(&self, refresh_id: Uuid, used_at: DateTime<Utc>) -> Result<()>;
+    #[allow(dead_code)]
+    async fn revoke_refresh_session(
+        &self,
+        refresh_id: Uuid,
+        revoked_at: DateTime<Utc>,
+    ) -> Result<()>;
+    #[allow(dead_code)]
+    async fn find_refresh_session(&self, refresh_id: Uuid) -> Result<Option<RefreshTokenRecord>>;
 }
 
-#[derive(Default)]
 pub struct InMemorySessionStore {
     accounts: RwLock<HashMap<String, AccountRecord>>,
     sessions: RwLock<HashMap<Uuid, SessionRecord>>,
+    refresh_tokens: RwLock<HashMap<Uuid, RefreshTokenRecord>>,
+    refresh_index: RwLock<HashMap<(Uuid, String), Uuid>>,
+}
+
+impl Default for InMemorySessionStore {
+    fn default() -> Self {
+        Self {
+            accounts: RwLock::new(HashMap::new()),
+            sessions: RwLock::new(HashMap::new()),
+            refresh_tokens: RwLock::new(HashMap::new()),
+            refresh_index: RwLock::new(HashMap::new()),
+        }
+    }
 }
 
 struct AccountRecord {
@@ -194,6 +342,45 @@ impl SessionRepository for InMemorySessionStore {
         sessions.insert(record.session_id, record.clone());
         Ok(())
     }
+
+    async fn upsert_refresh_session(
+        &self,
+        record: &RefreshTokenRecord,
+    ) -> Result<RefreshTokenRecord> {
+        let mut tokens = self.refresh_tokens.write().await;
+        let mut index = self.refresh_index.write().await;
+        let key = (record.user_id, record.device.device_id.clone());
+        if let Some(previous) = index.insert(key, record.refresh_id) {
+            tokens.remove(&previous);
+        }
+        tokens.insert(record.refresh_id, record.clone());
+        Ok(record.clone())
+    }
+
+    async fn touch_refresh_session(&self, refresh_id: Uuid, used_at: DateTime<Utc>) -> Result<()> {
+        let mut tokens = self.refresh_tokens.write().await;
+        if let Some(entry) = tokens.get_mut(&refresh_id) {
+            entry.last_used_at = used_at;
+        }
+        Ok(())
+    }
+
+    async fn revoke_refresh_session(
+        &self,
+        refresh_id: Uuid,
+        revoked_at: DateTime<Utc>,
+    ) -> Result<()> {
+        let mut tokens = self.refresh_tokens.write().await;
+        if let Some(entry) = tokens.get_mut(&refresh_id) {
+            entry.revoked_at = Some(revoked_at);
+        }
+        Ok(())
+    }
+
+    async fn find_refresh_session(&self, refresh_id: Uuid) -> Result<Option<RefreshTokenRecord>> {
+        let tokens = self.refresh_tokens.read().await;
+        Ok(tokens.get(&refresh_id).cloned())
+    }
 }
 
 impl InMemorySessionStore {
@@ -220,6 +407,11 @@ impl InMemorySessionStore {
     #[cfg(test)]
     pub async fn session_count(&self) -> usize {
         self.sessions.read().await.len()
+    }
+
+    #[cfg(test)]
+    pub async fn refresh_count(&self) -> usize {
+        self.refresh_tokens.read().await.len()
     }
 }
 
@@ -262,12 +454,15 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
 
 pub struct PostgresSessionRepository {
     persistence: SessionPersistence,
+    refresh: RefreshSessionStore,
 }
 
 impl PostgresSessionRepository {
     pub fn new(pool: StoragePool) -> Self {
+        let refresh_store = RefreshSessionStore::new(pool.clone());
         Self {
             persistence: SessionPersistence::new(pool),
+            refresh: refresh_store,
         }
     }
 }
@@ -283,12 +478,70 @@ impl SessionRepository for PostgresSessionRepository {
         };
         self.persistence.store_session(&persisted).await
     }
+
+    async fn upsert_refresh_session(
+        &self,
+        record: &RefreshTokenRecord,
+    ) -> Result<RefreshTokenRecord> {
+        let metadata = record.device.to_metadata();
+        let new_session = NewRefreshSession {
+            refresh_id: record.refresh_id,
+            user_id: record.user_id,
+            session_id: record.session_id,
+            issued_at: record.created_at,
+            expires_at: record.expires_at,
+            metadata,
+        };
+        let stored = self.refresh.upsert(&new_session).await?;
+        Ok(refresh_from_storage(stored))
+    }
+
+    async fn touch_refresh_session(&self, refresh_id: Uuid, used_at: DateTime<Utc>) -> Result<()> {
+        self.refresh.record_use(refresh_id, used_at).await
+    }
+
+    async fn revoke_refresh_session(
+        &self,
+        refresh_id: Uuid,
+        revoked_at: DateTime<Utc>,
+    ) -> Result<()> {
+        self.refresh.revoke(refresh_id, revoked_at).await
+    }
+
+    async fn find_refresh_session(&self, refresh_id: Uuid) -> Result<Option<RefreshTokenRecord>> {
+        let record = self.refresh.find(refresh_id).await?;
+        Ok(record.map(refresh_from_storage))
+    }
+}
+
+fn refresh_from_storage(record: RefreshSessionRecord) -> RefreshTokenRecord {
+    RefreshTokenRecord {
+        refresh_id: record.refresh_id,
+        user_id: record.user_id,
+        session_id: record.session_id,
+        created_at: record.created_at,
+        last_used_at: record.last_used_at,
+        expires_at: record.expires_at,
+        revoked_at: record.revoked_at,
+        device: DeviceContext::from_storage(&record),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceRequest {
+    pub device_id: String,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub ip_address: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub identifier: String,
     pub secret: String,
+    #[serde(default)]
+    pub device: Option<DeviceRequest>,
 }
 
 impl LoginRequest {
@@ -304,8 +557,47 @@ impl LoginRequest {
             errors.push(FieldError::new("secret", "must be provided"));
         }
 
+        let device = match self.device {
+            Some(device) => {
+                let device_id = device.device_id.trim().to_string();
+                if device_id.is_empty() {
+                    errors.push(FieldError::new("device.device_id", "must be provided"));
+                }
+                let device_name = device.device_name.and_then(|name| {
+                    let trimmed = name.trim().to_string();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed)
+                    }
+                });
+                let ip_address = device.ip_address.and_then(|ip| {
+                    let trimmed = ip.trim().to_string();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed)
+                    }
+                });
+
+                DeviceContext::new(device_id, device_name, ip_address)
+            }
+            None => {
+                errors.push(FieldError::new("device", "must be provided"));
+                DeviceContext::new(
+                    String::new(),
+                    Option::<String>::None,
+                    Option::<String>::None,
+                )
+            }
+        };
+
         if errors.is_empty() {
-            Ok(LoginAttempt { identifier, secret })
+            Ok(LoginAttempt {
+                identifier,
+                secret,
+                device,
+            })
         } else {
             Err(errors)
         }
@@ -314,8 +606,10 @@ impl LoginRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginResponse {
-    pub token: String,
-    pub expires_at: DateTime<Utc>,
+    pub access_token: String,
+    pub access_expires_at: DateTime<Utc>,
+    pub refresh_token: String,
+    pub refresh_expires_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
@@ -337,8 +631,12 @@ impl FieldError {
     }
 }
 
-pub async fn login(State(state): State<AppState>, Json(payload): Json<LoginRequest>) -> Response {
-    let attempt = match payload.validate() {
+pub async fn login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<LoginRequest>,
+) -> Response {
+    let mut attempt = match payload.validate() {
         Ok(attempt) => attempt,
         Err(errors) => {
             let status = StatusCode::BAD_REQUEST;
@@ -347,6 +645,21 @@ pub async fn login(State(state): State<AppState>, Json(payload): Json<LoginReque
             return (status, Json(ErrorBody::validation(errors))).into_response();
         }
     };
+
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string());
+    attempt.device.set_user_agent(user_agent);
+    if let Some(ip) = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        attempt.device.set_ip_address(Some(ip.to_string()));
+    }
 
     match state.session().login(attempt).await {
         Ok(Some(response)) => {
@@ -397,6 +710,7 @@ impl<'a> ErrorBody<'a> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use chrono::Utc;
 
     pub struct SessionTestHarness {
         pub context: Arc<SessionContext>,
@@ -435,5 +749,29 @@ pub mod tests {
             .register_user(identifier.to_string(), secret.to_string(), user_id)
             .await;
         (harness, user_id)
+    }
+
+    #[tokio::test]
+    async fn login_emits_refresh_tokens() {
+        let (harness, _) = session_context_with_user("bob@example.org", "letmein").await;
+        let mut attempt = LoginAttempt {
+            identifier: "bob@example.org".to_string(),
+            secret: "letmein".to_string(),
+            device: DeviceContext::new("test-device", Some("Unit Test"), None::<String>),
+        };
+        attempt.device.set_user_agent(Some("session-tests"));
+
+        let response = harness
+            .context
+            .login(attempt)
+            .await
+            .expect("login succeeds")
+            .expect("response present");
+
+        assert!(!response.access_token.is_empty());
+        assert!(!response.refresh_token.is_empty());
+        assert!(response.refresh_expires_at > Utc::now());
+        assert_eq!(harness.store.session_count().await, 1);
+        assert_eq!(harness.store.refresh_count().await, 1);
     }
 }
