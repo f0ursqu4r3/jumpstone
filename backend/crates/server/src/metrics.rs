@@ -14,6 +14,7 @@ pub struct MetricsContext {
     pub http_requests_total: IntCounterVec,
     pub http_request_duration_seconds: HistogramVec,
     pub messaging_events_total: IntCounterVec,
+    pub messaging_rejections_total: IntCounterVec,
     pub websocket_queue_depth: IntGaugeVec,
     db_ready: IntGauge,
 }
@@ -52,6 +53,15 @@ impl MetricsContext {
         )?;
         registry.register(Box::new(messaging_events_total.clone()))?;
 
+        let messaging_rejections_total = IntCounterVec::new(
+            Opts::new(
+                "openguild_messaging_rejections_total",
+                "Count of messaging request rejections by reason",
+            ),
+            &["reason"],
+        )?;
+        registry.register(Box::new(messaging_rejections_total.clone()))?;
+
         let websocket_queue_depth = IntGaugeVec::new(
             Opts::new(
                 "openguild_websocket_queue_depth",
@@ -72,6 +82,7 @@ impl MetricsContext {
             http_requests_total: counter,
             http_request_duration_seconds: histogram,
             messaging_events_total,
+            messaging_rejections_total,
             websocket_queue_depth,
             db_ready,
         }))
@@ -97,6 +108,12 @@ impl MetricsContext {
     pub fn increment_messaging_events(&self, outcome: &str) {
         self.messaging_events_total
             .with_label_values(&[outcome])
+            .inc();
+    }
+
+    pub fn increment_messaging_rejection(&self, reason: &str) {
+        self.messaging_rejections_total
+            .with_label_values(&[reason])
             .inc();
     }
 

@@ -598,15 +598,21 @@ pub async fn create_guild(
 
     let name_length = name.chars().count();
 
-    if name.is_empty() || name_length > MAX_GUILD_NAME_LENGTH {
+    if name.is_empty() {
         let status = StatusCode::BAD_REQUEST;
-        if name_length > MAX_GUILD_NAME_LENGTH {
-            tracing::warn!(
-                length = name_length,
-                max = MAX_GUILD_NAME_LENGTH,
-                "guild name exceeds maximum length"
-            );
-        }
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
+    if name_length > MAX_GUILD_NAME_LENGTH {
+        state.record_messaging_rejection("guild_name_length");
+        tracing::warn!(
+            length = name_length,
+            max = MAX_GUILD_NAME_LENGTH,
+            "guild name exceeds maximum length"
+        );
+        let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -703,16 +709,21 @@ pub async fn create_channel(
 
     let name = body.name.trim();
     let name_length = name.chars().count();
-    if name.is_empty() || name_length > MAX_CHANNEL_NAME_LENGTH {
+    if name.is_empty() {
         let status = StatusCode::BAD_REQUEST;
-        if name_length > MAX_CHANNEL_NAME_LENGTH {
-            tracing::warn!(
-                length = name_length,
-                max = MAX_CHANNEL_NAME_LENGTH,
-                guild_id = %guild_id,
-                "channel name exceeds maximum length"
-            );
-        }
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+    if name_length > MAX_CHANNEL_NAME_LENGTH {
+        state.record_messaging_rejection("channel_name_length");
+        tracing::warn!(
+            length = name_length,
+            max = MAX_CHANNEL_NAME_LENGTH,
+            guild_id = %guild_id,
+            "channel name exceeds maximum length"
+        );
+        let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -830,16 +841,22 @@ pub async fn post_message(
     let content = body.content.trim();
     let content_length = content.chars().count();
 
-    if content.is_empty() || content_length > MAX_MESSAGE_LENGTH {
+    if content.is_empty() {
         let status = StatusCode::BAD_REQUEST;
-        if content_length > MAX_MESSAGE_LENGTH {
-            tracing::warn!(
-                length = content_length,
-                max = MAX_MESSAGE_LENGTH,
-                channel_id = %channel_id,
-                "message content exceeds maximum length"
-            );
-        }
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
+    if content_length > MAX_MESSAGE_LENGTH {
+        state.record_messaging_rejection("message_length");
+        tracing::warn!(
+            length = content_length,
+            max = MAX_MESSAGE_LENGTH,
+            channel_id = %channel_id,
+            "message content exceeds maximum length"
+        );
+        let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);

@@ -30,6 +30,7 @@ Grafana is pre-provisioned with an **OpenGuild Overview** dashboard. It surfaces
 - **HTTP Request Duration (p95)** — based on the `openguild_http_request_duration_seconds` histogram. Track sustained p95 latency > 500 ms.
 - **HTTP Requests Per Second** — derived from `openguild_http_requests_total`. Investigate sudden drops to zero or unexpected spikes.
 - **Messaging Events** — `openguild_messaging_events_total` by outcome (`delivered`, `no_subscribers`, `dropped`). Alert when `dropped` exceeds 0.1 events/sec for 5 minutes.
+- **Messaging Rejections** — `openguild_messaging_rejections_total` labeled by reason (`guild_name_length`, `channel_name_length`, `message_length`). Alert on sustained increases; baseline should remain at zero outside abuse/testing scenarios.
 - **WebSocket Queue Depth** — `openguild_websocket_queue_depth` gauge per channel. Alert when queue depth stays above 128 for >2 minutes, indicating backpressure risk.
 
 ### Creating new dashboards
@@ -48,6 +49,7 @@ Suggested baseline rules:
 - p95 latency > 750 ms for 5 minutes (severe).
 - WebSocket queue depth > 196 for 3 minutes.
 - Messaging `dropped` rate > 0 for 5 minutes.
+- Messaging rejections > 0 for 1 minute (per reason) to highlight validation abuse or client regressions.
 
 Upstream environments should integrate Alertmanager + paging (out of scope for this local stack).
 

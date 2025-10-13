@@ -484,6 +484,17 @@ impl AppState {
         }
     }
 
+    fn record_messaging_rejection(&self, reason: &str) {
+        #[cfg(feature = "metrics")]
+        if let Some(metrics) = &self.metrics {
+            metrics.increment_messaging_rejection(reason);
+        }
+        #[cfg(not(feature = "metrics"))]
+        {
+            let _ = (self, reason);
+        }
+    }
+
     fn database_component(&self) -> ComponentStatus {
         self.storage.component()
     }

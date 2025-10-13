@@ -94,7 +94,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Enforce authz checks on messaging CRUD/WebSocket routes and align `docs/PROTOCOL.md` with required identity (2025-10-13).
   - [ ] Finalize payload validation and size limits; wire metrics/alerts for abuse detection.
     - [x] Enforce guild/channel/message length limits server-side and document constraints (2025-10-13).
-    - [ ] Add metrics/alert wiring for abuse detection.
+    - [x] Add metrics counters and alert guidance for messaging rejections (2025-10-13).
   - [ ] Extend integration tests to cover unauthorized access, missing identity, and rate-limit boundaries.
 - [ ] Level up threat modelling and security headers.
   - [ ] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations.
