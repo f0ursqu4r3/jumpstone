@@ -8,7 +8,7 @@ mod session;
 use anyhow::Context;
 use anyhow::Result;
 use axum::{
-    extract::State,
+    extract::{MatchedPath, State},
     routing::{get, post},
     Json, Router,
 };
@@ -23,6 +23,7 @@ use std::{net::SocketAddr, sync::Arc, time::Instant};
 #[cfg(test)]
 use tokio::sync::Notify;
 use tokio::{net::TcpListener, signal};
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tracing::{error, info, Level};
 use tracing_subscriber::fmt::writer::MakeWriter;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -363,15 +364,21 @@ impl AppState {
     }
 }
 
-async fn health(State(state): State<AppState>) -> &'static str {
+async fn health(matched_path: MatchedPath, State(state): State<AppState>) -> &'static str {
     #[cfg(feature = "metrics")]
-    state.record_http_request("health", axum::http::StatusCode::OK.as_u16());
+    state.record_http_request(matched_path.as_str(), axum::http::StatusCode::OK.as_u16());
     #[cfg(not(feature = "metrics"))]
-    let _ = state;
+    {
+        let _ = state;
+        let _ = matched_path;
+    }
     "ok"
 }
 
-async fn readiness(State(state): State<AppState>) -> Json<ReadinessResponse> {
+async fn readiness(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+) -> Json<ReadinessResponse> {
     let components = vec![state.database_component()];
     let status = state.storage.readiness_status();
 
@@ -379,7 +386,9 @@ async fn readiness(State(state): State<AppState>) -> Json<ReadinessResponse> {
     state.record_db_ready(state.storage.is_ready());
 
     #[cfg(feature = "metrics")]
-    state.record_http_request("ready", axum::http::StatusCode::OK.as_u16());
+    state.record_http_request(matched_path.as_str(), axum::http::StatusCode::OK.as_u16());
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
 
     Json(ReadinessResponse {
         status,
@@ -431,11 +440,17 @@ struct VersionResponse {
     version: &'static str,
 }
 
-async fn version(State(state): State<AppState>) -> Json<VersionResponse> {
+async fn version(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+) -> Json<VersionResponse> {
     #[cfg(feature = "metrics")]
-    state.record_http_request("version", axum::http::StatusCode::OK.as_u16());
+    state.record_http_request(matched_path.as_str(), axum::http::StatusCode::OK.as_u16());
     #[cfg(not(feature = "metrics"))]
-    let _ = state;
+    {
+        let _ = state;
+        let _ = matched_path;
+    }
 
     Json(VersionResponse {
         version: env!("CARGO_PKG_VERSION"),
@@ -474,6 +489,10 @@ fn build_app(state: AppState) -> Router {
             router = router.route("/metrics", get(metrics_handler));
         }
     }
+
+    let router = router
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+        .layer(PropagateRequestIdLayer::x_request_id());
 
     router.with_state(state)
 }

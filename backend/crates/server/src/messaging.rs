@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use axum::{
     extract::{
         ws::{Message as WsMessage, WebSocket},
-        Path, State, WebSocketUpgrade,
+        MatchedPath, Path, State, WebSocketUpgrade,
     },
     http::StatusCode,
     response::Response,
@@ -498,30 +498,32 @@ pub struct PostMessageResponse {
 }
 
 pub async fn create_guild(
+    matched_path: MatchedPath,
     State(state): State<AppState>,
     Json(body): Json<CreateGuildRequest>,
 ) -> Result<Json<CreateGuildResponse>, StatusCode> {
-    #[cfg(feature = "metrics")]
-    let route = "guilds.create";
     let Some(messaging) = state.messaging() else {
         let status = StatusCode::SERVICE_UNAVAILABLE;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
 
     let name = body.name.trim();
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
     if name.is_empty() {
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     }
 
     match messaging.create_guild(name).await {
         Ok(guild) => {
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, StatusCode::OK.as_u16());
+            state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
             Ok(Json(CreateGuildResponse {
                 guild_id: guild.guild_id,
                 name: guild.name,
@@ -532,28 +534,30 @@ pub async fn create_guild(
             tracing::error!(?err, "failed to create guild");
             let status = StatusCode::INTERNAL_SERVER_ERROR;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
     }
 }
 
 pub async fn list_guilds(
+    matched_path: MatchedPath,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CreateGuildResponse>>, StatusCode> {
-    #[cfg(feature = "metrics")]
-    let route = "guilds.list";
     let Some(messaging) = state.messaging() else {
         let status = StatusCode::SERVICE_UNAVAILABLE;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
 
     match messaging.list_guilds().await {
         Ok(guilds) => {
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, StatusCode::OK.as_u16());
+            state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
             Ok(Json(
                 guilds
                     .into_iter()
@@ -569,38 +573,40 @@ pub async fn list_guilds(
             tracing::error!(?err, "failed to list guilds");
             let status = StatusCode::INTERNAL_SERVER_ERROR;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
     }
 }
 
 pub async fn create_channel(
+    matched_path: MatchedPath,
     State(state): State<AppState>,
     Path(guild_id): Path<Uuid>,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Json<CreateChannelResponse>, StatusCode> {
-    #[cfg(feature = "metrics")]
-    let route = "channels.create";
     let Some(messaging) = state.messaging() else {
         let status = StatusCode::SERVICE_UNAVAILABLE;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
 
     let name = body.name.trim();
     if name.is_empty() {
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     }
 
     match messaging.create_channel(guild_id, name).await {
         Ok(channel) => {
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, StatusCode::OK.as_u16());
+            state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
             Ok(Json(CreateChannelResponse {
                 channel_id: channel.channel_id,
                 guild_id: channel.guild_id,
@@ -611,36 +617,38 @@ pub async fn create_channel(
         Err(MessagingError::GuildNotFound) => {
             let status = StatusCode::NOT_FOUND;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
         Err(err) => {
             tracing::error!(?err, "failed to create channel");
             let status = StatusCode::INTERNAL_SERVER_ERROR;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
     }
 }
 
 pub async fn list_channels(
+    matched_path: MatchedPath,
     State(state): State<AppState>,
     Path(guild_id): Path<Uuid>,
 ) -> Result<Json<Vec<CreateChannelResponse>>, StatusCode> {
-    #[cfg(feature = "metrics")]
-    let route = "channels.list";
     let Some(messaging) = state.messaging() else {
         let status = StatusCode::SERVICE_UNAVAILABLE;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
 
     match messaging.list_channels(guild_id).await {
         Ok(channels) => {
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, StatusCode::OK.as_u16());
+            state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
             Ok(Json(
                 channels
                     .into_iter()
@@ -656,32 +664,34 @@ pub async fn list_channels(
         Err(MessagingError::GuildNotFound) => {
             let status = StatusCode::NOT_FOUND;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
         Err(err) => {
             tracing::error!(?err, "failed to list channels");
             let status = StatusCode::INTERNAL_SERVER_ERROR;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
     }
 }
 
 pub async fn post_message(
+    matched_path: MatchedPath,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
     Json(body): Json<PostMessageRequest>,
 ) -> Result<Json<PostMessageResponse>, StatusCode> {
-    #[cfg(feature = "metrics")]
-    let route = "messages.post";
     let Some(messaging) = state.messaging() else {
         let status = StatusCode::SERVICE_UNAVAILABLE;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
 
     let sender = body.sender.trim();
     let content = body.content.trim();
@@ -689,14 +699,14 @@ pub async fn post_message(
     if sender.is_empty() || content.is_empty() {
         let status = StatusCode::BAD_REQUEST;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     }
 
     match messaging.append_message(channel_id, sender, content).await {
         Ok(event) => {
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, StatusCode::OK.as_u16());
+            state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
             Ok(Json(PostMessageResponse {
                 sequence: event.sequence,
                 event_id: event.event_id,
@@ -706,46 +716,48 @@ pub async fn post_message(
         Err(MessagingError::ChannelNotFound) => {
             let status = StatusCode::NOT_FOUND;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
         Err(err) => {
             tracing::error!(?err, "failed to append channel event");
             let status = StatusCode::INTERNAL_SERVER_ERROR;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             Err(status)
         }
     }
 }
 
 pub async fn channel_socket(
+    matched_path: MatchedPath,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    #[cfg(feature = "metrics")]
-    let route = "channels.ws";
     let Some(messaging) = state.messaging() else {
         let status = StatusCode::SERVICE_UNAVAILABLE;
         #[cfg(feature = "metrics")]
-        state.record_http_request(route, status.as_u16());
+        state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
     };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
 
     match messaging.channel_exists(channel_id).await {
         Ok(true) => {}
         Ok(false) => {
             let status = StatusCode::NOT_FOUND;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             return Err(status);
         }
         Err(err) => {
             tracing::error!(?err, "failed to determine channel existence");
             let status = StatusCode::INTERNAL_SERVER_ERROR;
             #[cfg(feature = "metrics")]
-            state.record_http_request(route, status.as_u16());
+            state.record_http_request(matched_path.as_str(), status.as_u16());
             return Err(status);
         }
     }

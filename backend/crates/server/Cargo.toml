@@ -29,6 +29,8 @@ base64 = { version = "0.22", default-features = false, features = ["std"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 futures = "0.3"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["request-id"] }
 
 [dev-dependencies]
 serial_test = "2"

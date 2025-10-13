@@ -48,6 +48,7 @@ Common environment overrides:
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
 > The exporter currently publishes the `openguild_http_requests_total{route,status}` counter.
 > When `OPENGUILD_SERVER__METRICS__BIND_ADDR` is set, Prometheus scraping must target that listener (`/metrics` is removed from the primary router).
+> All HTTP responses now include an `X-Request-Id` header (propagated from inbound requests when present, otherwise generated per request) to simplify log correlation.
 
 ### Command-Line Overrides
 

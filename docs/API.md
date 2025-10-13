@@ -20,6 +20,10 @@ Populate each section as the implementation progresses.
 - `GET /version` - returns `{ "version": "<semver>" }` from package metadata.
 - `POST /sessions/login` - issues a signed session token when credentials validate.
 
+### Response Headers
+
+- Every HTTP response includes an `X-Request-Id` header. If the client supplies one it is echoed back; otherwise the server generates a UUIDv4 so logs, metrics, and client traces can be correlated.
+
 ## Authentication & Session Lifecycle
 
 ### `POST /sessions/login`
