@@ -39,6 +39,8 @@ services:
       context: ../backend
     environment:
       DATABASE_URL: postgres://openguild:openguild@postgres:5432/openguild
+      OPENGUILD_SERVER__METRICS__ENABLED: "true"
+      OPENGUILD_SERVER__METRICS__BIND_ADDR: "0.0.0.0:9100"
       MEDIA_ENDPOINT: http://minio:9000
       MEDIA_BUCKET: openguild
       MEDIA_ACCESS_KEY: openguild
@@ -50,8 +52,41 @@ services:
       - nats
     ports:
       - "8080:8080"
+      - "9100:9100"
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.listen-address=:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    depends_on:
+      - server
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana-oss:10.4.3
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SERVER_ROOT_URL: http://localhost:3000
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
 
 volumes:
   pgdata:
   miniodata:
   natsdata:
+  prometheusdata:
+  grafanadata:

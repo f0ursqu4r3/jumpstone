@@ -27,25 +27,27 @@ Context Snapshot (updated 2025-10-13 04:39Z)
   * WebSocket fan-out still needs emitted event metadata and dashboards that expose queue depth/backpressure for operators.
 - Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (metrics gating optional). WebSocket integration test requires Tokio runtime (runs by default).
 - Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql`, `0004_create_users.sql`.
-- Docs touched: docs/SETUP.md (session key + DB persistence notes), docs/TIMELINE.md (Weeks 1-5 updates + credential storage notes), docs/API.md (sessions + guild/channel/message routes + WebSocket), docs/PROTOCOL.md (event envelope + guardrails), docs/CI_PLAN.md (matrix outline).
+- Docs touched: docs/SETUP.md (session key + DB persistence notes), docs/TIMELINE.md (Weeks 1-5 updates + credential storage notes), docs/OBSERVABILITY.md (local Prometheus/Grafana stack), docs/OPERATIONS.md (deploy/rollback playbook), docs/API.md (sessions + guild/channel/message routes + WebSocket), docs/PROTOCOL.md (event envelope + guardrails), docs/CI_PLAN.md (matrix outline).
 - Tooling: `backend/xtask` crate provides `fmt`, `lint`, `test`, `ci` tasks; legacy Makefile targets now shell out to xtask.
 - Outstanding follow-ups (pre-Week 5 checkpoints):
   * Publish request ID usage guidance for frontend/ops teams and confirm log aggregation retains the `request_id` field.
   * Stand up Prometheus/Grafana in local/CI environments; define alert thresholds for latency histograms, messaging counters, and queue depth gauges.
   * SQLx-backed credential storage now powers login when a database is configured; next up is wiring user registration flows (API + CLI seeding) and revisiting refresh token design.
   * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
+  * Prototype a lightweight CI metrics scrape (e.g., curl `/metrics`) to catch regressions until Alertmanager-based checks are available.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
 Notes for next agent (2025-10-13 04:39Z):
 - Messaging CRUD/WebSocket stack is live; sync with frontend on any schema tweaks (sender identity, pagination cursors) as they build against docs/API.md.
-- Prioritise observability sprint continuation: document request ID adoption, confirm log sinks preserve `request_id`, and plan Grafana/alert rollout once Prometheus stack lands.
+- Prioritise observability sprint continuation: document request ID adoption, confirm log sinks preserve `request_id`, and plan Grafana/alert rollout once Prometheus stack lands (see docs/OBSERVABILITY.md for local stack).
 - Confirm downstream consumers handle the new BLAKE3/base58 event IDs and the 404 semantics introduced on messaging routes.
-- Verify frontend/ops pipelines surface the emitted `X-Request-Id` header and capture guidance in docs/OPERATIONS.md once drafted.
+- Share docs/OBSERVABILITY.md + docs/OPERATIONS.md with frontend/ops so `X-Request-Id` adoption and runbooks are baked into their workflows.
 - Surface the new `server_name` configuration in deployment manifests so `origin_server` is stable across environments.
 - Plan user registration & credential provisioning flows (API and CLI) leveraging the new `UserRepository`; refresh token work still pending.
 - Readiness path keeps a pooled DB handle (StoragePool clone) while logging eager connect errors - preserve this behaviour when refactoring.
 - CI plan lives in docs/CI_PLAN.md; workflows still missing.
 - Prefer `cargo xtask fmt|lint|test|ci` for routine Rust workflows; legacy Makefile targets now wrap xtask.
 - Keep BRAIN.txt current; still our ad-hoc handoff channel.
+
 
 

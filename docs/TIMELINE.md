@@ -69,14 +69,14 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Integrate Prometheus exporter and expose `/metrics` route.
   - [x] Instrument DB pool, WebSocket clients, and request latencies.
   - [x] Write tests that scrape metrics and assert key counters/gauges.
-- [ ] Upgrade local + CI observability tooling.
-  - [ ] Extend Docker Compose with Prometheus and Grafana services.
-  - [ ] Document Grafana dashboards plus default alert thresholds.
+- [x] Upgrade local + CI observability tooling.
+  - [x] Extend Docker Compose with Prometheus and Grafana services.
+  - [x] Document Grafana dashboards plus default alert thresholds.
   - [ ] Prototype CI sanity check that fails when metrics regress (stretch goal).
-- [ ] Draft operations playbook.
-  - [ ] Create `docs/OPERATIONS.md` (or expand `docs/SETUP.md`) with deploy/rollback workflows.
-  - [ ] Include monitoring runbooks and alert escalation paths.
-  - [ ] Outline incident response expectations for on-call rotations.
+- [x] Draft operations playbook.
+  - [x] Create `docs/OPERATIONS.md` (or expand `docs/SETUP.md`) with deploy/rollback workflows.
+  - [x] Include monitoring runbooks and alert escalation paths.
+  - [x] Outline incident response expectations for on-call rotations.
 
 ## Week 6-7: Security/Posture Hardening (Milestone M1 setup)
 
