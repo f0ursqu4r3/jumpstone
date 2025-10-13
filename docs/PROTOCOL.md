@@ -28,6 +28,7 @@ This document expands on the federation model outlined in `../BRIEF.md`.
   - An in-memory fallback mirrors the same semantics when Postgres is not configured (dev ergonomics).
   - Refresh session persistence (`backend/migrations/0005_refresh_sessions.sql`) captures per-device refresh UUIDs, inferred IPs, and audit timestamps so auth refresh/revocation can participate in future federation gossip.
 
+  - Refresh rotation exposes `/sessions/refresh` (rotate) and `/sessions/revoke` (logout) so downstream services can mirror state; each refresh token is a base64url UUID tied to device metadata.
 - WebSocket fan-out (`GET /channels/{channel_id}/ws`):
   - Replays the most recent 50 events on connect to bootstrap the timeline.
   - Broadcast queue depth is capped at 256 messages; clients lagging beyond that receive a close frame (code `1011` policy violation) and must resubscribe.

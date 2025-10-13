@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, str::FromStr};
 
+use base64::Engine;
 use openguild_crypto::{signing_key_from_base64, verifying_key_from_base64};
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
 

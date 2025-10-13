@@ -130,6 +130,50 @@ Registers a new user account. Requires a configured database; returns `503 Servi
 }
 ```
 
+### `POST /sessions/refresh`
+
+Returns a fresh access token (and rotated refresh token) when provided with a valid, unexpired refresh token.
+
+- **Success**: HTTP 200 with the same response schema as `POST /sessions/login`.
+- **Invalid token / expired / revoked**: HTTP 401 with `{ "error": "invalid_refresh_token" }`.
+
+#### Request Body
+
+```json
+{
+  "refresh_token": "9cS8nB_zV7rVk7H4q4TRCQ"
+}
+```
+
+#### Quick Test (curl)
+
+```bash
+curl -X POST http://127.0.0.1:8080/sessions/refresh \\
+  -H "content-type: application/json" \\
+  -d "{\"refresh_token\":\"9cS8nB_zV7rVk7H4q4TRCQ\"}"
+```
+
+### `POST /sessions/revoke`
+
+Revokes a refresh token (e.g., on logout). Returns HTTP 204 even if the token is unknown to avoid leaking token state.
+
+#### Request Body
+
+```json
+{
+  "refresh_token": "9cS8nB_zV7rVk7H4q4TRCQ"
+}
+```
+
+#### Quick Test (curl)
+
+```bash
+curl -X POST http://127.0.0.1:8080/sessions/revoke \\
+  -H "content-type: application/json" \\
+  -d "{\"refresh_token\":\"9cS8nB_zV7rVk7H4q4TRCQ\"}"
+```
+
+$null
 #### Quick Test (curl)
 
 ```bash

@@ -609,6 +609,8 @@ fn build_app(state: AppState) -> Router {
         .route("/version", get(version))
         .route("/users/register", post(users::register))
         .route("/sessions/login", post(session::login))
+        .route("/sessions/refresh", post(session::refresh))
+        .route("/sessions/revoke", post(session::revoke))
         .route(
             "/guilds",
             get(messaging::list_guilds).post(messaging::create_guild),
@@ -1358,6 +1360,7 @@ mod tests {
         let app = build_app(state);
 
         let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -1391,7 +1394,7 @@ mod tests {
             .with_session(harness.context.clone());
         let app = build_app(state);
 
-        let response = app
+        let response = app.clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -1422,6 +1425,62 @@ mod tests {
             .expect("decode payload");
         let claims: serde_json::Value = serde_json::from_slice(&decoded).expect("claims json");
         assert_eq!(claims["user_id"].as_str().unwrap(), user_id.to_string());
+
+        let refresh_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sessions/refresh")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"refresh_token":"{}"}}"#,
+                        payload.refresh_token
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(refresh_response.status(), StatusCode::OK);
+        let body = to_bytes(refresh_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let refreshed: session::LoginResponse = serde_json::from_slice(&body).unwrap();
+        assert_ne!(refreshed.refresh_token, payload.refresh_token);
+
+        let revoke_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sessions/revoke")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"refresh_token":"{}"}}"#,
+                        refreshed.refresh_token
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(revoke_response.status(), StatusCode::NO_CONTENT);
+
+        let reuse_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sessions/refresh")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"refresh_token":"{}"}}"#,
+                        refreshed.refresh_token
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reuse_response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

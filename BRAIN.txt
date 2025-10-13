@@ -44,7 +44,7 @@ Notes for next agent (2025-10-13 04:39Z):
 - Confirm downstream consumers handle the new BLAKE3/base58 event IDs and the 404 semantics introduced on messaging routes.
 - Share docs/OBSERVABILITY.md + docs/OPERATIONS.md with frontend/ops so `X-Request-Id` adoption and runbooks are baked into their workflows.
 - Surface the new `server_name` configuration in deployment manifests so `origin_server` is stable across environments.
-- Finalise credential onboarding docs (docs/SETUP.md), plan refresh revoke + rotate APIs/CLI, and coordinate with frontend on `device_id` requirements.
+- Share updated credential bootstrap docs (docs/SETUP.md) and refresh/revoke endpoints with frontend/ops; confirm device_id adoption.
 - Readiness path keeps a pooled DB handle (StoragePool clone) while logging eager connect errors - preserve this behaviour when refactoring.
 - CI plan lives in docs/CI_PLAN.md; workflows still missing.
 - Prefer `cargo xtask fmt|lint|test|ci` for routine Rust workflows; legacy Makefile targets now wrap xtask.
@@ -52,8 +52,9 @@ Notes for next agent (2025-10-13 04:39Z):
 
 Week 6 current gaps / TODOs:
 - [x] Document the refreshed login contract (device metadata requirement + refresh token response) in docs/API.md and docs/PROTOCOL.md; coordinate with frontend for `device_id` enforcement.
-- [ ] Plan revoke/rotate flows (API surface + CLI tooling) building on refresh session store scaffolding.
+- [x] Plan revoke/rotate flows (API surface + CLI tooling) building on refresh session store scaffolding.
 
+- [ ] Enforce messaging authz + rate limiting (Week 6/7 security hardening).
 
 
 

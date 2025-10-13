@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use axum::{
     extract::State,
@@ -156,6 +156,63 @@ impl SessionContext {
         }))
     }
 
+    pub async fn refresh(&self, token: &str) -> Result<Option<LoginResponse>> {
+        let refresh_id = match decode_refresh_token(token) {
+            Ok(id) => id,
+            Err(_) => return Ok(None),
+        };
+
+        let stored = match self.repository.find_refresh_session(refresh_id).await? {
+            Some(record) => record,
+            None => return Ok(None),
+        };
+
+        if stored.revoked_at.is_some() || stored.expires_at <= Utc::now() {
+            return Ok(None);
+        }
+
+        let session_record = self.build_record(stored.user_id);
+        let access_token = self.signer.sign(&session_record)?;
+        self.repository.persist_session(&session_record).await?;
+
+        let refresh_device = stored.device.clone();
+        let new_refresh_record =
+            self.build_refresh_record(stored.user_id, session_record.session_id, &refresh_device);
+        let stored_refresh = self
+            .repository
+            .upsert_refresh_session(&new_refresh_record)
+            .await?;
+        let refresh_token = encode_refresh_token(stored_refresh.refresh_id);
+
+        Ok(Some(LoginResponse {
+            access_token,
+            access_expires_at: session_record.expires_at,
+            refresh_token,
+            refresh_expires_at: stored_refresh.expires_at,
+        }))
+    }
+
+    pub async fn revoke(&self, token: &str) -> Result<bool> {
+        let refresh_id = match decode_refresh_token(token) {
+            Ok(id) => id,
+            Err(_) => return Ok(false),
+        };
+
+        if self
+            .repository
+            .find_refresh_session(refresh_id)
+            .await?
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        self.repository
+            .revoke_refresh_session(refresh_id, Utc::now())
+            .await?;
+        Ok(true)
+    }
+
     fn build_record(&self, user_id: Uuid) -> SessionRecord {
         let issued_at = Utc::now();
         let expires_at = issued_at + self.ttl;
@@ -190,6 +247,18 @@ impl SessionContext {
 
 fn encode_refresh_token(refresh_id: Uuid) -> String {
     URL_SAFE_NO_PAD.encode(refresh_id.as_bytes())
+}
+
+fn decode_refresh_token(token: &str) -> Result<Uuid> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(token.trim().as_bytes())
+        .map_err(|_| anyhow!("invalid refresh token encoding"))?;
+    if bytes.len() != 16 {
+        return Err(anyhow!("invalid refresh token length"));
+    }
+    let mut arr = [0u8; 16];
+    arr.copy_from_slice(&bytes);
+    Ok(Uuid::from_bytes(arr))
 }
 
 #[derive(Clone)]
@@ -612,6 +681,22 @@ pub struct LoginResponse {
     pub refresh_expires_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RefreshTokenRequest {
+    pub refresh_token: String,
+}
+
+impl RefreshTokenRequest {
+    fn validate(self) -> Result<String, Vec<FieldError>> {
+        let token = self.refresh_token.trim().to_string();
+        if token.is_empty() {
+            Err(vec![FieldError::new("refresh_token", "must be provided")])
+        } else {
+            Ok(token)
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ErrorBody<'a> {
     error: &'a str,
@@ -684,6 +769,76 @@ pub async fn login(
     }
 }
 
+pub async fn refresh(
+    State(state): State<AppState>,
+    Json(payload): Json<RefreshTokenRequest>,
+) -> Response {
+    let token = match payload.validate() {
+        Ok(token) => token,
+        Err(details) => {
+            let status = StatusCode::BAD_REQUEST;
+            #[cfg(feature = "metrics")]
+            state.record_http_request("sessions.refresh", status.as_u16());
+            return (status, Json(ErrorBody::validation(details))).into_response();
+        }
+    };
+
+    let session = state.session();
+    match session.refresh(&token).await {
+        Ok(Some(response)) => {
+            let status = StatusCode::OK;
+            #[cfg(feature = "metrics")]
+            state.record_http_request("sessions.refresh", status.as_u16());
+            (status, Json(response)).into_response()
+        }
+        Ok(None) => {
+            let status = StatusCode::UNAUTHORIZED;
+            #[cfg(feature = "metrics")]
+            state.record_http_request("sessions.refresh", status.as_u16());
+            (status, Json(ErrorBody::invalid_refresh_token())).into_response()
+        }
+        Err(err) => {
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request("sessions.refresh", status.as_u16());
+            tracing::error!(?err, "failed to refresh session");
+            (status, Json(ErrorBody::server_error())).into_response()
+        }
+    }
+}
+
+pub async fn revoke(
+    State(state): State<AppState>,
+    Json(payload): Json<RefreshTokenRequest>,
+) -> Response {
+    let token = match payload.validate() {
+        Ok(token) => token,
+        Err(details) => {
+            let status = StatusCode::BAD_REQUEST;
+            #[cfg(feature = "metrics")]
+            state.record_http_request("sessions.revoke", status.as_u16());
+            return (status, Json(ErrorBody::validation(details))).into_response();
+        }
+    };
+
+    let session = state.session();
+    match session.revoke(&token).await {
+        Ok(_) => {
+            let status = StatusCode::NO_CONTENT;
+            #[cfg(feature = "metrics")]
+            state.record_http_request("sessions.revoke", status.as_u16());
+            status.into_response()
+        }
+        Err(err) => {
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request("sessions.revoke", status.as_u16());
+            tracing::error!(?err, "failed to revoke refresh token");
+            (status, Json(ErrorBody::server_error())).into_response()
+        }
+    }
+}
+
 impl<'a> ErrorBody<'a> {
     fn validation(details: Vec<FieldError>) -> Self {
         Self {
@@ -695,6 +850,13 @@ impl<'a> ErrorBody<'a> {
     fn unauthorized() -> Self {
         Self {
             error: "invalid_credentials",
+            details: None,
+        }
+    }
+
+    fn invalid_refresh_token() -> Self {
+        Self {
+            error: "invalid_refresh_token",
             details: None,
         }
     }
@@ -773,5 +935,74 @@ pub mod tests {
         assert!(response.refresh_expires_at > Utc::now());
         assert_eq!(harness.store.session_count().await, 1);
         assert_eq!(harness.store.refresh_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn refresh_rotates_tokens() {
+        let (harness, _) = session_context_with_user("carol@example.org", "topsecret").await;
+        let attempt = LoginAttempt {
+            identifier: "carol@example.org".to_string(),
+            secret: "topsecret".to_string(),
+            device: DeviceContext::new("carol-device", Some("Carol's Laptop"), None::<String>),
+        };
+
+        let login = harness
+            .context
+            .login(attempt)
+            .await
+            .expect("login succeeds")
+            .expect("login response");
+
+        let refreshed = harness
+            .context
+            .refresh(&login.refresh_token)
+            .await
+            .expect("refresh succeeds")
+            .expect("refresh response");
+
+        assert_ne!(refreshed.refresh_token, login.refresh_token);
+        assert!(
+            harness
+                .context
+                .refresh(&login.refresh_token)
+                .await
+                .expect("refresh call")
+                .is_none(),
+            "old refresh token should no longer be accepted"
+        );
+    }
+
+    #[tokio::test]
+    async fn revoke_refresh_token_rejects_future_use() {
+        let (harness, _) = session_context_with_user("dave@example.org", "p@ssword").await;
+        let attempt = LoginAttempt {
+            identifier: "dave@example.org".to_string(),
+            secret: "p@ssword".to_string(),
+            device: DeviceContext::new("dave-device", Some("Dave's Phone"), None::<String>),
+        };
+
+        let login = harness
+            .context
+            .login(attempt)
+            .await
+            .expect("login succeeds")
+            .expect("login response");
+
+        let revoked = harness
+            .context
+            .revoke(&login.refresh_token)
+            .await
+            .expect("revoke call");
+        assert!(revoked, "token should have been revoked");
+
+        assert!(
+            harness
+                .context
+                .refresh(&login.refresh_token)
+                .await
+                .expect("refresh call")
+                .is_none(),
+            "revoked refresh token should not refresh"
+        );
     }
 }
