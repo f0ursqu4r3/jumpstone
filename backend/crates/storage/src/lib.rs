@@ -5,10 +5,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use sqlx::postgres::PgPoolOptions;
 
+pub mod messaging;
 pub mod session;
 
 pub use sqlx::PgPool;
 
+pub use messaging::{Channel, ChannelEvent, Guild, MessagingRepository};
 pub use session::{PersistedSession, SessionPersistence};
 
 /// Thin wrapper around a shared `PgPool`.

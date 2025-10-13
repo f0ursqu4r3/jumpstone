@@ -42,18 +42,18 @@ This living document tracks backend-focused milestones, weekly targets, and shar
 
 ## Week 4: Messaging Core (Milestone M0)
 
-- [ ] Deliver room/channel CRUD with optimistic event persistence.
-  - [ ] Extend schema for guilds, channels, messages, and memberships.
-  - [ ] Build repository layer plus optimistic event writer in `openguild-core`.
-  - [ ] Write property tests for event IDs and ordering guarantees.
-- [ ] Stand up WebSocket gateway for single-server fan-out.
-  - [ ] Implement join/leave semantics and broadcast channel wiring.
-  - [ ] Enforce backpressure, connection caps, and timeout policies.
-  - [ ] Create integration test using `tokio_tungstenite` that exercises message flow.
-- [ ] Document messaging contracts.
-  - [ ] Update `docs/PROTOCOL.md` with event envelopes and sequencing rules.
-  - [ ] Capture sample payloads and error responses.
-  - [ ] Note operational guardrails (payload limits, rate caps, retention).
+- [x] Deliver room/channel CRUD with optimistic event persistence.
+  - [x] Extend schema for guilds, channels, messages, and memberships (`backend/migrations/0003_messaging.sql`).
+  - [x] Build repository layer plus optimistic event writer in `openguild-core`/`openguild-storage` (see `MessagingRepository` + `MessagePayload`).
+  - [x] Write property tests for event IDs and ordering guarantees (proptest in `openguild-core::messaging`).
+- [x] Stand up WebSocket gateway for single-server fan-out.
+  - [x] Implement join/leave semantics and broadcast channel wiring (bounded broadcast channel per room).
+  - [x] Enforce backpressure, connection caps, and timeout policies (256-slot buffer, ping/pong, send timeouts, global semaphore).
+  - [x] Create integration test using `tokio_tungstenite` that exercises message flow.
+- [x] Document messaging contracts.
+  - [x] Update `docs/PROTOCOL.md` with event envelopes, persistence semantics, and guardrails.
+  - [x] Capture sample payloads and error responses in `docs/API.md`.
+  - [x] Note operational guardrails (payload limits roadmap, connection caps, replay window).
 
 ## Week 5: Observability & Reliability (Milestone M0 to M1 prep)
 

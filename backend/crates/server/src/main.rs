@@ -1,4 +1,5 @@
 mod config;
+mod messaging;
 #[cfg(feature = "metrics")]
 mod metrics;
 mod session;
@@ -200,6 +201,7 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
         authenticator.clone(),
         repository,
     ));
+    let messaging_service = Arc::new(messaging::init_messaging_service(&config, storage.pool()));
 
     #[cfg(feature = "metrics")]
     let state = {
@@ -208,13 +210,14 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
         } else {
             None
         };
-        AppState::new(config.clone(), storage)
+        AppState::new(config.clone(), storage.clone(), messaging_service.clone())
             .with_session(session_context.clone())
             .with_metrics(metrics_ctx)
     };
 
     #[cfg(not(feature = "metrics"))]
-    let state = AppState::new(config.clone(), storage).with_session(session_context.clone());
+    let state = AppState::new(config.clone(), storage, messaging_service.clone())
+        .with_session(session_context.clone());
     let app = build_app(state);
 
     let addr: SocketAddr = config.listener_addr()?;
@@ -234,17 +237,23 @@ struct AppState {
     #[allow(dead_code)]
     config: Arc<ServerConfig>,
     storage: StorageState,
+    messaging: Arc<messaging::MessagingService>,
     session: Option<Arc<SessionContext>>,
     #[cfg(feature = "metrics")]
     metrics: Option<Arc<MetricsContext>>,
 }
 
 impl AppState {
-    fn new(config: Arc<ServerConfig>, storage: StorageState) -> Self {
+    fn new(
+        config: Arc<ServerConfig>,
+        storage: StorageState,
+        messaging: Arc<messaging::MessagingService>,
+    ) -> Self {
         Self {
             started_at: Instant::now(),
             config,
             storage,
+            messaging,
             session: None,
             #[cfg(feature = "metrics")]
             metrics: None,
@@ -255,12 +264,14 @@ impl AppState {
     fn with_start_time(
         config: Arc<ServerConfig>,
         storage: StorageState,
+        messaging: Arc<messaging::MessagingService>,
         started_at: Instant,
     ) -> Self {
         Self {
             started_at,
             config,
             storage,
+            messaging,
             session: None,
             #[cfg(feature = "metrics")]
             metrics: None,
@@ -297,6 +308,10 @@ impl AppState {
             .as_ref()
             .cloned()
             .expect("session context not configured")
+    }
+
+    fn messaging(&self) -> Option<Arc<messaging::MessagingService>> {
+        Some(self.messaging.clone())
     }
 
     #[cfg(feature = "metrics")]
@@ -410,7 +425,20 @@ fn build_app(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/ready", get(readiness))
         .route("/version", get(version))
-        .route("/sessions/login", post(session::login));
+        .route("/sessions/login", post(session::login))
+        .route(
+            "/guilds",
+            get(messaging::list_guilds).post(messaging::create_guild),
+        )
+        .route(
+            "/guilds/:guild_id/channels",
+            get(messaging::list_channels).post(messaging::create_channel),
+        )
+        .route(
+            "/channels/:channel_id/messages",
+            post(messaging::post_message),
+        )
+        .route("/channels/:channel_id/ws", get(messaging::channel_socket));
 
     #[cfg(feature = "metrics")]
     {
@@ -515,17 +543,20 @@ mod tests {
     use super::*;
     #[cfg(feature = "metrics")]
     use crate::metrics::MetricsContext;
-    use crate::session;
+    use crate::{messaging, session};
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use base64::Engine;
     use chrono::Utc;
+    use futures::StreamExt;
+    use serde_json::Value;
     use serial_test::serial;
     use std::io::Write;
     use std::str;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
     use tokio::time::{sleep, timeout};
+    use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
     use tower::ServiceExt; // for `oneshot`
     use tracing::info;
     use tracing_subscriber::fmt::writer::MakeWriter;
@@ -551,7 +582,10 @@ mod tests {
         config: Arc<ServerConfig>,
         storage: StorageState,
     ) -> AppState {
-        AppState::new(config, storage).with_session(default_session_context())
+        let session = session::tests::empty_session_context().context.clone();
+        let origin = config.host.clone();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(origin));
+        AppState::new(config, storage, messaging).with_session(session)
     }
 
     #[cfg(feature = "metrics")]
@@ -675,7 +709,11 @@ mod tests {
     #[tokio::test]
     async fn readiness_reports_elapsed_uptime() {
         let past = Instant::now() - Duration::from_secs(2);
-        let app_state = AppState::with_start_time(test_config(), storage_unconfigured(), past)
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let app_state = AppState::with_start_time(config, storage_unconfigured(), messaging, past)
             .with_session(default_session_context());
         let app = build_app(app_state);
 
@@ -700,7 +738,11 @@ mod tests {
     async fn readiness_reports_configured_when_database_url_present() {
         let mut config = ServerConfig::default();
         config.database_url = Some("postgres://app:secret@localhost/app".into());
-        let app_state = AppState::new(Arc::new(config), storage_connected())
+        let config = Arc::new(config);
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let app_state = AppState::new(config, storage_connected(), messaging)
             .with_session(default_session_context());
         let app = build_app(app_state);
 
@@ -725,7 +767,11 @@ mod tests {
 
     #[test]
     fn app_state_reports_uptime_in_seconds() {
-        let state = AppState::new(test_config(), storage_unconfigured())
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(default_session_context());
         assert_eq!(state.uptime_seconds(), 0);
     }
@@ -759,7 +805,11 @@ mod tests {
     async fn login_route_returns_token_on_success() {
         let (harness, user_id) =
             session::tests::session_context_with_user("alice@example.org", "supersecret").await;
-        let state = AppState::new(test_config(), storage_unconfigured())
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(harness.context.clone());
         let app = build_app(state);
 
@@ -797,7 +847,11 @@ mod tests {
     #[tokio::test]
     async fn login_route_returns_unauthorized_on_invalid_credentials() {
         let harness = session::tests::empty_session_context();
-        let state = AppState::new(test_config(), storage_unconfigured())
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(harness.context.clone());
         let app = build_app(state);
 
@@ -819,6 +873,139 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload["error"], "invalid_credentials");
+    }
+
+    #[tokio::test]
+    async fn guild_channel_crud_endpoints() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/guilds")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"Test Guild"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let guild: Value = serde_json::from_slice(&body).unwrap();
+        let guild_id = guild["guild_id"].as_str().unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/guilds")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let guilds: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(guilds.as_array().unwrap().len(), 1);
+
+        let create_channel_uri = format!("/guilds/{guild_id}/channels");
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&create_channel_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"general"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let channel: Value = serde_json::from_slice(&body).unwrap();
+        let channel_id = channel["channel_id"].as_str().unwrap();
+
+        let message_uri = format!("/channels/{channel_id}/messages");
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&message_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"sender":"@user:example.org","content":"hello world"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["sequence"], 1);
+    }
+
+    #[tokio::test]
+    async fn websocket_broadcasts_events() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let guild = messaging.create_guild("Web Socket Guild").await.unwrap();
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .unwrap();
+
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service())
+                .await
+                .expect("websocket test server error");
+        });
+
+        let url = format!("ws://{}/channels/{}/ws", addr, channel.channel_id);
+        let (mut socket, _) = connect_async(url).await.unwrap();
+
+        messaging
+            .append_message(channel.channel_id, "@user:example.org", "hi there")
+            .await
+            .unwrap();
+
+        let msg = timeout(Duration::from_secs(2), socket.next())
+            .await
+            .expect("message expected")
+            .expect("stream item");
+
+        let text = match msg {
+            Ok(WsMessage::Text(text)) => text,
+            Ok(other) => panic!("unexpected websocket message {other:?}"),
+            Err(err) => panic!("websocket stream error: {err:?}"),
+        };
+        let payload: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(payload["sequence"].as_i64().unwrap(), 1);
+        assert_eq!(
+            payload["event"]["content"]["content"].as_str().unwrap(),
+            "hi there"
+        );
+
+        server.abort();
     }
 
     #[test]
@@ -924,7 +1111,11 @@ mod tests {
     #[tokio::test]
     async fn metrics_route_exposed_when_enabled() {
         let metrics_ctx = MetricsContext::init().expect("metrics init");
-        let state = AppState::new(metrics_enabled_config(), storage_unconfigured())
+        let config = metrics_enabled_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(default_session_context())
             .with_metrics(Some(metrics_ctx));
 
@@ -961,7 +1152,11 @@ mod tests {
     #[cfg(feature = "metrics")]
     #[tokio::test]
     async fn metrics_route_absent_when_disabled() {
-        let state = AppState::new(test_config(), storage_unconfigured())
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.host.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(default_session_context());
         let app = build_app(state);
 
