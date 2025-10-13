@@ -35,6 +35,10 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Define login DTOs, validation, and error mapping (`POST /sessions/login` plus structured error responses).
   - [x] Integrate signing via `openguild-crypto` with configurable key source (URL-safe base64 ed25519 key via config/env/CLI).
   - [x] Persist sessions via Postgres when configured (fallback to in-memory for auth; server tests cover issuance + storage).
+- [x] Add persistent credential storage.
+  - [x] Introduce `0004_create_users.sql` migration (UUID id, unique username, Argon2 password hash, timestamps).
+  - [x] Implement `openguild-storage::UserRepository` with Argon2 hashing + verification via SQLx.
+  - [x] Update `openguild-server` login path to prefer Postgres-backed authentication when a pool is available.
 - [x] Align with frontend expectations.
   - [x] Sync with `frontend/stores/session.ts` owners on contract details (documented login contract in `docs/API.md` and circulated to frontend repo owners).
   - [x] Publish request/response samples in `docs/API.md`.
@@ -109,7 +113,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [ ] Evaluate tooling fit, bootstrap dev secrets workflow, and document onboarding.
   - [ ] Define rotation procedures, ownership, and compliance considerations.
 - [ ] Expand developer tooling footprint.
-  - [ ] Provide `cargo xtask` (or similar) commands for migrations, fixtures, smoke tests.
+  - [x] Provide `cargo xtask` (or similar) commands for fmt/lint/test workflows.
   - [ ] Add onboarding scripts to bootstrap new workstations end-to-end.
 - [ ] Harden CI quality gates.
   - [ ] Add coverage reporting and enforce minimum threshold.
