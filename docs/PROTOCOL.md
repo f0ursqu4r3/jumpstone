@@ -5,7 +5,7 @@ This document expands on the federation model outlined in `../BRIEF.md`.
 ## Event Graph
 
 - Deterministic canonical JSON payloads.
-- Event IDs derived from BLAKE3 hashes.
+- Event IDs derived from the BLAKE3 hash of the canonical event body and rendered as `$`-prefixed base58.
 - Auth chains defined by `auth_events` references.
 
 ### Channel Messaging (Week 4 bootstrap)

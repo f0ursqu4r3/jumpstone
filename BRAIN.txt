@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-13 01:22Z)
+Context Snapshot (updated 2025-10-13 02:28Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -6,19 +6,21 @@ Context Snapshot (updated 2025-10-13 01:22Z)
   * Structured ServerConfig loader with metrics + log format options.
   * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (exports `openguild_http_requests_total` + `openguild_db_ready`).
   * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
-  * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`, `--session-signing-key`).
+  * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`, `--session-signing-key`, `--server-name`).
+  * ServerConfig now tracks a canonical `server_name` surfaced in event metadata; env/CLI wiring and docs were updated.
   * Storage crate now exposes a clonable `StoragePool` wrapper (`connect` returns it) plus a SQLx migration smoke test (skips if `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` unset).
   * Session module in `server` adds `/sessions/login` (JSON) with validation + signed responses using ed25519; backing store now persists to Postgres when a pool is available (falls back to in-memory for credentials-only mode).
   * Messaging core (Week 4): REST CRUD for guilds/channels, optimistic message persistence, and WebSocket fan-out with bounded broadcast/backpressure and replay window. In-memory fallback mirrors semantics when DATABASE_URL is absent.
   * `openguild-core::messaging` introduces message payload builders + proptests to ensure canonical event IDs remain unique; `openguild-storage::messaging` wires SQLx repositories for guilds/channels/events.
+  * Event IDs now derive from the BLAKE3 hash of the canonical payload (base58 `$…`); docs/API + PROTOCOL align with the implementation.
+  * Metrics exporter honours `metrics.bind_addr` by spawning a dedicated Axum listener when configured; `/metrics` remains on the main router otherwise.
+  * Messaging HTTP routes map missing resources to HTTP 404, preserve validation 400s, and record request metrics; docs/API updated to reflect new statuses.
   * Integration test (`websocket_broadcasts_events`) exercises fan-out via `tokio_tungstenite` to guard regressions.
 - Week 5 observability prep (in flight):
   * No request/span ID propagation yet; plan to add a middleware (likely `tower-http`'s `SetRequestIdLayer` + `PropagateRequestIdLayer`) and expose the ID via response headers + tracing spans so downstream logs/tests can assert correlation.
   * `AppState::record_http_request` relies on hard-coded route labels; consider using `axum::extract::MatchedPath` inside middleware so metrics stay consistent once more routes land.
   * `MetricsContext` currently holds only `http_requests_total` and `db_ready`; extend with histograms (latency), gauges (WebSocket connection depth), and counters for message flow/backpressure once instrumentation design settles.
-  * `ServerConfig.metrics.bind_addr` is validated but unused - decide whether to spin a distinct metrics listener or drop the field before we freeze config.
-  * WebSocket fan-out has no metrics/log correlation; plan to emit per-channel connection/change events (gated behind metrics feature) and capture queue depth/backpressure stats.
-  * Docs vs implementation: `docs/PROTOCOL.md` claims event IDs derive from BLAKE3 hashes, but `EventBuilder::build` still emits `$`-prefixed UUID v4 strings; either update the spec or wire the hash-based ID before federation work ramps.
+  * WebSocket fan-out still needs correlation IDs + queue depth telemetry (metrics scaffolding now exists).
 - Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (metrics gating optional). WebSocket integration test requires Tokio runtime (runs by default).
 - Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql` (guilds/channels/channel_events schema).
 - Docs touched: docs/SETUP.md (session key + DB persistence notes), docs/TIMELINE.md (Weeks 1-4 updated), docs/API.md (sessions + guild/channel/message routes + WebSocket), docs/PROTOCOL.md (event envelope + guardrails), docs/CI_PLAN.md (matrix outline).
@@ -30,13 +32,13 @@ Context Snapshot (updated 2025-10-13 01:22Z)
   * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
-Notes for next agent (2025-10-13 01:22Z):
+Notes for next agent (2025-10-13 02:28Z):
 - Messaging CRUD/WebSocket stack is live; sync with frontend on any schema tweaks (sender identity, pagination cursors) as they build against docs/API.md.
 - Prioritise observability sprint kickoff: introduce request ID/tracing layers, wire Prometheus metrics for HTTP + WebSocket flows, and capture regression tests (log snapshot + metrics scrape).
-- Revisit `ServerConfig.metrics.bind_addr` usage before adding new listeners - either honour it (spawn secondary Axum server) or remove from config to avoid drift.
+- Confirm downstream consumers handle the new BLAKE3/base58 event IDs and the 404 semantics introduced on messaging routes.
+- Surface the new `server_name` configuration in deployment manifests so `origin_server` is stable across environments.
 - Start drafting credential storage schema + migrations so auth hardening (refresh tokens, memberships) can follow; tee up openguild-storage interfaces for user tables.
 - Readiness path keeps a pooled DB handle (StoragePool clone) while logging eager connect errors - preserve this behaviour when refactoring.
 - CI plan lives in docs/CI_PLAN.md; workflows still missing.
 - Use Makefile helpers (`make fmt`, `make lint`, `make check`, `make test`, `make test-metrics`) to keep the workspace tidy.
 - Keep BRAIN.txt current; still our ad-hoc handoff channel.
-- Align documentation with implementation: either update `docs/PROTOCOL.md` to note `$`-prefixed UUID event IDs or implement the advertised BLAKE3-derived identifiers before frontend/federation consumers rely on them.

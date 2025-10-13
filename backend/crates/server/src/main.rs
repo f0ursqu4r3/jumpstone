@@ -4,6 +4,8 @@ mod messaging;
 mod metrics;
 mod session;
 
+#[cfg(feature = "metrics")]
+use anyhow::Context;
 use anyhow::Result;
 use axum::{
     extract::State,
@@ -129,6 +131,8 @@ struct CliOptions {
     #[arg(long)]
     host: Option<String>,
     #[arg(long)]
+    server_name: Option<String>,
+    #[arg(long)]
     port: Option<u16>,
     #[arg(long)]
     log_format: Option<LogFormat>,
@@ -147,6 +151,7 @@ impl CliOptions {
         CliOverrides {
             bind_addr: self.bind_addr,
             host: self.host,
+            server_name: self.server_name,
             port: self.port,
             log_format: self.log_format,
             metrics_enabled: self.metrics_enabled,
@@ -218,7 +223,28 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
     #[cfg(not(feature = "metrics"))]
     let state = AppState::new(config.clone(), storage, messaging_service.clone())
         .with_session(session_context.clone());
+
+    #[cfg(feature = "metrics")]
+    let metrics_state = state.clone();
+
     let app = build_app(state);
+
+    #[cfg(feature = "metrics")]
+    {
+        if config.metrics.enabled {
+            if let Some(bind_addr) = &config.metrics.bind_addr {
+                let metrics_addr: SocketAddr = bind_addr
+                    .parse()
+                    .context("failed to parse metrics bind addr")?;
+                let state = metrics_state;
+                tokio::spawn(async move {
+                    if let Err(err) = serve_metrics(metrics_addr, state).await {
+                        error!(?err, "metrics server terminated unexpectedly");
+                    }
+                });
+            }
+        }
+    }
 
     let addr: SocketAddr = config.listener_addr()?;
     let listener = TcpListener::bind(addr).await?;
@@ -234,7 +260,7 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
 #[derive(Clone)]
 struct AppState {
     started_at: Instant,
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "metrics"), allow(dead_code))]
     config: Arc<ServerConfig>,
     storage: StorageState,
     messaging: Arc<messaging::MessagingService>,
@@ -419,6 +445,8 @@ async fn version(State(state): State<AppState>) -> Json<VersionResponse> {
 fn build_app(state: AppState) -> Router {
     #[cfg(feature = "metrics")]
     let metrics_enabled = state.metrics_enabled();
+    #[cfg(feature = "metrics")]
+    let expose_metrics_here = metrics_enabled && state.config.metrics.bind_addr.is_none();
 
     #[cfg_attr(not(feature = "metrics"), allow(unused_mut))]
     let mut router = Router::new()
@@ -442,7 +470,7 @@ fn build_app(state: AppState) -> Router {
 
     #[cfg(feature = "metrics")]
     {
-        if metrics_enabled {
+        if expose_metrics_here {
             router = router.route("/metrics", get(metrics_handler));
         }
     }
@@ -538,6 +566,23 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
+#[cfg(feature = "metrics")]
+fn build_metrics_router(state: AppState) -> Router {
+    Router::new()
+        .route("/metrics", get(metrics_handler))
+        .with_state(state)
+}
+
+#[cfg(feature = "metrics")]
+async fn serve_metrics(bind_addr: SocketAddr, state: AppState) -> Result<()> {
+    let router = build_metrics_router(state);
+    let listener = TcpListener::bind(bind_addr).await?;
+    let addr = listener.local_addr()?;
+    info!("metrics listening on {addr}");
+    axum::serve(listener, router.into_make_service()).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,6 +606,7 @@ mod tests {
     use tracing::info;
     use tracing_subscriber::fmt::writer::MakeWriter;
     use tracing_subscriber::EnvFilter;
+    use uuid::Uuid;
 
     fn test_config() -> Arc<ServerConfig> {
         Arc::new(ServerConfig::default())
@@ -583,7 +629,7 @@ mod tests {
         storage: StorageState,
     ) -> AppState {
         let session = session::tests::empty_session_context().context.clone();
-        let origin = config.host.clone();
+        let origin = config.server_name.clone();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(origin));
         AppState::new(config, storage, messaging).with_session(session)
     }
@@ -711,7 +757,7 @@ mod tests {
         let past = Instant::now() - Duration::from_secs(2);
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let app_state = AppState::with_start_time(config, storage_unconfigured(), messaging, past)
             .with_session(default_session_context());
@@ -740,7 +786,7 @@ mod tests {
         config.database_url = Some("postgres://app:secret@localhost/app".into());
         let config = Arc::new(config);
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let app_state = AppState::new(config, storage_connected(), messaging)
             .with_session(default_session_context());
@@ -769,7 +815,7 @@ mod tests {
     fn app_state_reports_uptime_in_seconds() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(default_session_context());
@@ -807,7 +853,7 @@ mod tests {
             session::tests::session_context_with_user("alice@example.org", "supersecret").await;
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(harness.context.clone());
@@ -849,7 +895,7 @@ mod tests {
         let harness = session::tests::empty_session_context();
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(harness.context.clone());
@@ -879,7 +925,7 @@ mod tests {
     async fn guild_channel_crud_endpoints() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(default_session_context());
@@ -957,10 +1003,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_channel_returns_not_found_when_guild_missing() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let bogus_guild = Uuid::new_v4();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/guilds/{bogus_guild}/channels"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"general"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn post_message_returns_not_found_for_unknown_channel() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let channel_id = Uuid::new_v4();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/channels/{channel_id}/messages"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"sender":"@user:example.org","content":"hello world"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn channel_socket_returns_not_found_for_unknown_channel() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service())
+                .await
+                .expect("websocket test server error");
+        });
+
+        let url = format!("ws://{}/channels/{}/ws", addr, Uuid::new_v4());
+        match connect_async(url).await {
+            Ok(_) => panic!("handshake unexpectedly succeeded"),
+            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+                assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            }
+            Err(err) => panic!("unexpected websocket error: {err:?}"),
+        }
+
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn websocket_broadcasts_events() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let guild = messaging.create_guild("Web Socket Guild").await.unwrap();
         let channel = messaging
@@ -1073,6 +1203,8 @@ mod tests {
             "127.0.0.1:5000",
             "--host",
             "127.0.0.1",
+            "--server-name",
+            "app.openguild.test",
             "--port",
             "5000",
             "--log-format",
@@ -1093,6 +1225,7 @@ mod tests {
 
         assert_eq!(config.bind_addr.as_deref(), Some("127.0.0.1:5000"));
         assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.server_name, "app.openguild.test");
         assert_eq!(config.port, 5000);
         assert_eq!(config.log_format, LogFormat::Json);
         assert!(config.metrics.enabled);
@@ -1113,7 +1246,7 @@ mod tests {
         let metrics_ctx = MetricsContext::init().expect("metrics init");
         let config = metrics_enabled_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(default_session_context())
@@ -1154,7 +1287,7 @@ mod tests {
     async fn metrics_route_absent_when_disabled() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
-            config.host.clone(),
+            config.server_name.clone(),
         ));
         let state = AppState::new(config, storage_unconfigured(), messaging)
             .with_session(default_session_context());
@@ -1171,5 +1304,45 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn metrics_route_served_on_dedicated_listener_when_configured() {
+        let metrics_ctx = MetricsContext::init().expect("metrics init");
+        let mut config = ServerConfig::default();
+        config.metrics.enabled = true;
+        config.metrics.bind_addr = Some("127.0.0.1:0".into());
+        let config = Arc::new(config);
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context())
+            .with_metrics(Some(metrics_ctx.clone()));
+
+        let main_app = build_app(state.clone());
+        let response = main_app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let metrics_app = build_metrics_router(state);
+        let response = metrics_app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

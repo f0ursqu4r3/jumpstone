@@ -56,6 +56,7 @@ impl Default for SessionConfig {
 pub struct ServerConfig {
     pub bind_addr: Option<String>,
     pub host: String,
+    pub server_name: String,
     pub port: u16,
     pub log_format: LogFormat,
     pub metrics: MetricsConfig,
@@ -68,6 +69,7 @@ impl Default for ServerConfig {
         Self {
             bind_addr: None,
             host: "0.0.0.0".to_string(),
+            server_name: "localhost".to_string(),
             port: 8080,
             log_format: LogFormat::Compact,
             metrics: MetricsConfig::default(),
@@ -92,6 +94,7 @@ impl ServerConfig {
                     .try_parsing(true),
             )
             .set_default("host", defaults.host.clone())?
+            .set_default("server_name", defaults.server_name.clone())?
             .set_default("port", defaults.port as i64)?
             .set_default("log_format", defaults.log_format.as_str())?
             .set_default("metrics.enabled", defaults.metrics.enabled)?;
@@ -116,6 +119,10 @@ impl ServerConfig {
         self.log_format.clone()
     }
 
+    pub fn server_name(&self) -> &str {
+        &self.server_name
+    }
+
     fn validate(&self) -> Result<(), ConfigError> {
         if self.port == 0 {
             return Err(ConfigError::InvalidBindAddr("port cannot be zero".into()));
@@ -134,6 +141,10 @@ impl ServerConfig {
 
         if let Some(host) = &overrides.host {
             self.host = host.clone();
+        }
+
+        if let Some(server_name) = &overrides.server_name {
+            self.server_name = server_name.clone();
         }
 
         if let Some(port) = overrides.port {
@@ -168,6 +179,7 @@ impl ServerConfig {
 pub struct CliOverrides {
     pub bind_addr: Option<String>,
     pub host: Option<String>,
+    pub server_name: Option<String>,
     pub port: Option<u16>,
     pub log_format: Option<LogFormat>,
     pub metrics_enabled: Option<bool>,
@@ -283,6 +295,7 @@ mod tests {
         let overrides = CliOverrides {
             bind_addr: Some("127.0.0.1:9999".into()),
             host: Some("127.0.0.1".into()),
+            server_name: Some("api.openguild.local".into()),
             port: Some(9999),
             log_format: Some(LogFormat::Json),
             metrics_enabled: Some(true),
@@ -294,6 +307,7 @@ mod tests {
         cfg.apply_overrides(&overrides).expect("overrides apply");
         assert_eq!(cfg.bind_addr.as_deref(), Some("127.0.0.1:9999"));
         assert_eq!(cfg.host, "127.0.0.1");
+        assert_eq!(cfg.server_name, "api.openguild.local");
         assert_eq!(cfg.port, 9999);
         assert_eq!(cfg.log_format, LogFormat::Json);
         assert!(cfg.metrics.enabled);

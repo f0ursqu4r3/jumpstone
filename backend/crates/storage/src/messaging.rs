@@ -99,6 +99,34 @@ impl MessagingRepository {
         Ok(channels)
     }
 
+    pub async fn guild_exists(&self, guild_id: Uuid) -> Result<bool> {
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM guilds WHERE guild_id = $1
+            )
+            "#,
+        )
+        .bind(guild_id)
+        .fetch_one(self.pool.pool())
+        .await?;
+        Ok(exists)
+    }
+
+    pub async fn channel_exists(&self, channel_id: Uuid) -> Result<bool> {
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM channels WHERE channel_id = $1
+            )
+            "#,
+        )
+        .bind(channel_id)
+        .fetch_one(self.pool.pool())
+        .await?;
+        Ok(exists)
+    }
+
     pub async fn append_event(
         &self,
         channel_id: Uuid,

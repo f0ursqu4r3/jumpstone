@@ -6,8 +6,6 @@ use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
-use uuid::Uuid;
-
 /// Public alias representing canonical event identifiers.
 pub type EventId = String;
 
@@ -74,9 +72,21 @@ impl CanonicalEvent {
 
     pub fn canonical_hash(&self) -> Vec<u8> {
         let mut hasher = Hasher::new();
-        let canonical = serde_json::to_vec(self).expect("serialization must succeed");
+        let canonical = self.canonical_bytes();
         hasher.update(&canonical);
         hasher.finalize().as_bytes().to_vec()
+    }
+
+    fn canonical_bytes(&self) -> Vec<u8> {
+        let mut cloned = self.clone();
+        cloned.event_id.clear();
+        cloned.signatures.clear();
+        serde_json::to_vec(&cloned).expect("serialization must succeed")
+    }
+
+    pub fn event_id_from_hash(hash: &[u8]) -> EventId {
+        let encoded = bs58::encode(hash).into_string();
+        format!("${encoded}")
     }
 }
 
@@ -127,8 +137,26 @@ impl EventBuilder {
     }
 
     pub fn build(mut self) -> CanonicalEvent {
-        let uuid = Uuid::new_v4();
-        self.event.event_id = format!("${uuid}");
+        let hash = self.event.canonical_hash();
+        self.event.event_id = CanonicalEvent::event_id_from_hash(&hash);
         self.event
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_id_matches_canonical_hash() {
+        let event = EventBuilder::new("example.org", "!room:example.org", "message")
+            .sender("@user:example.org")
+            .content(serde_json::json!({ "content": "hello world" }))
+            .build();
+
+        let hash = event.canonical_hash();
+        let expected_id = CanonicalEvent::event_id_from_hash(&hash);
+        assert_eq!(event.event_id, expected_id);
+        assert!(event.event_id.starts_with('$'));
     }
 }

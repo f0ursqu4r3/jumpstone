@@ -7,7 +7,6 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use axum::{
     extract::{
@@ -21,6 +20,7 @@ use axum::{
 use openguild_core::messaging::MessagePayload;
 use openguild_storage::{Channel, ChannelEvent, Guild, MessagingRepository, StoragePool};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tokio::{
     sync::{broadcast, RwLock, Semaphore},
     time::timeout,
@@ -33,43 +33,73 @@ const BROADCAST_CAPACITY: usize = 256;
 const MAX_WS_CONNECTIONS: usize = 256;
 const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Debug, Error)]
+pub enum MessagingError {
+    #[error("guild not found")]
+    GuildNotFound,
+    #[error("channel not found")]
+    ChannelNotFound,
+    #[error("storage error: {0}")]
+    Storage(#[from] anyhow::Error),
+}
+
 #[async_trait]
 pub trait ChannelStore: Send + Sync {
-    async fn create_guild(&self, name: &str) -> Result<Guild>;
-    async fn list_guilds(&self) -> Result<Vec<Guild>>;
-    async fn create_channel(&self, guild_id: Uuid, name: &str) -> Result<Channel>;
-    async fn list_channels_for_guild(&self, guild_id: Uuid) -> Result<Vec<Channel>>;
+    async fn create_guild(&self, name: &str) -> Result<Guild, MessagingError>;
+    async fn list_guilds(&self) -> Result<Vec<Guild>, MessagingError>;
+    async fn create_channel(&self, guild_id: Uuid, name: &str) -> Result<Channel, MessagingError>;
+    async fn list_channels_for_guild(&self, guild_id: Uuid)
+        -> Result<Vec<Channel>, MessagingError>;
     async fn append_event(
         &self,
         channel_id: Uuid,
         event_id: &str,
         event_type: &str,
         body: &serde_json::Value,
-    ) -> Result<ChannelEvent>;
+    ) -> Result<ChannelEvent, MessagingError>;
     async fn recent_events(
         &self,
         channel_id: Uuid,
         since_sequence: Option<i64>,
         limit: i64,
-    ) -> Result<Vec<ChannelEvent>>;
+    ) -> Result<Vec<ChannelEvent>, MessagingError>;
+    async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError>;
 }
 
 #[async_trait]
 impl ChannelStore for MessagingRepository {
-    async fn create_guild(&self, name: &str) -> Result<Guild> {
-        MessagingRepository::create_guild(self, name).await
+    async fn create_guild(&self, name: &str) -> Result<Guild, MessagingError> {
+        MessagingRepository::create_guild(self, name)
+            .await
+            .map_err(MessagingError::from)
     }
 
-    async fn list_guilds(&self) -> Result<Vec<Guild>> {
-        MessagingRepository::list_guilds(self).await
+    async fn list_guilds(&self) -> Result<Vec<Guild>, MessagingError> {
+        MessagingRepository::list_guilds(self)
+            .await
+            .map_err(MessagingError::from)
     }
 
-    async fn create_channel(&self, guild_id: Uuid, name: &str) -> Result<Channel> {
-        MessagingRepository::create_channel(self, guild_id, name).await
+    async fn create_channel(&self, guild_id: Uuid, name: &str) -> Result<Channel, MessagingError> {
+        if !self
+            .guild_exists(guild_id)
+            .await
+            .map_err(MessagingError::from)?
+        {
+            return Err(MessagingError::GuildNotFound);
+        }
+        MessagingRepository::create_channel(self, guild_id, name)
+            .await
+            .map_err(MessagingError::from)
     }
 
-    async fn list_channels_for_guild(&self, guild_id: Uuid) -> Result<Vec<Channel>> {
-        MessagingRepository::list_channels_for_guild(self, guild_id).await
+    async fn list_channels_for_guild(
+        &self,
+        guild_id: Uuid,
+    ) -> Result<Vec<Channel>, MessagingError> {
+        MessagingRepository::list_channels_for_guild(self, guild_id)
+            .await
+            .map_err(MessagingError::from)
     }
 
     async fn append_event(
@@ -78,8 +108,17 @@ impl ChannelStore for MessagingRepository {
         event_id: &str,
         event_type: &str,
         body: &serde_json::Value,
-    ) -> Result<ChannelEvent> {
-        MessagingRepository::append_event(self, channel_id, event_id, event_type, body).await
+    ) -> Result<ChannelEvent, MessagingError> {
+        if !self
+            .channel_exists(channel_id)
+            .await
+            .map_err(MessagingError::from)?
+        {
+            return Err(MessagingError::ChannelNotFound);
+        }
+        MessagingRepository::append_event(self, channel_id, event_id, event_type, body)
+            .await
+            .map_err(MessagingError::from)
     }
 
     async fn recent_events(
@@ -87,8 +126,16 @@ impl ChannelStore for MessagingRepository {
         channel_id: Uuid,
         since_sequence: Option<i64>,
         limit: i64,
-    ) -> Result<Vec<ChannelEvent>> {
-        MessagingRepository::recent_events(self, channel_id, since_sequence, limit).await
+    ) -> Result<Vec<ChannelEvent>, MessagingError> {
+        MessagingRepository::recent_events(self, channel_id, since_sequence, limit)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError> {
+        MessagingRepository::channel_exists(self, channel_id)
+            .await
+            .map_err(MessagingError::from)
     }
 }
 
@@ -103,7 +150,7 @@ struct InMemoryMessaging {
 
 #[async_trait]
 impl ChannelStore for InMemoryMessaging {
-    async fn create_guild(&self, name: &str) -> Result<Guild> {
+    async fn create_guild(&self, name: &str) -> Result<Guild, MessagingError> {
         let guild = Guild {
             guild_id: Uuid::new_v4(),
             name: name.to_string(),
@@ -116,15 +163,15 @@ impl ChannelStore for InMemoryMessaging {
         Ok(guild)
     }
 
-    async fn list_guilds(&self) -> Result<Vec<Guild>> {
+    async fn list_guilds(&self) -> Result<Vec<Guild>, MessagingError> {
         let mut guilds: Vec<_> = self.guilds.read().await.values().cloned().collect();
         guilds.sort_by_key(|g| g.created_at);
         Ok(guilds)
     }
 
-    async fn create_channel(&self, guild_id: Uuid, name: &str) -> Result<Channel> {
+    async fn create_channel(&self, guild_id: Uuid, name: &str) -> Result<Channel, MessagingError> {
         if !self.guilds.read().await.contains_key(&guild_id) {
-            return Err(anyhow!("guild_id not found"));
+            return Err(MessagingError::GuildNotFound);
         }
         let channel = Channel {
             channel_id: Uuid::new_v4(),
@@ -145,7 +192,10 @@ impl ChannelStore for InMemoryMessaging {
         Ok(channel)
     }
 
-    async fn list_channels_for_guild(&self, guild_id: Uuid) -> Result<Vec<Channel>> {
+    async fn list_channels_for_guild(
+        &self,
+        guild_id: Uuid,
+    ) -> Result<Vec<Channel>, MessagingError> {
         let channels_map = self.channels.read().await;
         let index = self.guild_index.read().await;
         let ids = index.get(&guild_id).cloned().unwrap_or_default();
@@ -163,9 +213,9 @@ impl ChannelStore for InMemoryMessaging {
         event_id: &str,
         event_type: &str,
         body: &serde_json::Value,
-    ) -> Result<ChannelEvent> {
+    ) -> Result<ChannelEvent, MessagingError> {
         if !self.channels.read().await.contains_key(&channel_id) {
-            return Err(anyhow!("channel_id not found"));
+            return Err(MessagingError::ChannelNotFound);
         }
         let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
         let event = ChannelEvent {
@@ -190,7 +240,7 @@ impl ChannelStore for InMemoryMessaging {
         channel_id: Uuid,
         since_sequence: Option<i64>,
         limit: i64,
-    ) -> Result<Vec<ChannelEvent>> {
+    ) -> Result<Vec<ChannelEvent>, MessagingError> {
         let events_map = self.events.read().await;
         let mut events = events_map.get(&channel_id).cloned().unwrap_or_default();
         events.sort_by_key(|e| e.sequence);
@@ -201,6 +251,10 @@ impl ChannelStore for InMemoryMessaging {
             events = events[(events.len() - limit as usize)..].to_vec();
         }
         Ok(events)
+    }
+
+    async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError> {
+        Ok(self.channels.read().await.contains_key(&channel_id))
     }
 }
 
@@ -238,19 +292,23 @@ impl MessagingService {
         }
     }
 
-    pub async fn create_guild(&self, name: &str) -> Result<Guild> {
+    pub async fn create_guild(&self, name: &str) -> Result<Guild, MessagingError> {
         self.store.create_guild(name).await
     }
 
-    pub async fn list_guilds(&self) -> Result<Vec<Guild>> {
+    pub async fn list_guilds(&self) -> Result<Vec<Guild>, MessagingError> {
         self.store.list_guilds().await
     }
 
-    pub async fn create_channel(&self, guild_id: Uuid, name: &str) -> Result<Channel> {
+    pub async fn create_channel(
+        &self,
+        guild_id: Uuid,
+        name: &str,
+    ) -> Result<Channel, MessagingError> {
         self.store.create_channel(guild_id, name).await
     }
 
-    pub async fn list_channels(&self, guild_id: Uuid) -> Result<Vec<Channel>> {
+    pub async fn list_channels(&self, guild_id: Uuid) -> Result<Vec<Channel>, MessagingError> {
         self.store.list_channels_for_guild(guild_id).await
     }
 
@@ -259,7 +317,7 @@ impl MessagingService {
         channel_id: Uuid,
         sender: &str,
         content: &str,
-    ) -> Result<ChannelEvent> {
+    ) -> Result<ChannelEvent, MessagingError> {
         let payload = MessagePayload {
             content: content.to_owned(),
         };
@@ -269,7 +327,8 @@ impl MessagingService {
             sender,
             Vec::new(),
         );
-        let body = serde_json::to_value(&event)?;
+        let body =
+            serde_json::to_value(&event).map_err(|err| MessagingError::Storage(err.into()))?;
         let stored = self
             .store
             .append_event(channel_id, &event.event_id, &event.event_type, &body)
@@ -283,6 +342,10 @@ impl MessagingService {
         self.broadcast(channel_id, broadcast_event).await;
 
         Ok(stored)
+    }
+
+    pub async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError> {
+        self.store.channel_exists(channel_id).await
     }
 
     async fn broadcast(&self, channel_id: Uuid, event: Arc<OutboundEvent>) {
@@ -438,44 +501,78 @@ pub async fn create_guild(
     State(state): State<AppState>,
     Json(body): Json<CreateGuildRequest>,
 ) -> Result<Json<CreateGuildResponse>, StatusCode> {
-    let messaging = state.messaging().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    #[cfg(feature = "metrics")]
+    let route = "guilds.create";
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
+    };
 
-    if body.name.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+    let name = body.name.trim();
+    if name.is_empty() {
+        let status = StatusCode::BAD_REQUEST;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
     }
 
-    let guild = messaging
-        .create_guild(body.name.trim())
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(CreateGuildResponse {
-        guild_id: guild.guild_id,
-        name: guild.name,
-        created_at: guild.created_at,
-    }))
+    match messaging.create_guild(name).await {
+        Ok(guild) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, StatusCode::OK.as_u16());
+            Ok(Json(CreateGuildResponse {
+                guild_id: guild.guild_id,
+                name: guild.name,
+                created_at: guild.created_at,
+            }))
+        }
+        Err(err) => {
+            tracing::error!(?err, "failed to create guild");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+    }
 }
 
 pub async fn list_guilds(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CreateGuildResponse>>, StatusCode> {
-    let messaging = state.messaging().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    #[cfg(feature = "metrics")]
+    let route = "guilds.list";
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
+    };
 
-    let guilds = messaging
-        .list_guilds()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(
-        guilds
-            .into_iter()
-            .map(|g| CreateGuildResponse {
-                guild_id: g.guild_id,
-                name: g.name,
-                created_at: g.created_at,
-            })
-            .collect(),
-    ))
+    match messaging.list_guilds().await {
+        Ok(guilds) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, StatusCode::OK.as_u16());
+            Ok(Json(
+                guilds
+                    .into_iter()
+                    .map(|g| CreateGuildResponse {
+                        guild_id: g.guild_id,
+                        name: g.name,
+                        created_at: g.created_at,
+                    })
+                    .collect(),
+            ))
+        }
+        Err(err) => {
+            tracing::error!(?err, "failed to list guilds");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+    }
 }
 
 pub async fn create_channel(
@@ -483,47 +580,93 @@ pub async fn create_channel(
     Path(guild_id): Path<Uuid>,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Json<CreateChannelResponse>, StatusCode> {
-    let messaging = state.messaging().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    #[cfg(feature = "metrics")]
+    let route = "channels.create";
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
+    };
 
-    if body.name.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+    let name = body.name.trim();
+    if name.is_empty() {
+        let status = StatusCode::BAD_REQUEST;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
     }
 
-    let channel = messaging
-        .create_channel(guild_id, body.name.trim())
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(CreateChannelResponse {
-        channel_id: channel.channel_id,
-        guild_id: channel.guild_id,
-        name: channel.name,
-        created_at: channel.created_at,
-    }))
+    match messaging.create_channel(guild_id, name).await {
+        Ok(channel) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, StatusCode::OK.as_u16());
+            Ok(Json(CreateChannelResponse {
+                channel_id: channel.channel_id,
+                guild_id: channel.guild_id,
+                name: channel.name,
+                created_at: channel.created_at,
+            }))
+        }
+        Err(MessagingError::GuildNotFound) => {
+            let status = StatusCode::NOT_FOUND;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+        Err(err) => {
+            tracing::error!(?err, "failed to create channel");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+    }
 }
 
 pub async fn list_channels(
     State(state): State<AppState>,
     Path(guild_id): Path<Uuid>,
 ) -> Result<Json<Vec<CreateChannelResponse>>, StatusCode> {
-    let messaging = state.messaging().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    #[cfg(feature = "metrics")]
+    let route = "channels.list";
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
+    };
 
-    let channels = messaging
-        .list_channels(guild_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(
-        channels
-            .into_iter()
-            .map(|c| CreateChannelResponse {
-                channel_id: c.channel_id,
-                guild_id: c.guild_id,
-                name: c.name,
-                created_at: c.created_at,
-            })
-            .collect(),
-    ))
+    match messaging.list_channels(guild_id).await {
+        Ok(channels) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, StatusCode::OK.as_u16());
+            Ok(Json(
+                channels
+                    .into_iter()
+                    .map(|c| CreateChannelResponse {
+                        channel_id: c.channel_id,
+                        guild_id: c.guild_id,
+                        name: c.name,
+                        created_at: c.created_at,
+                    })
+                    .collect(),
+            ))
+        }
+        Err(MessagingError::GuildNotFound) => {
+            let status = StatusCode::NOT_FOUND;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+        Err(err) => {
+            tracing::error!(?err, "failed to list channels");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+    }
 }
 
 pub async fn post_message(
@@ -531,25 +674,49 @@ pub async fn post_message(
     Path(channel_id): Path<Uuid>,
     Json(body): Json<PostMessageRequest>,
 ) -> Result<Json<PostMessageResponse>, StatusCode> {
-    let messaging = state.messaging().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    #[cfg(feature = "metrics")]
+    let route = "messages.post";
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
+    };
 
-    if body.sender.trim().is_empty() || body.content.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+    let sender = body.sender.trim();
+    let content = body.content.trim();
+
+    if sender.is_empty() || content.is_empty() {
+        let status = StatusCode::BAD_REQUEST;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
     }
 
-    let event = messaging
-        .append_message(channel_id, body.sender.trim(), body.content.trim())
-        .await
-        .map_err(|err| {
-            tracing::warn!(?err, "failed to append channel event");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    Ok(Json(PostMessageResponse {
-        sequence: event.sequence,
-        event_id: event.event_id,
-        created_at: event.created_at,
-    }))
+    match messaging.append_message(channel_id, sender, content).await {
+        Ok(event) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, StatusCode::OK.as_u16());
+            Ok(Json(PostMessageResponse {
+                sequence: event.sequence,
+                event_id: event.event_id,
+                created_at: event.created_at,
+            }))
+        }
+        Err(MessagingError::ChannelNotFound) => {
+            let status = StatusCode::NOT_FOUND;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+        Err(err) => {
+            tracing::error!(?err, "failed to append channel event");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            Err(status)
+        }
+    }
 }
 
 pub async fn channel_socket(
@@ -557,7 +724,31 @@ pub async fn channel_socket(
     Path(channel_id): Path<Uuid>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    let messaging = state.messaging().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    #[cfg(feature = "metrics")]
+    let route = "channels.ws";
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(route, status.as_u16());
+        return Err(status);
+    };
+
+    match messaging.channel_exists(channel_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let status = StatusCode::NOT_FOUND;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            return Err(status);
+        }
+        Err(err) => {
+            tracing::error!(?err, "failed to determine channel existence");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(route, status.as_u16());
+            return Err(status);
+        }
+    }
 
     Ok(messaging.open_websocket(channel_id, ws).await)
 }
@@ -566,9 +757,10 @@ pub fn init_messaging_service(
     config: &ServerConfig,
     pool: Option<StoragePool>,
 ) -> MessagingService {
+    let origin = config.server_name().to_string();
     if let Some(pool) = pool {
-        MessagingService::new_with_pool(pool, config.host.clone())
+        MessagingService::new_with_pool(pool, origin)
     } else {
-        MessagingService::new_in_memory(config.host.clone())
+        MessagingService::new_in_memory(origin)
     }
 }

@@ -35,7 +35,8 @@ The server now loads configuration via the `config` crate with layered sources:
 Common environment overrides:
 
 - `OPENGUILD_SERVER__BIND_ADDR` — full socket address (e.g. `0.0.0.0:8080`). Overrides host/port.
-- `OPENGUILD_SERVER__HOST` — interface to bind (default `0.0.0.0`).
+- `OPENGUILD_SERVER__HOST` - interface to bind (default `0.0.0.0`).
+- `OPENGUILD_SERVER__SERVER_NAME` - canonical homeserver name advertised in events (default `localhost`).
 - `OPENGUILD_SERVER__PORT` — port number (default `8080`).
 - `OPENGUILD_SERVER__LOG_FORMAT` — `compact` (default) or `json`.
 - `OPENGUILD_SERVER__METRICS__ENABLED` — `true`/`false` toggle for the Prometheus exporter.
@@ -46,6 +47,7 @@ Common environment overrides:
 
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
 > The exporter currently publishes the `openguild_http_requests_total{route,status}` counter.
+> When `OPENGUILD_SERVER__METRICS__BIND_ADDR` is set, Prometheus scraping must target that listener (`/metrics` is removed from the primary router).
 
 ### Command-Line Overrides
 
@@ -54,6 +56,7 @@ You can override most runtime settings via CLI flags (highest precedence):
 ```bash
 cargo run --bin openguild-server -- \
   --bind-addr 0.0.0.0:8081 \
+  --server-name api.openguild.test \
   --log-format json \
   --metrics-enabled true \
   --metrics-bind-addr 127.0.0.1:9100 \
@@ -62,9 +65,10 @@ cargo run --bin openguild-server -- \
 
 Available flags:
 
-- `--bind-addr <addr>` — overrides bind address (takes precedence over host/port).
-- `--host <host>` / `--port <port>` — override individual components.
-- `--log-format <compact|json>` — switch logging format without touching env vars.
+- `--bind-addr <addr>` - overrides bind address (takes precedence over host/port).
+- `--host <host>` / `--port <port>` - override individual components.
+- `--log-format <compact|json>` - switch logging format without touching env vars.
+- `--server-name <name>` - set the canonical homeserver name embedded in events.
 - `--metrics-enabled <true|false>` — toggle metrics exporter stub.
 - `--metrics-bind-addr <addr>` — dedicate a bind address for metrics (when enabled).
 - `--database-url <url>` — supply Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`); when set the server upserts issued sessions into Postgres.
