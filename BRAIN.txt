@@ -50,7 +50,7 @@ Notes for next agent (2025-10-13 04:39Z):
 - Keep BRAIN.txt current; still our ad-hoc handoff channel.
 
 Week 6 current gaps / TODOs:
-- [ ] Document the refreshed login contract (device metadata requirement + refresh token response) in docs/API.md and docs/PROTOCOL.md; coordinate with frontend for `device_id` enforcement.
+- [x] Document the refreshed login contract (device metadata requirement + refresh token response) in docs/API.md and docs/PROTOCOL.md; coordinate with frontend for `device_id` enforcement.
 - [ ] Plan revoke/rotate flows (API surface + CLI tooling) building on refresh session store scaffolding.
 
 

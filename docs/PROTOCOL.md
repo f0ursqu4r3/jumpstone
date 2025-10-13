@@ -26,6 +26,7 @@ This document expands on the federation model outlined in `../BRIEF.md`.
   - `channel_events` table stores canonical event JSON plus a monotonic `sequence` (BIGSERIAL) per channel for ordering guarantees.
   - All writes are upserts guarded by unique `event_id` to avoid duplicate delivery.
   - An in-memory fallback mirrors the same semantics when Postgres is not configured (dev ergonomics).
+  - Refresh session persistence (`backend/migrations/0005_refresh_sessions.sql`) captures per-device refresh UUIDs, inferred IPs, and audit timestamps so auth refresh/revocation can participate in future federation gossip.
 
 - WebSocket fan-out (`GET /channels/{channel_id}/ws`):
   - Replays the most recent 50 events on connect to bootstrap the timeline.
@@ -50,5 +51,6 @@ Specify linear resolver for MVP and planned progression to Matrix-style conflict
 - Server key rotation cadence.
 - HTTP Signature algorithm negotiation.
 - Transparency log requirements.
+- Refresh token posture: access tokens are short-lived ed25519-signed sessions (see `SigningKeyRing`), while refresh tokens are base64url UUIDs bound to device identifiers; rotation or revocation invalidates the row in `refresh_sessions` and will need to fan out over federation channels.
 
 _Fill each section with precise specs as features land._

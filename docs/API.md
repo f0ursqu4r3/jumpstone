@@ -28,10 +28,10 @@ Populate each section as the implementation progresses.
 
 ### `POST /sessions/login`
 
-Initiates a session for the supplied identifier/secret pair. The current prototype authenticates against an in-memory store (suitable for local development); issued sessions persist to Postgres when a database pool is available (see `backend/migrations/0002_create_sessions.sql`), otherwise they remain in-memory for the process lifetime.
+Initiates a session for the supplied identifier/secret pair and provisions a refresh token that binds the client device. The current prototype authenticates against an in-memory store (suitable for local development); issued sessions persist to Postgres when a database pool is available (see `backend/migrations/0002_create_sessions.sql` for access tokens and `backend/migrations/0005_refresh_sessions.sql` for refresh tokens). When Postgres is absent, both access and refresh records remain in-memory for the process lifetime.
 
-- **Success**: returns HTTP 200 with a JSON payload containing a signed token and expiration timestamp.
-- **Validation error**: returns HTTP 400 with a list of field errors.
+- **Success**: returns HTTP 200 with a JSON payload containing a signed access token, its expiry, a refresh token (base64url UUID), and refresh expiry.
+- **Validation error**: returns HTTP 400 with a list of field errors (identifier, secret, device metadata).
 - **Invalid credentials**: returns HTTP 401 with `{"error":"invalid_credentials"}`.
 
 #### Request Body
@@ -39,20 +39,30 @@ Initiates a session for the supplied identifier/secret pair. The current prototy
 ```json
 {
   "identifier": "alice@example.org",
-  "secret": "supersecret"
+  "secret": "supersecret",
+  "device": {
+    "device_id": "alice-laptop",
+    "device_name": "Alice's Dev Laptop"
+  }
 }
 ```
+
+- `device.device_id` – **required**, caller-supplied stable identifier per physical/browser device. Used as the natural key for the refresh session (per-user unique).
+- `device.device_name` – optional display label persisted for audit tooling.
+- IP metadata is inferred from the first entry in `X-Forwarded-For` when the header is present; otherwise the remote socket address is recorded server-side.
 
 #### Successful Response
 
 ```json
 {
-  "token": "eyJzZXNzaW9uX2lkIjoiYmI4NzJiZjAt...snip...SzM1MjQifQ.7QAuPNJxjZO2q6WmyRjGy_qKSLqoTj_xdG9aQa2bjRw",
-  "expires_at": "2025-10-12T21:34:26.123456Z"
+  "access_token": "eyJzZXNzaW9uX2lkIjoiYmI4NzJiZjAt...snip...SzM1MjQifQ.7QAuPNJxjZO2q6WmyRjGy_qKSLqoTj_xdG9aQa2bjRw",
+  "access_expires_at": "2025-10-12T21:34:26.123456Z",
+  "refresh_token": "9cS8nB_zV7rVk7H4q4TRCQ",
+  "refresh_expires_at": "2025-11-11T21:34:26.123456Z"
 }
 ```
 
-> Token and timestamp above are illustrative. The actual value encodes the session payload (base64url) followed by an ed25519 signature.
+> The access token is a base64url-encoded JSON payload followed by an ed25519 signature. The refresh token is a base64url UUID referencing `refresh_sessions.refresh_id`. Both expirations are expressed in RFC 3339 with fractional seconds.
 
 #### Validation Error (HTTP 400)
 
@@ -79,10 +89,11 @@ Initiates a session for the supplied identifier/secret pair. The current prototy
 ```bash
 curl -X POST http://127.0.0.1:8080/sessions/login \
   -H "content-type: application/json" \
-  -d '{"identifier":"alice@example.org","secret":"supersecret"}'
+  -H "x-forwarded-for: 203.0.113.42" \
+  -d '{"identifier":"alice@example.org","secret":"supersecret","device":{"device_id":"alice-laptop","device_name":"Alice\'s Dev Laptop"}}'
 ```
 
-> When `DATABASE_URL` (or `OPENGUILD_SERVER__DATABASE_URL`) is set, the server will upsert each issued session into the `sessions` table in addition to returning the signed token.
+> When `DATABASE_URL` (or `OPENGUILD_SERVER__DATABASE_URL`) is set, the server will upsert each access token into the `sessions` table and each refresh token into `refresh_sessions` alongside device metadata, last-seen timestamps, and inferred IP addresses. Subsequent logins with the same `device_id` replace the stored refresh token for that device while retaining audit history.
 
 ## Guilds & Channels (Week 4 bootstrap)
 
