@@ -7,11 +7,13 @@ use sqlx::postgres::PgPoolOptions;
 
 pub mod messaging;
 pub mod session;
+pub mod user;
 
 pub use sqlx::PgPool;
 
 pub use messaging::{Channel, ChannelEvent, Guild, MessagingRepository};
 pub use session::{PersistedSession, SessionPersistence};
+pub use user::{CredentialError, UserRepository};
 
 /// Thin wrapper around a shared `PgPool`.
 #[derive(Clone)]

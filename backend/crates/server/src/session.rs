@@ -12,7 +12,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use openguild_crypto::{generate_signing_key, sign_message, verifying_key_from, SigningKey};
-use openguild_storage::{PersistedSession, SessionPersistence, StoragePool};
+use openguild_storage::{
+    CredentialError, PersistedSession, SessionPersistence, StoragePool, UserRepository,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -218,6 +220,43 @@ impl InMemorySessionStore {
     #[cfg(test)]
     pub async fn session_count(&self) -> usize {
         self.sessions.read().await.len()
+    }
+}
+
+#[derive(Clone)]
+pub struct DatabaseSessionAuthenticator {
+    pool: StoragePool,
+}
+
+impl DatabaseSessionAuthenticator {
+    pub fn new(pool: StoragePool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl SessionAuthenticator for DatabaseSessionAuthenticator {
+    async fn authenticate(&self, attempt: &LoginAttempt) -> Result<Option<AuthenticatedUser>> {
+        match UserRepository::verify_credentials(
+            self.pool.pool(),
+            &attempt.identifier,
+            &attempt.secret,
+        )
+        .await
+        {
+            Ok(user_id) => Ok(Some(AuthenticatedUser { user_id })),
+            Err(err) => {
+                if let Some(creds) = err.downcast_ref::<CredentialError>() {
+                    match creds {
+                        CredentialError::InvalidCredentials | CredentialError::UserNotFound => {
+                            Ok(None)
+                        }
+                    }
+                } else {
+                    Err(err)
+                }
+            }
+        }
     }
 }
 

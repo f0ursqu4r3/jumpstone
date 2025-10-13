@@ -30,7 +30,7 @@ Context Snapshot (updated 2025-10-13 04:39Z)
 - Outstanding follow-ups (pre-Week 5 checkpoints):
   * Lock observability approach: thread the new request IDs through tracing spans/log snapshots (HTTP + WebSocket) and extend tests to cover propagation.
   * Flesh out metrics backlog (HTTP latency histograms, messaging counters/gauges, queue depth) and decide on naming/label strategy before wiring into `MetricsContext`.
-  * Replace the in-memory authenticator with SQLx-backed credential storage once user schema exists; at that point revisit session issuance for refresh tokens/revocation.
+  * SQLx-backed credential storage now powers login when a database is configured; next up is wiring user registration flows (API + CLI seeding) and revisiting refresh token design.
   * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 

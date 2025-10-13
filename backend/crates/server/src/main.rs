@@ -49,7 +49,10 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 use openguild_storage::{connect, StoragePool};
-use session::{InMemorySessionStore, PostgresSessionRepository, SessionContext, SessionSigner};
+use session::{
+    DatabaseSessionAuthenticator, InMemorySessionStore, PostgresSessionRepository, SessionContext,
+    SessionSigner,
+};
 
 use crate::config::{CliOverrides, LogFormat, ServerConfig};
 #[cfg(feature = "metrics")]
@@ -212,10 +215,20 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
             "no session signing key supplied; generated ephemeral key"
         );
     }
-    let authenticator = Arc::new(InMemorySessionStore::new());
-    let repository: Arc<dyn session::SessionRepository> = match storage.pool() {
-        Some(pool) => Arc::new(PostgresSessionRepository::new(pool)),
-        None => authenticator.clone(),
+    let (authenticator, repository): (
+        Arc<dyn session::SessionAuthenticator>,
+        Arc<dyn session::SessionRepository>,
+    ) = match storage.pool() {
+        Some(pool) => (
+            Arc::new(DatabaseSessionAuthenticator::new(pool.clone())),
+            Arc::new(PostgresSessionRepository::new(pool)),
+        ),
+        None => {
+            let store = Arc::new(InMemorySessionStore::new());
+            let auth: Arc<dyn session::SessionAuthenticator> = store.clone();
+            let repo: Arc<dyn session::SessionRepository> = store.clone();
+            (auth, repo)
+        }
     };
     let session_context = Arc::new(SessionContext::new(
         session_signer,
