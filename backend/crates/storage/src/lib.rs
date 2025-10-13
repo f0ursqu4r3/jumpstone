@@ -15,7 +15,7 @@ pub use sqlx::PgPool;
 pub use messaging::{Channel, ChannelEvent, Guild, MessagingRepository};
 pub use refresh::{DeviceMetadata, NewRefreshSession, RefreshSessionRecord, RefreshSessionStore};
 pub use session::{PersistedSession, SessionPersistence};
-pub use user::{CredentialError, UserRepository};
+pub use user::{CreateUserError, CredentialError, UserRepository};
 
 /// Thin wrapper around a shared `PgPool`.
 #[derive(Clone)]

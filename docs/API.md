@@ -47,8 +47,8 @@ Initiates a session for the supplied identifier/secret pair and provisions a ref
 }
 ```
 
-- `device.device_id` – **required**, caller-supplied stable identifier per physical/browser device. Used as the natural key for the refresh session (per-user unique).
-- `device.device_name` – optional display label persisted for audit tooling.
+- `device.device_id` - **required**, caller-supplied stable identifier per physical/browser device. Used as the natural key for the refresh session (per-user unique).
+- `device.device_name` - optional display label persisted for audit tooling.
 - IP metadata is inferred from the first entry in `X-Forwarded-For` when the header is present; otherwise the remote socket address is recorded server-side.
 
 #### Successful Response
@@ -94,6 +94,62 @@ curl -X POST http://127.0.0.1:8080/sessions/login \
 ```
 
 > When `DATABASE_URL` (or `OPENGUILD_SERVER__DATABASE_URL`) is set, the server will upsert each access token into the `sessions` table and each refresh token into `refresh_sessions` alongside device metadata, last-seen timestamps, and inferred IP addresses. Subsequent logins with the same `device_id` replace the stored refresh token for that device while retaining audit history.
+
+### `POST /users/register`
+
+Registers a new user account. Requires a configured database; returns `503 Service Unavailable` when `database_url` is absent. Usernames are unique (case-sensitive) and passwords must be at least eight characters (Argon2id hashed).
+
+- **Success**: returns HTTP 201 with the created user identifier and echoed username.
+- **Validation error**: returns HTTP 400 with field errors for `username` and `password`.
+- **Username conflict**: returns HTTP 409 with `{"error":"username_taken"}`.
+- **Database unavailable**: returns HTTP 503 with `{"error":"database_unavailable"}`.
+
+#### Request Body
+
+```json
+{
+  "username": "alice",
+  "password": "supersecret"
+}
+```
+
+#### Successful Response
+
+```json
+{
+  "user_id": "5f6171fb-4c76-43f7-9e2f-5b6f5fd278af",
+  "username": "alice"
+}
+```
+
+#### Username Conflict (HTTP 409)
+
+```json
+{
+  "error": "username_taken"
+}
+```
+
+#### Quick Test (curl)
+
+```bash
+curl -X POST http://127.0.0.1:8080/users/register \
+  -H "content-type: application/json" \
+  -d '{"username":"alice","password":"supersecret"}'
+```
+
+### CLI Seeding (`seed-user` subcommand)
+
+For automated environments you can seed an account without hitting the HTTP API:
+
+```bash
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/app \
+  seed-user --username alice --password supersecret
+```
+
+- Respects the same configuration overrides as the server (`--host`, env vars, etc.).
+- Exits successfully when the user already exists (logs a message and skips duplication).
 
 ## Guilds & Channels (Week 4 bootstrap)
 

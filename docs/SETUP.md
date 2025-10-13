@@ -77,6 +77,38 @@ Available flags:
 
 The `/ready` endpoint reports `database` status using these settings. When a database URL is provided, the server performs an eager connection attempt during startup and surfaces either `configured` (success) or `error` (failure details); otherwise it reports `pending`.
 
+### Credential Bootstrap
+
+Once Postgres is available (`OPENGUILD_SERVER__DATABASE_URL` or `--database-url`), seed at least one account so you can exercise the session/login flow:
+
+```bash
+# Seed via CLI (uses the same config/env overrides as runtime)
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/openguild \
+  seed-user --username admin --password "supersecret"
+```
+
+- The command is idempotent: if the username already exists it logs a skip message and exits successfully.
+- Passwords must be **≥ 8 characters**; credentials are stored using Argon2id hashing.
+
+You can also provision accounts through the HTTP API once the server is running:
+
+```bash
+curl -X POST http://127.0.0.1:8080/users/register \
+  -H "content-type: application/json" \
+  -d '{"username":"admin","password":"supersecret"}'
+```
+
+For login/refresh flows, clients must supply a stable device identifier:
+
+```bash
+curl -X POST http://127.0.0.1:8080/sessions/login \
+  -H "content-type: application/json" \
+  -d '{"identifier":"admin","secret":"supersecret","device":{"device_id":"admin-laptop","device_name":"Admin Laptop"}}'
+```
+
+> Device IDs should be stable per physical/browser device; refresh tokens are keyed by `username` + `device_id`. Subsequent logins on the same device will rotate the corresponding refresh token record.
+
 ## Development Shortcuts
 
 A top-level `Makefile` provides common workflows:

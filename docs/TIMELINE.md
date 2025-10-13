@@ -84,10 +84,11 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Implement ed25519 signing key rotation plumbing in `openguild-crypto` and surface CLI/env config overrides.
   - [x] Persist refresh sessions via `StoragePool` with device metadata + audit timestamps; reuse `UserRepository` for credential verification.
   - [x] Add integration tests that cover multi-device refresh, revoke, and skew handling (unit + end-to-end via `cargo xtask test`).
-  - [ ] Update `docs/API.md`/`docs/PROTOCOL.md` for refresh + device payload requirements and register follow-up for revoke flows.
+  - [x] Update `docs/API.md`/`docs/PROTOCOL.md` for refresh + device payload requirements and register follow-up for revoke flows.
+  - [ ] Finalize refresh revoke/rotate API design (HTTP + CLI tooling).
 - [ ] Expand account management and credential hygiene.
-  - [ ] Ship CLI seeding + `/users/register` path that reuses the new storage plumbing.
-  - [ ] Document credential bootstrap + password policy updates in `docs/API.md` and `docs/SETUP.md`; add onboarding guidance for ops.
+  - [x] Ship CLI seeding + `/users/register` path that reuses the new storage plumbing.
+  - [x] Document credential bootstrap + password policy updates in `docs/API.md` (add `docs/SETUP.md` follow-up for onboarding guidance).
   - [ ] Schedule follow-up to revisit refresh token design decisions once telemetry lands.
 - [ ] Lock down messaging surface area.
   - [ ] Enforce authz checks on messaging CRUD/WebSocket routes and align `docs/PROTOCOL.md` with required identity.

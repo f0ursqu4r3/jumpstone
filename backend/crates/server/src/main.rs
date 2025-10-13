@@ -3,12 +3,13 @@ mod messaging;
 #[cfg(feature = "metrics")]
 mod metrics;
 mod session;
+mod users;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
 #[cfg(feature = "metrics")]
 use anyhow::Context;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use axum::{
     body::HttpBody,
     extract::{MatchedPath, State},
@@ -21,7 +22,7 @@ use axum::{
     http::{header::CONTENT_TYPE, StatusCode},
     response::IntoResponse,
 };
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Args, Parser, Subcommand};
 use serde::Serialize;
 #[cfg(feature = "metrics")]
 use std::{
@@ -58,7 +59,7 @@ use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use openguild_storage::{connect, StoragePool};
+use openguild_storage::{connect, CreateUserError, StoragePool, UserRepository};
 use session::{
     DatabaseSessionAuthenticator, InMemorySessionStore, PostgresSessionRepository, SessionContext,
     SessionSigner,
@@ -154,7 +155,15 @@ impl StorageState {
     version,
     about = "OpenGuild homeserver gateway"
 )]
-struct CliOptions {
+struct Cli {
+    #[command(flatten)]
+    config: ConfigArgs,
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
+struct ConfigArgs {
     #[arg(long)]
     bind_addr: Option<String>,
     #[arg(long)]
@@ -177,7 +186,7 @@ struct CliOptions {
     session_fallback_verifying_key: Vec<String>,
 }
 
-impl CliOptions {
+impl ConfigArgs {
     fn into_overrides(self) -> CliOverrides {
         let fallback_keys = if self.session_fallback_verifying_key.is_empty() {
             None
@@ -199,14 +208,61 @@ impl CliOptions {
     }
 }
 
+#[derive(Subcommand, Debug)]
+enum CliCommand {
+    /// Seed a user account into the configured database.
+    SeedUser(SeedUserCommand),
+}
+
+#[derive(Args, Debug)]
+struct SeedUserCommand {
+    /// Username for the seeded account.
+    #[arg(long)]
+    username: String,
+    /// Plaintext password for the seeded account.
+    #[arg(long)]
+    password: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = CliOptions::parse();
-    let overrides = cli.into_overrides();
+    let cli = Cli::parse();
+    let overrides = cli.config.clone().into_overrides();
     let mut config = ServerConfig::load()?;
     config.apply_overrides(&overrides)?;
+
+    if let Some(command) = cli.command {
+        return run_command(&config, command).await;
+    }
+
     let config = Arc::new(config);
     run(config).await
+}
+
+async fn run_command(config: &ServerConfig, command: CliCommand) -> Result<()> {
+    match command {
+        CliCommand::SeedUser(cmd) => seed_user(config, cmd).await,
+    }
+}
+
+async fn seed_user(config: &ServerConfig, cmd: SeedUserCommand) -> Result<()> {
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| anyhow!("database_url must be configured to seed users"))?;
+
+    let pool = connect(database_url).await?;
+    match UserRepository::create_user(pool.pool(), &cmd.username, &cmd.password).await {
+        Ok(user_id) => {
+            println!("Seeded user '{}' with id {}", cmd.username, user_id);
+            Ok(())
+        }
+        Err(CreateUserError::UsernameTaken) => {
+            println!("User '{}' already exists; skipping", cmd.username);
+            Ok(())
+        }
+        Err(CreateUserError::Other(err)) => Err(err),
+    }
 }
 
 async fn run(config: Arc<ServerConfig>) -> Result<()> {
@@ -413,6 +469,10 @@ impl AppState {
         Some(self.messaging.clone())
     }
 
+    fn storage_pool(&self) -> Option<StoragePool> {
+        self.storage.pool()
+    }
+
     #[cfg(feature = "metrics")]
     fn record_http_request(&self, route: &str, status: u16) {
         if let Some(metrics) = &self.metrics {
@@ -547,6 +607,7 @@ fn build_app(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/ready", get(readiness))
         .route("/version", get(version))
+        .route("/users/register", post(users::register))
         .route("/sessions/login", post(session::login))
         .route(
             "/guilds",
@@ -1728,14 +1789,14 @@ mod tests {
     #[test]
     fn cli_overrides_convert_and_apply() {
         let active_signer = openguild_crypto::generate_signing_key();
-        let signing_base64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(active_signer.to_bytes());
+        let signing_base64 =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(active_signer.to_bytes());
         let fallback_signer = openguild_crypto::generate_signing_key();
         let fallback_verifier = openguild_crypto::verifying_key_from(&fallback_signer);
         let fallback_base64 =
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(fallback_verifier.to_bytes());
 
-        let cli = CliOptions::parse_from(vec![
+        let cli = Cli::parse_from(vec![
             "openguild-server".into(),
             "--bind-addr".into(),
             "127.0.0.1:5000".into(),
@@ -1759,7 +1820,7 @@ mod tests {
             fallback_base64.clone(),
         ]);
 
-        let overrides = cli.into_overrides();
+        let overrides = cli.config.into_overrides();
         let mut config = ServerConfig::default();
         config.apply_overrides(&overrides).expect("overrides apply");
 

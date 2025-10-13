@@ -21,6 +21,7 @@ Context Snapshot (updated 2025-10-13 04:39Z)
   * Persistent credential storage: added `0004_create_users.sql` with Argon2 hashed passwords and a SQLx-backed `UserRepository`; login now verifies against Postgres when available.
   * Developer tooling now ships a dedicated `xtask` binary (`fmt`, `lint`, `test`, `ci`, `ci-metrics-smoke`) for cross-platform workflows.
   * Week 6 kickoff: implemented refresh-token lifecycle (SigningKeyRing + CLI/env fallbacks), new `refresh_sessions` table with device metadata, and login responses now emit paired access/refresh tokens (unit tests cover issuance).
+  * Week 6 account bootstrap: `/users/register` HTTP route (password >=8 chars) and `seed-user` CLI subcommand landed; docs/API captures the workflow.
 - Week 5 observability prep:
   * Request IDs now flow through tracing/log spans for both HTTP requests and WebSocket upgrades (capture tests verify span enrichment + header propagation); next step is documenting downstream usage and validating log-sink adoption.
   * Added a tower-based latency recorder so `MetricsContext` captures duration histograms alongside counters; new messaging counters (delivered/no_subscribers/dropped) and WebSocket queue depth gauges surface via `/metrics`.
@@ -33,7 +34,7 @@ Context Snapshot (updated 2025-10-13 04:39Z)
 - Outstanding follow-ups (pre-Week 5 checkpoints):
   * Publish request ID usage guidance for frontend/ops teams and confirm log aggregation retains the `request_id` field.
   * Promote Prometheus/Grafana beyond local dev (CI + staging), add alertmanager + finalized thresholds for latency, messaging counters, and queue depth gauges.
-  * SQLx-backed credential storage now powers login when a database is configured; next up is wiring user registration flows (API + CLI seeding) and revisiting refresh token design.
+  * SQLx-backed credential storage now powers login when a database is configured; `/users/register` + `seed-user` shipped—next up is documenting bootstrap in docs/SETUP.md and revisiting refresh token revoke/rotate design.
   * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
 - CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
 
@@ -43,7 +44,7 @@ Notes for next agent (2025-10-13 04:39Z):
 - Confirm downstream consumers handle the new BLAKE3/base58 event IDs and the 404 semantics introduced on messaging routes.
 - Share docs/OBSERVABILITY.md + docs/OPERATIONS.md with frontend/ops so `X-Request-Id` adoption and runbooks are baked into their workflows.
 - Surface the new `server_name` configuration in deployment manifests so `origin_server` is stable across environments.
-- Plan user registration & credential provisioning flows (API and CLI) leveraging the new `UserRepository`; refresh token work still pending.
+- Finalise credential onboarding docs (docs/SETUP.md), plan refresh revoke + rotate APIs/CLI, and coordinate with frontend on `device_id` requirements.
 - Readiness path keeps a pooled DB handle (StoragePool clone) while logging eager connect errors - preserve this behaviour when refactoring.
 - CI plan lives in docs/CI_PLAN.md; workflows still missing.
 - Prefer `cargo xtask fmt|lint|test|ci` for routine Rust workflows; legacy Makefile targets now wrap xtask.

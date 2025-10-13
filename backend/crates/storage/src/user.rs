@@ -16,9 +16,21 @@ pub enum CredentialError {
     InvalidCredentials,
 }
 
+#[derive(Debug, Error)]
+pub enum CreateUserError {
+    #[error("username already exists")]
+    UsernameTaken,
+    #[error("failed to create user: {0}")]
+    Other(#[from] anyhow::Error),
+}
+
 impl UserRepository {
     /// Create a new user with a hashed password.
-    pub async fn create_user(pool: &PgPool, username: &str, password: &str) -> Result<Uuid> {
+    pub async fn create_user(
+        pool: &PgPool,
+        username: &str,
+        password: &str,
+    ) -> Result<Uuid, CreateUserError> {
         let id = Uuid::new_v4();
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -38,7 +50,14 @@ impl UserRepository {
         .bind(password_hash)
         .execute(pool)
         .await
-        .with_context(|| format!("creating user '{username}'"))?;
+        .map_err(|err| match err {
+            sqlx::Error::Database(db_err) if matches!(db_err.code(), Some(code) if code.as_ref() == "23505") => {
+                CreateUserError::UsernameTaken
+            }
+            other => CreateUserError::Other(
+                anyhow!(other).context(format!("creating user '{username}'")),
+            ),
+        })?;
 
         Ok(id)
     }
