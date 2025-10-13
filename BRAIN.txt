@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-13 04:39Z)
+Context Snapshot (updated 2025-10-13 19:45Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -7,58 +7,52 @@ Context Snapshot (updated 2025-10-13 04:39Z)
   * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (exports `openguild_http_requests_total` + `openguild_db_ready`).
   * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
   * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`, `--session-signing-key`, `--server-name`).
-  * ServerConfig now tracks a canonical `server_name` surfaced in event metadata; env/CLI wiring and docs were updated.
-  * Storage crate now exposes a clonable `StoragePool` wrapper (`connect` returns it) plus a SQLx migration smoke test (skips if `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` unset).
-  * Session module in `server` adds `/sessions/login` (JSON) with validation + signed responses using ed25519; backing store now persists to Postgres when a pool is available (falls back to in-memory for credentials-only mode).
-  * Messaging core (Week 4): REST CRUD for guilds/channels, optimistic message persistence, and WebSocket fan-out with bounded broadcast/backpressure and replay window. In-memory fallback mirrors semantics when DATABASE_URL is absent.
-  * `openguild-core::messaging` introduces message payload builders + proptests to ensure canonical event IDs remain unique; `openguild-storage::messaging` wires SQLx repositories for guilds/channels/events.
-  * Event IDs now derive from the BLAKE3 hash of the canonical payload (base58 `$…`); docs/API + PROTOCOL align with the implementation.
-  * Metrics exporter honours `metrics.bind_addr` by spawning a dedicated Axum listener when configured; `/metrics` remains on the main router otherwise.
-  * tower-http request ID middleware now runs globally: inbound `X-Request-Id` values are propagated, UUIDs are minted when absent, responses echo the header, and tracing spans/log output automatically include the `request_id` field.
-  * Metrics recording now keys on `MatchedPath` instead of hard-coded strings, keeping Prometheus labels aligned with router definitions.
-  * Messaging HTTP routes map missing resources to HTTP 404, preserve validation 400s, and record request metrics; docs/API updated to reflect new statuses.
-  * Integration test (`websocket_broadcasts_events`) exercises fan-out via `tokio_tungstenite` to guard regressions.
-  * Persistent credential storage: added `0004_create_users.sql` with Argon2 hashed passwords and a SQLx-backed `UserRepository`; login now verifies against Postgres when available.
-  * Developer tooling now ships a dedicated `xtask` binary (`fmt`, `lint`, `test`, `ci`, `ci-metrics-smoke`) for cross-platform workflows.
-  * Week 6 kickoff: implemented refresh-token lifecycle (SigningKeyRing + CLI/env fallbacks), new `refresh_sessions` table with device metadata, and login responses now emit paired access/refresh tokens (unit tests cover issuance).
-  * Week 6 account bootstrap: `/users/register` HTTP route (password >=8 chars) and `seed-user` CLI subcommand landed; docs/API captures the workflow.
+  * ServerConfig tracks canonical `server_name` surfaced in event metadata; env/CLI wiring and docs updated.
+  * Storage crate exposes clonable `StoragePool`; SQLx migration smoke test (skips unless `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` set).
+  * Session module provides `/sessions/login` with validation + ed25519-signed tokens; persists to Postgres when available.
+  * Messaging core (Week 4): REST CRUD for guilds/channels, optimistic persistence, WebSocket fan-out with backpressure + replay window; in-memory fallback mirrors semantics when DB absent.
+  * `openguild-core::messaging` adds payload builders + proptests; storage crate wires SQLx repositories.
+  * Event IDs derived from BLAKE3 hash of canonical payload (base58 `$...`); docs/API + PROTOCOL aligned.
+  * Metrics exporter honours `metrics.bind_addr`; `/metrics` stays on main router otherwise.
+  * tower-http request ID middleware runs globally (propagation + logging); metrics use `MatchedPath`.
+  * Week 6/7 security: messaging REST/WS routes require bearer tokens; `sender` must match authenticated user. Integration tests cover missing auth and sender mismatches.
+  * Messaging validation: guild/channel names trimmed + capped at 64 chars; message bodies capped at 4,000 chars. Violations log warnings and increment `openguild_messaging_rejections_total` with reason labels (`unauthorized`, `guild_name_empty`, `guild_name_length`, `channel_name_empty`, `channel_name_length`, `message_empty`, `message_length`, `sender_mismatch`, `websocket_limit`).
+  * Rejection metrics documented in docs/OBSERVABILITY.md with alert guidance; timeline updated accordingly.
+  * WebSocket concurrency enforced via global semaphore; new integration test asserts HTTP 429 when capacity reached.
+  * Global security headers applied via tower-http set-header layer (CSP `default-src 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); health test validates defaults.
+  * Threat model expanded with messaging auth, validation, and metrics exposure; operations playbook documents header defaults.
+  * Persistent credential storage includes Argon2-backed `UserRepository`; `/users/register` and `seed-user` shipped.
+  * Developer tooling: `backend/xtask` crate for fmt/lint/test/ci workflows; legacy Makefile wraps xtask.
+  * Refresh-token lifecycle implemented (SigningKeyRing + refresh session store); login responses emit access+refresh tokens.
 - Week 5 observability prep:
-  * Request IDs now flow through tracing/log spans for both HTTP requests and WebSocket upgrades (capture tests verify span enrichment + header propagation); next step is documenting downstream usage and validating log-sink adoption.
-  * Added a tower-based latency recorder so `MetricsContext` captures duration histograms alongside counters; new messaging counters (delivered/no_subscribers/dropped) and WebSocket queue depth gauges surface via `/metrics`.
-  * `MetricsContext` scaffolding is in place; remaining work is alert tuning/dashboards and deciding on span sampling/retention strategy once observability tooling lands.
-  * WebSocket fan-out still needs emitted event metadata and dashboards that expose queue depth/backpressure for operators.
-- Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (metrics gating optional). WebSocket integration test requires Tokio runtime (runs by default).
+  * Request IDs flow through HTTP + WS traces (tests capture propagation).
+  * Added latency histograms, messaging counters, WebSocket queue depth gauges.
+  * MetricsContext scaffolding ready; need alert tuning + dashboards post-Prometheus rollout.
+  * WebSocket fan-out still needs richer event metadata dashboards.
+- Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (WS integration requires Tokio).
 - Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql`, `0004_create_users.sql`.
-- Docs touched: docs/SETUP.md (session key + DB persistence notes), docs/TIMELINE.md (Weeks 1-5 updates + credential storage notes), docs/OBSERVABILITY.md (local Prometheus/Grafana stack), docs/OPERATIONS.md (deploy/rollback playbook), docs/API.md (sessions + guild/channel/message routes + WebSocket), docs/PROTOCOL.md (event envelope + guardrails), docs/CI_PLAN.md (matrix outline).
-- Tooling: `backend/xtask` crate provides `fmt`, `lint`, `test`, `ci`, and `ci-metrics-smoke`; legacy Makefile targets now shell out to xtask.
-- Outstanding follow-ups (pre-Week 5 checkpoints):
-  * Publish request ID usage guidance for frontend/ops teams and confirm log aggregation retains the `request_id` field.
-  * Promote Prometheus/Grafana beyond local dev (CI + staging), add alertmanager + finalized thresholds for latency, messaging counters, and queue depth gauges.
-  * SQLx-backed credential storage now powers login when a database is configured; `/users/register` + `seed-user` shipped—next up is documenting bootstrap in docs/SETUP.md and revisiting refresh token revoke/rotate design.
-  * Finalise payload validation/size limits + authz on messaging endpoints (currently trust arbitrary sender), coordinating with upcoming auth/session work.
-- CI: see docs/CI_PLAN.md for matrix + scheduled jobs.
+- Docs touched: docs/SETUP.md (session key + DB persistence), docs/TIMELINE.md (Weeks 1-7 milestones), docs/OBSERVABILITY.md (Prometheus/Grafana + rejection metrics), docs/OPERATIONS.md (deploy playbook + security headers), docs/API.md (auth requirements and limits), docs/PROTOCOL.md (sender identity now UUID), docs/THREATMODEL.md (messaging auth + observability), docs/CI_PLAN.md (matrix outline).
+- Tooling: prefer `cargo xtask fmt|lint|test|ci`; legacy Makefile targets pass-through.
 
-Notes for next agent (2025-10-13 04:39Z):
-- Messaging CRUD/WebSocket stack is live; sync with frontend on any schema tweaks (sender identity, pagination cursors) as they build against docs/API.md.
-- Prioritise observability sprint continuation: document request ID adoption, confirm log sinks preserve `request_id`, and plan Grafana/alert rollout once Prometheus stack lands (see docs/OBSERVABILITY.md for local stack).
-- Confirm downstream consumers handle the new BLAKE3/base58 event IDs and the 404 semantics introduced on messaging routes.
-- Share docs/OBSERVABILITY.md + docs/OPERATIONS.md with frontend/ops so `X-Request-Id` adoption and runbooks are baked into their workflows.
-- Surface the new `server_name` configuration in deployment manifests so `origin_server` is stable across environments.
-- Share updated credential bootstrap docs (docs/SETUP.md) and refresh/revoke endpoints with frontend/ops; confirm device_id adoption.
-- Readiness path keeps a pooled DB handle (StoragePool clone) while logging eager connect errors - preserve this behaviour when refactoring.
-- CI plan lives in docs/CI_PLAN.md; workflows still missing.
-- Prefer `cargo xtask fmt|lint|test|ci` for routine Rust workflows; legacy Makefile targets now wrap xtask.
-- Keep BRAIN.txt current; still our ad-hoc handoff channel.
+Outstanding follow-ups:
+- Document request ID adoption for frontend/ops; ensure log sinks retain the header.
+- Promote Prometheus/Grafana to staging + wire Alertmanager; add alerts for rejection metric spikes.
+- Document bootstrap workflow in docs/SETUP.md now that `/users/register` and refresh tokens ship; revisit refresh revoke/rotate design once telemetry is in place.
+- Extend RBAC/rate limiting beyond global WS semaphore (per-user/IP quotas, abuse detection).
+- Flesh out audit logging story (middleware placeholder still TODO).
+- CI workflows still missing (see docs/CI_PLAN.md).
+
+Notes for next agent (2025-10-13 19:45Z):
+- Align frontend on sender UUID requirement and rejection reason handling.
+- Ensure reverse proxies/CDNs preserve security headers; update deployment manifests as needed.
+- Schedule follow-up for Alertmanager wiring and per-user/IP rate limits.
+- Share updated docs (API, OBSERVABILITY, OPERATIONS, THREATMODEL) with ops/frontend; gather feedback.
+- Preserve readiness behaviour (pooled DB handle retained) during refactors.
+- Keep CI plan progress visible; aim to land workflows soon.
+- Maintain this BRAIN file as the handoff channel.
 
 Week 6 current gaps / TODOs:
-- [x] Document the refreshed login contract (device metadata requirement + refresh token response) in docs/API.md and docs/PROTOCOL.md; coordinate with frontend for `device_id` enforcement.
-- [x] Plan revoke/rotate flows (API surface + CLI tooling) building on refresh session store scaffolding.
-
-- [ ] Enforce messaging authz + rate limiting (Week 6/7 security hardening).
-
-
-
-
-
-
-
+- [x] Document refreshed login contract (device metadata + refresh tokens) and coordinate with frontend.
+- [x] Plan refresh revoke/rotate flows (API + CLI stubs).
+- [x] Enforce messaging authz and baseline rate limiting (validation caps, WS semaphore).
+- [ ] Add per-user/IP rate limits and hook rejection metrics into Alertmanager once observability stack is promoted.

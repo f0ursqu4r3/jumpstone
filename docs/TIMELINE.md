@@ -99,7 +99,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
     - [x] Add coverage for missing bearer tokens across guild/channel/message APIs and WebSocket upgrades (2025-10-13).
     - [x] Assert WebSocket connection limits reject excess concurrent sessions (2025-10-13).
 - [ ] Level up threat modelling and security headers.
-  - [ ] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations.
+  - [x] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations (2025-10-13).
   - [x] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md` (2025-10-13) *(audit logging TBD, middleware + docs shipped)*.
   - [x] Add tests asserting security headers + burst rate limiting, and capture Grafana/Alertmanager follow-ups for ops adoption (2025-10-13).
 - [ ] Close out observability adoption gaps blocking M1.
