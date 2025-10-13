@@ -1635,6 +1635,141 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_guild_requires_bearer_token() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/guilds")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"Auth Required"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn create_channel_rejects_long_name() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Limit Test Guild")
+            .await
+            .expect("guild creation");
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone());
+        let app = build_app(state);
+
+        let long_name = "a".repeat(65);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/guilds/{}/channels", guild.guild_id))
+                    .header("content-type", "application/json")
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::from(format!("{{\"name\":\"{}\"}}", long_name)))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn post_message_rejects_sender_mismatch() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Mismatch Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone());
+        let app = build_app(state);
+
+        let other_user = Uuid::new_v4();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/channels/{}/messages", channel.channel_id))
+                    .header("content-type", "application/json")
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::from(format!(
+                        "{{\"sender\":\"{}\",\"content\":\"hello\"}}",
+                        other_user
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn post_message_rejects_oversized_content() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Oversize Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        let (session_harness, auth_header, user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone());
+        let app = build_app(state);
+
+        let long_content = "a".repeat(4_001);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/channels/{}/messages", channel.channel_id))
+                    .header("content-type", "application/json")
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::from(format!(
+                        "{{\"sender\":\"{}\",\"content\":\"{}\"}}",
+                        user_id, long_content
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
     async fn create_channel_returns_not_found_when_guild_missing() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(

@@ -36,6 +36,9 @@ use tracing::Instrument;
 const BROADCAST_CAPACITY: usize = 256;
 const MAX_WS_CONNECTIONS: usize = 256;
 const SEND_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_GUILD_NAME_LENGTH: usize = 64;
+const MAX_CHANNEL_NAME_LENGTH: usize = 64;
+const MAX_MESSAGE_LENGTH: usize = 4000;
 
 #[derive(Debug, Error)]
 pub enum MessagingError {
@@ -593,8 +596,17 @@ pub async fn create_guild(
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
 
-    if name.is_empty() {
+    let name_length = name.chars().count();
+
+    if name.is_empty() || name_length > MAX_GUILD_NAME_LENGTH {
         let status = StatusCode::BAD_REQUEST;
+        if name_length > MAX_GUILD_NAME_LENGTH {
+            tracing::warn!(
+                length = name_length,
+                max = MAX_GUILD_NAME_LENGTH,
+                "guild name exceeds maximum length"
+            );
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -690,8 +702,17 @@ pub async fn create_channel(
     let _ = matched_path;
 
     let name = body.name.trim();
-    if name.is_empty() {
+    let name_length = name.chars().count();
+    if name.is_empty() || name_length > MAX_CHANNEL_NAME_LENGTH {
         let status = StatusCode::BAD_REQUEST;
+        if name_length > MAX_CHANNEL_NAME_LENGTH {
+            tracing::warn!(
+                length = name_length,
+                max = MAX_CHANNEL_NAME_LENGTH,
+                guild_id = %guild_id,
+                "channel name exceeds maximum length"
+            );
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);
@@ -807,9 +828,18 @@ pub async fn post_message(
     let sender_claim = claims.user_id.to_string();
     let requested_sender = body.sender.trim();
     let content = body.content.trim();
+    let content_length = content.chars().count();
 
-    if content.is_empty() {
+    if content.is_empty() || content_length > MAX_MESSAGE_LENGTH {
         let status = StatusCode::BAD_REQUEST;
+        if content_length > MAX_MESSAGE_LENGTH {
+            tracing::warn!(
+                length = content_length,
+                max = MAX_MESSAGE_LENGTH,
+                channel_id = %channel_id,
+                "message content exceeds maximum length"
+            );
+        }
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
         return Err(status);

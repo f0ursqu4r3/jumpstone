@@ -17,7 +17,7 @@ This document expands on the federation model outlined in `../BRIEF.md`.
   - `sender`: authenticated user identifier (currently a UUID string sourced from the access token subject).
   - `origin_server`: hostname reported by the current server instance (`ServerConfig::host`).
   - `origin_ts`: millisecond timestamp captured when the event is built.
-  - `content`: JSON object containing domain-specific payload (`{ "content": "<body>" }` for MVP).
+  - `content`: JSON object containing domain-specific payload (`{ "content": "<body>" }` for MVP). Message bodies exceeding 4,000 Unicode scalar values are rejected by the homeserver.
   - `prev_events`/`auth_events`: currently empty lists; present for future DAG threading.
   - `signatures`: empty map for now (signature plumbing will be added alongside federation).
 
