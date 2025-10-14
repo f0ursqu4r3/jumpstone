@@ -1976,6 +1976,102 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn post_message_hits_ip_rate_limit() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("IP Rate Limit Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+
+        let harness = session::tests::empty_session_context();
+        let session_context = harness.context.clone();
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_context.clone());
+        let app = build_app(state);
+
+        let ip_address = "198.51.100.42";
+        let limit = messaging::TEST_MAX_MESSAGES_PER_IP_PER_WINDOW;
+        let total_requests = limit + 1;
+
+        let mut tokens = Vec::new();
+        for idx in 0..total_requests {
+            let identifier = format!("ip-user-{idx}@example.org");
+            let secret = "letmein".to_string();
+            let user_id = Uuid::new_v4();
+            harness
+                .register_user(identifier.clone(), secret.clone(), user_id)
+                .await;
+            let attempt = session::LoginAttempt {
+                identifier,
+                secret,
+                device: session::DeviceContext {
+                    device_id: format!("device-{idx}"),
+                    device_name: None,
+                    user_agent: Some("ip-rate-test".into()),
+                    ip_address: None,
+                },
+            };
+            let login = harness
+                .context
+                .login(attempt)
+                .await
+                .expect("login attempt")
+                .expect("login response");
+            tokens.push((format!("Bearer {}", login.access_token), user_id));
+        }
+
+        let uri = format!("/channels/{}/messages", channel.channel_id);
+        for idx in 0..limit {
+            let (auth, user_id) = &tokens[idx];
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&uri)
+                        .header("content-type", "application/json")
+                        .header("authorization", auth.as_str())
+                        .header("x-forwarded-for", ip_address)
+                        .body(Body::from(format!(
+                            "{{\"sender\":\"{}\",\"content\":\"hello\"}}",
+                            user_id
+                        )))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let (auth, user_id) = &tokens[limit];
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&uri)
+                    .header("content-type", "application/json")
+                    .header("authorization", auth.as_str())
+                    .header("x-forwarded-for", ip_address)
+                    .body(Body::from(format!(
+                        "{{\"sender\":\"{}\",\"content\":\"limit reached\"}}",
+                        user_id
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
     async fn websocket_requires_bearer_token() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(

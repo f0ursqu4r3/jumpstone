@@ -40,10 +40,17 @@ const MAX_GUILD_NAME_LENGTH: usize = 64;
 const MAX_CHANNEL_NAME_LENGTH: usize = 64;
 const MAX_MESSAGE_LENGTH: usize = 4000;
 #[cfg(test)]
-const MAX_MESSAGES_PER_WINDOW: usize = 3;
+const MAX_MESSAGES_PER_USER_PER_WINDOW: usize = 3;
 #[cfg(not(test))]
-const MAX_MESSAGES_PER_WINDOW: usize = 60;
+const MAX_MESSAGES_PER_USER_PER_WINDOW: usize = 60;
+#[cfg(test)]
+const MAX_MESSAGES_PER_IP_PER_WINDOW: usize = 5;
+#[cfg(not(test))]
+const MAX_MESSAGES_PER_IP_PER_WINDOW: usize = 200;
 const MESSAGE_RATE_WINDOW: Duration = Duration::from_secs(60);
+
+#[cfg(test)]
+pub(crate) const TEST_MAX_MESSAGES_PER_IP_PER_WINDOW: usize = MAX_MESSAGES_PER_IP_PER_WINDOW;
 
 #[derive(Debug, Error)]
 pub enum MessagingError {
@@ -275,7 +282,8 @@ pub struct MessagingService {
     store: Arc<dyn ChannelStore>,
     broadcasters: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Arc<OutboundEvent>>>>>,
     semaphore: Arc<Semaphore>,
-    message_rate_limits: Arc<MessageRateLimiter>,
+    message_rate_limits: Arc<RateLimiter>,
+    ip_rate_limits: Arc<RateLimiter>,
     origin_server: String,
     #[cfg(feature = "metrics")]
     metrics: Option<Arc<MetricsContext>>,
@@ -303,7 +311,14 @@ impl MessagingService {
             store,
             broadcasters: Arc::new(RwLock::new(HashMap::new())),
             semaphore: Arc::new(Semaphore::new(MAX_WS_CONNECTIONS)),
-            message_rate_limits: Arc::new(MessageRateLimiter::new()),
+            message_rate_limits: Arc::new(RateLimiter::new(
+                MAX_MESSAGES_PER_USER_PER_WINDOW,
+                MESSAGE_RATE_WINDOW,
+            )),
+            ip_rate_limits: Arc::new(RateLimiter::new(
+                MAX_MESSAGES_PER_IP_PER_WINDOW,
+                MESSAGE_RATE_WINDOW,
+            )),
             origin_server,
             #[cfg(feature = "metrics")]
             metrics: None,
@@ -328,6 +343,10 @@ impl MessagingService {
 
     pub async fn check_message_rate(&self, key: &str) -> bool {
         self.message_rate_limits.check_and_increment(key).await
+    }
+
+    pub async fn check_ip_rate(&self, key: &str) -> bool {
+        self.ip_rate_limits.check_and_increment(key).await
     }
 
     pub async fn create_guild(&self, name: &str) -> Result<Guild, MessagingError> {
@@ -896,6 +915,8 @@ pub async fn post_message(
         return Err(status);
     }
 
+    let client_ip = client_ip_from_headers(&headers);
+
     let sender = if requested_sender.is_empty() {
         sender_claim.clone()
     } else {
@@ -908,6 +929,14 @@ pub async fn post_message(
         }
         sender_claim.clone()
     };
+
+    if !messaging.check_ip_rate(&client_ip).await {
+        state.record_messaging_rejection("ip_rate_limit");
+        let status = StatusCode::TOO_MANY_REQUESTS;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
 
     if !messaging.check_message_rate(&sender).await {
         state.record_messaging_rejection("message_rate_limit");
@@ -1001,14 +1030,18 @@ pub async fn channel_socket(
         .await)
 }
 
-struct MessageRateLimiter {
+struct RateLimiter {
     limits: Mutex<HashMap<String, RateWindow>>,
+    limit: usize,
+    window: Duration,
 }
 
-impl MessageRateLimiter {
-    fn new() -> Self {
+impl RateLimiter {
+    fn new(limit: usize, window: Duration) -> Self {
         Self {
             limits: Mutex::new(HashMap::new()),
+            limit,
+            window,
         }
     }
 
@@ -1017,13 +1050,13 @@ impl MessageRateLimiter {
         let now = Instant::now();
         let entry = limits
             .entry(key.to_string())
-            .or_insert_with(|| RateWindow::new(now));
+            .or_insert_with(|| RateWindow::new(now, self.window));
 
         if now >= entry.reset_at {
-            entry.reset(now);
+            entry.reset(now, self.window);
         }
 
-        if entry.count >= MAX_MESSAGES_PER_WINDOW {
+        if entry.count >= self.limit {
             return false;
         }
 
@@ -1038,17 +1071,28 @@ struct RateWindow {
 }
 
 impl RateWindow {
-    fn new(now: Instant) -> Self {
+    fn new(now: Instant, window: Duration) -> Self {
         Self {
             count: 0,
-            reset_at: now + MESSAGE_RATE_WINDOW,
+            reset_at: now + window,
         }
     }
 
-    fn reset(&mut self, now: Instant) {
+    fn reset(&mut self, now: Instant, window: Duration) {
         self.count = 0;
-        self.reset_at = now + MESSAGE_RATE_WINDOW;
+        self.reset_at = now + window;
     }
+}
+
+fn client_ip_from_headers(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 #[cfg(feature = "metrics")]

@@ -252,7 +252,7 @@ Lists channels for the guild (HTTP 200, empty array when none exist). Requires a
 
 ### `POST /channels/{channel_id}/messages`
 
-Appends an optimistic message event to the channel event log. Requires a valid bearer token. The route accepts a JSON payload with `sender` and `content` fields. Both fields must be non-empty; `content` is limited to 4,000 Unicode scalar values after trimming. The `sender` must match the authenticated user's identifier; mismatches return HTTP 403. Each authenticated user may submit up to 60 messages per rolling 60 seconds (3 per window in tests); excess requests return HTTP 429.
+Appends an optimistic message event to the channel event log. Requires a valid bearer token. The route accepts a JSON payload with `sender` and `content` fields. Both fields must be non-empty; `content` is limited to 4,000 Unicode scalar values after trimming. The `sender` must match the authenticated user's identifier; mismatches return HTTP 403. Each authenticated user may submit up to 60 messages per rolling 60 seconds (3 per window in tests); excess requests return HTTP 429. Client IPs (derived from X-Forwarded-For, falling back to unknown) share a limit of 200 messages per 60 seconds (5 in tests); violating the shared window also returns HTTP 429.
 
 ```json
 {
@@ -321,3 +321,4 @@ Each WebSocket message is a JSON object shaped as:
 ```
 
 The `event` payload is a canonical OpenGuild event (see `openguild-core::event`) and can be fed directly into future federation workflows.
+

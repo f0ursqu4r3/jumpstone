@@ -41,3 +41,4 @@ This living document enumerates assets, adversaries, attack surfaces, and mitiga
 - Model exposure from future federation endpoints; define signature verification and rate limiting per peer.
 - Capture audit logging plan (current middleware placeholder).
 - Revisit threat posture once MLS integration progresses.
+
