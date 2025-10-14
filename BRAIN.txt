@@ -16,7 +16,7 @@ Context Snapshot (updated 2025-10-13 19:45Z)
   * Metrics exporter honours `metrics.bind_addr`; `/metrics` stays on main router otherwise.
   * tower-http request ID middleware runs globally (propagation + logging); metrics use `MatchedPath`.
   * Week 6/7 security: messaging REST/WS routes require bearer tokens; `sender` must match authenticated user. Integration tests cover missing auth and sender mismatches.
-  * Messaging validation: guild/channel names trimmed + capped at 64 chars; message bodies capped at 4,000 chars. Violations log warnings and increment `openguild_messaging_rejections_total` with reason labels (`unauthorized`, `guild_name_empty`, `guild_name_length`, `channel_name_empty`, `channel_name_length`, `message_empty`, `message_length`, `sender_mismatch`, `websocket_limit`).
+  * Messaging validation: guild/channel names trimmed + capped at 64 chars; message bodies capped at 4,000 chars. Violations log warnings and increment `openguild_messaging_rejections_total` with reason labels (`unauthorized`, `guild_name_empty`, `guild_name_length`, `channel_name_empty`, `channel_name_length`, `message_empty`, `message_length`, `sender_mismatch`, `message_rate_limit`, `websocket_limit`).
   * Rejection metrics documented in docs/OBSERVABILITY.md with alert guidance; timeline updated accordingly.
   * WebSocket concurrency enforced via global semaphore; new integration test asserts HTTP 429 when capacity reached.
   * Global security headers applied via tower-http set-header layer (CSP `default-src 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); health test validates defaults.
@@ -38,7 +38,7 @@ Outstanding follow-ups:
 - Document request ID adoption for frontend/ops; ensure log sinks retain the header.
 - Promote Prometheus/Grafana to staging + wire Alertmanager; add alerts for rejection metric spikes.
 - Document bootstrap workflow in docs/SETUP.md now that `/users/register` and refresh tokens ship; revisit refresh revoke/rotate design once telemetry is in place.
-- Extend RBAC/rate limiting beyond global WS semaphore (per-user/IP quotas, abuse detection).
+- Extend RBAC/rate limiting to cover per-IP quotas and abuse detection (per-user limits now enforced in server).
 - Flesh out audit logging story (middleware placeholder still TODO).
 - CI workflows still missing (see docs/CI_PLAN.md).
 
@@ -55,4 +55,6 @@ Week 6 current gaps / TODOs:
 - [x] Document refreshed login contract (device metadata + refresh tokens) and coordinate with frontend.
 - [x] Plan refresh revoke/rotate flows (API + CLI stubs).
 - [x] Enforce messaging authz and baseline rate limiting (validation caps, WS semaphore).
-- [ ] Add per-user/IP rate limits and hook rejection metrics into Alertmanager once observability stack is promoted.
+- [ ] Add per-IP rate limits and hook rejection metrics into Alertmanager once observability stack is promoted (per-user limits complete).
+
+

@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicI64, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
@@ -22,7 +22,7 @@ use openguild_storage::{Channel, ChannelEvent, Guild, MessagingRepository, Stora
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
-    sync::{broadcast, RwLock, Semaphore},
+    sync::{broadcast, Mutex, RwLock, Semaphore},
     time::timeout,
 };
 use uuid::Uuid;
@@ -39,6 +39,11 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_GUILD_NAME_LENGTH: usize = 64;
 const MAX_CHANNEL_NAME_LENGTH: usize = 64;
 const MAX_MESSAGE_LENGTH: usize = 4000;
+#[cfg(test)]
+const MAX_MESSAGES_PER_WINDOW: usize = 3;
+#[cfg(not(test))]
+const MAX_MESSAGES_PER_WINDOW: usize = 60;
+const MESSAGE_RATE_WINDOW: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Error)]
 pub enum MessagingError {
@@ -270,6 +275,7 @@ pub struct MessagingService {
     store: Arc<dyn ChannelStore>,
     broadcasters: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Arc<OutboundEvent>>>>>,
     semaphore: Arc<Semaphore>,
+    message_rate_limits: Arc<MessageRateLimiter>,
     origin_server: String,
     #[cfg(feature = "metrics")]
     metrics: Option<Arc<MetricsContext>>,
@@ -297,6 +303,7 @@ impl MessagingService {
             store,
             broadcasters: Arc::new(RwLock::new(HashMap::new())),
             semaphore: Arc::new(Semaphore::new(MAX_WS_CONNECTIONS)),
+            message_rate_limits: Arc::new(MessageRateLimiter::new()),
             origin_server,
             #[cfg(feature = "metrics")]
             metrics: None,
@@ -317,6 +324,10 @@ impl MessagingService {
     #[cfg(test)]
     pub(crate) fn set_max_websocket_connections(&mut self, max: usize) {
         self.semaphore = Arc::new(Semaphore::new(max));
+    }
+
+    pub async fn check_message_rate(&self, key: &str) -> bool {
+        self.message_rate_limits.check_and_increment(key).await
     }
 
     pub async fn create_guild(&self, name: &str) -> Result<Guild, MessagingError> {
@@ -898,6 +909,14 @@ pub async fn post_message(
         sender_claim.clone()
     };
 
+    if !messaging.check_message_rate(&sender).await {
+        state.record_messaging_rejection("message_rate_limit");
+        let status = StatusCode::TOO_MANY_REQUESTS;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
     match messaging
         .append_message(channel_id, sender.as_str(), content)
         .await
@@ -980,6 +999,56 @@ pub async fn channel_socket(
     Ok(messaging
         .open_websocket(channel_id, request_id_value, ws)
         .await)
+}
+
+struct MessageRateLimiter {
+    limits: Mutex<HashMap<String, RateWindow>>,
+}
+
+impl MessageRateLimiter {
+    fn new() -> Self {
+        Self {
+            limits: Mutex::new(HashMap::new()),
+        }
+    }
+
+    async fn check_and_increment(&self, key: &str) -> bool {
+        let mut limits = self.limits.lock().await;
+        let now = Instant::now();
+        let entry = limits
+            .entry(key.to_string())
+            .or_insert_with(|| RateWindow::new(now));
+
+        if now >= entry.reset_at {
+            entry.reset(now);
+        }
+
+        if entry.count >= MAX_MESSAGES_PER_WINDOW {
+            return false;
+        }
+
+        entry.count += 1;
+        true
+    }
+}
+
+struct RateWindow {
+    count: usize,
+    reset_at: Instant,
+}
+
+impl RateWindow {
+    fn new(now: Instant) -> Self {
+        Self {
+            count: 0,
+            reset_at: now + MESSAGE_RATE_WINDOW,
+        }
+    }
+
+    fn reset(&mut self, now: Instant) {
+        self.count = 0;
+        self.reset_at = now + MESSAGE_RATE_WINDOW;
+    }
 }
 
 #[cfg(feature = "metrics")]

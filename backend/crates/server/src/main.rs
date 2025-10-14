@@ -1915,6 +1915,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn post_message_hits_rate_limit() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Rate Limit Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        let (session_harness, auth_header, user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone());
+        let app = build_app(state);
+        let authorization = auth_header.as_str();
+        let uri = format!("/channels/{}/messages", channel.channel_id);
+
+        for _ in 0..3 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&uri)
+                        .header("content-type", "application/json")
+                        .header("authorization", authorization)
+                        .body(Body::from(format!(
+                            "{{\"sender\":\"{}\",\"content\":\"hello\"}}",
+                            user_id
+                        )))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&uri)
+                    .header("content-type", "application/json")
+                    .header("authorization", authorization)
+                    .body(Body::from(format!(
+                        "{{\"sender\":\"{}\",\"content\":\"rate limited\"}}",
+                        user_id
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
     async fn websocket_requires_bearer_token() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
@@ -2312,10 +2373,8 @@ mod tests {
             "127.0.0.1:9100".into(),
             "--database-url".into(),
             "postgres://app:secret@localhost/app".into(),
-            "--session-signing-key".into(),
-            signing_base64.clone(),
-            "--session-fallback-verifying-key".into(),
-            fallback_base64.clone(),
+            format!("--session-signing-key={signing_base64}"),
+            format!("--session-fallback-verifying-key={fallback_base64}"),
         ]);
 
         let overrides = cli.config.into_overrides();

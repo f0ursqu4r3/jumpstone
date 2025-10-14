@@ -1,4 +1,4 @@
-﻿# OpenGuild Delivery Timeline
+# OpenGuild Delivery Timeline
 
 This living document tracks backend-focused milestones, weekly targets, and shared to-do lists. Check off items as we complete them and append dates, owners, or notes inline.
 
@@ -95,6 +95,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [ ] Finalize payload validation and size limits; wire metrics/alerts for abuse detection.
     - [x] Enforce guild/channel/message length limits server-side and document constraints (2025-10-13).
     - [x] Add metrics counters and alert guidance for messaging rejections (2025-10-13).
+    - [x] Enforce per-user message rate limit baseline and document behaviour (2025-10-13).
   - [ ] Extend integration tests to cover unauthorized access, missing identity, and rate-limit boundaries.
     - [x] Add coverage for missing bearer tokens across guild/channel/message APIs and WebSocket upgrades (2025-10-13).
     - [x] Assert WebSocket connection limits reject excess concurrent sessions (2025-10-13).
@@ -137,4 +138,4 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [ ] Add coverage reporting and enforce minimum threshold.
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
-Keep this document livingâ€”after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
+Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
