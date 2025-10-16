@@ -12,6 +12,8 @@ pub enum ConfigError {
     InvalidBindAddr(String),
     #[error("invalid session key material: {0}")]
     InvalidSessionKey(String),
+    #[error("invalid messaging configuration: {0}")]
+    InvalidMessagingConfig(String),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -44,6 +46,24 @@ impl Default for MetricsConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
+pub struct MessagingConfig {
+    pub max_messages_per_user_per_window: usize,
+    pub max_messages_per_ip_per_window: usize,
+    pub rate_limit_window_secs: u64,
+}
+
+impl Default for MessagingConfig {
+    fn default() -> Self {
+        Self {
+            max_messages_per_user_per_window: 60,
+            max_messages_per_ip_per_window: 200,
+            rate_limit_window_secs: 60,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct SessionConfig {
     /// Base64-encoded ed25519 signing key (32 bytes) used for session token signing.
     #[serde(alias = "signing_key", rename = "signing_key")]
@@ -70,6 +90,7 @@ pub struct ServerConfig {
     pub port: u16,
     pub log_format: LogFormat,
     pub metrics: MetricsConfig,
+    pub messaging: MessagingConfig,
     pub database_url: Option<String>,
     pub session: SessionConfig,
 }
@@ -83,6 +104,7 @@ impl Default for ServerConfig {
             port: 8080,
             log_format: LogFormat::Compact,
             metrics: MetricsConfig::default(),
+            messaging: MessagingConfig::default(),
             database_url: None,
             session: SessionConfig::default(),
         }
@@ -107,7 +129,19 @@ impl ServerConfig {
             .set_default("server_name", defaults.server_name.clone())?
             .set_default("port", defaults.port as i64)?
             .set_default("log_format", defaults.log_format.as_str())?
-            .set_default("metrics.enabled", defaults.metrics.enabled)?;
+            .set_default("metrics.enabled", defaults.metrics.enabled)?
+            .set_default(
+                "messaging.max_messages_per_user_per_window",
+                defaults.messaging.max_messages_per_user_per_window as i64,
+            )?
+            .set_default(
+                "messaging.max_messages_per_ip_per_window",
+                defaults.messaging.max_messages_per_ip_per_window as i64,
+            )?
+            .set_default(
+                "messaging.rate_limit_window_secs",
+                defaults.messaging.rate_limit_window_secs as i64,
+            )?;
 
         let settings: ServerConfig = builder.build()?.try_deserialize()?;
         settings.validate()?;
@@ -144,6 +178,21 @@ impl ServerConfig {
         if let Some(active) = &self.session.active_signing_key {
             signing_key_from_base64(active)
                 .map_err(|err| ConfigError::InvalidSessionKey(err.to_string()))?;
+        }
+        if self.messaging.max_messages_per_user_per_window == 0 {
+            return Err(ConfigError::InvalidMessagingConfig(
+                "messaging.max_messages_per_user_per_window must be greater than zero".into(),
+            ));
+        }
+        if self.messaging.max_messages_per_ip_per_window == 0 {
+            return Err(ConfigError::InvalidMessagingConfig(
+                "messaging.max_messages_per_ip_per_window must be greater than zero".into(),
+            ));
+        }
+        if self.messaging.rate_limit_window_secs == 0 {
+            return Err(ConfigError::InvalidMessagingConfig(
+                "messaging.rate_limit_window_secs must be greater than zero".into(),
+            ));
         }
         for key in &self.session.fallback_verifying_keys {
             verifying_key_from_base64(key)
@@ -193,6 +242,18 @@ impl ServerConfig {
             self.session.fallback_verifying_keys = fallbacks.clone();
         }
 
+        if let Some(limit) = overrides.max_messages_per_user_per_window {
+            self.messaging.max_messages_per_user_per_window = limit;
+        }
+
+        if let Some(limit) = overrides.max_messages_per_ip_per_window {
+            self.messaging.max_messages_per_ip_per_window = limit;
+        }
+
+        if let Some(window) = overrides.rate_limit_window_secs {
+            self.messaging.rate_limit_window_secs = window;
+        }
+
         self.validate()
     }
 }
@@ -209,6 +270,9 @@ pub struct CliOverrides {
     pub database_url: Option<String>,
     pub session_signing_key: Option<String>,
     pub session_fallback_verifying_keys: Option<Vec<String>>,
+    pub max_messages_per_user_per_window: Option<usize>,
+    pub max_messages_per_ip_per_window: Option<usize>,
+    pub rate_limit_window_secs: Option<u64>,
 }
 
 impl LogFormat {
@@ -257,6 +321,9 @@ mod tests {
         assert_eq!(config.port, 8080);
         assert_eq!(config.log_format, LogFormat::Compact);
         assert!(!config.metrics.enabled);
+        assert_eq!(config.messaging.max_messages_per_user_per_window, 60);
+        assert_eq!(config.messaging.max_messages_per_ip_per_window, 200);
+        assert_eq!(config.messaging.rate_limit_window_secs, 60);
         assert!(config.database_url.is_none());
         assert!(config.session.active_signing_key.is_none());
         assert!(config.session.fallback_verifying_keys.is_empty());
@@ -268,15 +335,33 @@ mod tests {
         env::set_var("OPENGUILD_SERVER__HOST", "127.0.0.1");
         env::set_var("OPENGUILD_SERVER__PORT", "9090");
         env::set_var("OPENGUILD_SERVER__LOG_FORMAT", "json");
+        env::set_var(
+            "OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_USER_PER_WINDOW",
+            "120",
+        );
+        env::set_var(
+            "OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_IP_PER_WINDOW",
+            "400",
+        );
+        env::set_var(
+            "OPENGUILD_SERVER__MESSAGING__RATE_LIMIT_WINDOW_SECS",
+            "120",
+        );
 
         let config = ServerConfig::load().expect("config loads");
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 9090);
         assert_eq!(config.log_format, LogFormat::Json);
+        assert_eq!(config.messaging.max_messages_per_user_per_window, 120);
+        assert_eq!(config.messaging.max_messages_per_ip_per_window, 400);
+        assert_eq!(config.messaging.rate_limit_window_secs, 120);
 
         env::remove_var("OPENGUILD_SERVER__HOST");
         env::remove_var("OPENGUILD_SERVER__PORT");
         env::remove_var("OPENGUILD_SERVER__LOG_FORMAT");
+        env::remove_var("OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_USER_PER_WINDOW");
+        env::remove_var("OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_IP_PER_WINDOW");
+        env::remove_var("OPENGUILD_SERVER__MESSAGING__RATE_LIMIT_WINDOW_SECS");
     }
 
     #[test]
@@ -335,6 +420,9 @@ mod tests {
             database_url: Some("postgres://app:secret@localhost/db".into()),
             session_signing_key: Some(signing_base64.clone()),
             session_fallback_verifying_keys: Some(vec![verifying_base64.clone()]),
+            max_messages_per_user_per_window: Some(42),
+            max_messages_per_ip_per_window: Some(84),
+            rate_limit_window_secs: Some(30),
         };
 
         cfg.apply_overrides(&overrides).expect("overrides apply");
@@ -354,6 +442,9 @@ mod tests {
             Some(signing_base64.as_str())
         );
         assert_eq!(cfg.session.fallback_verifying_keys, vec![verifying_base64]);
+        assert_eq!(cfg.messaging.max_messages_per_user_per_window, 42);
+        assert_eq!(cfg.messaging.max_messages_per_ip_per_window, 84);
+        assert_eq!(cfg.messaging.rate_limit_window_secs, 30);
     }
 
     #[test]
