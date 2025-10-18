@@ -43,6 +43,10 @@ Common environment overrides:
 - `OPENGUILD_SERVER__METRICS__BIND_ADDR` - optional dedicated bind address for the metrics exporter.
 - `OPENGUILD_SERVER__DATABASE_URL` - Postgres connection string (optional during bootstrap; required to persist sessions beyond process memory).
 - `OPENGUILD_SERVER__SESSION__SIGNING_KEY` - URL-safe base64 ed25519 secret (32 bytes) used to sign session tokens; if omitted the server generates an ephemeral key at startup and logs the verifying key.
+- `OPENGUILD_SERVER__SESSION__FALLBACK_VERIFYING_KEYS__{N}` - optional URL-safe base64 ed25519 public keys that remain valid during key rotation; set one entry per index (e.g. `_0`, `_1`).
+- `OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_USER_PER_WINDOW` - per-user rate limit budget for the configured window (default `60`).
+- `OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_IP_PER_WINDOW` - per-IP rate limit budget for the configured window (default `200`).
+- `OPENGUILD_SERVER__MESSAGING__RATE_LIMIT_WINDOW_SECS` - sliding window length in seconds applied to the limits above (default `60`).
 - `RUST_LOG` - tracing filter (e.g. `info,openguild_server=debug`).
 
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
@@ -74,6 +78,7 @@ Available flags:
 - `--metrics-bind-addr <addr>` - dedicate a bind address for metrics (when enabled).
 - `--database-url <url>` - supply a Postgres connection string (e.g. `postgres://user:pass@localhost/openguild`); when set the server upserts issued sessions into Postgres.
 - `--session-signing-key <key>` - provide the URL-safe base64 ed25519 signing key for issued session tokens.
+- `--session-fallback-verifying-key <key>` - append one or more base64 ed25519 public keys that remain valid while rotating the active signing key (repeat flag per key).
 
 The `/ready` endpoint reports `database` status using these settings. When a database URL is provided, the server performs an eager connection attempt during startup and surfaces either `configured` (success) or `error` (failure details); otherwise it reports `pending`.
 

@@ -30,7 +30,8 @@ This living document enumerates assets, adversaries, attack surfaces, and mitiga
 |--------|------------|-------------------|
 | Unauthorized messaging access | Bearer token required on all messaging CRUD + WS routes; sender must match access token subject. | Expand RBAC once guild membership model lands. |
 | Excessive payload sizes | Guild/channel names capped at 64 chars, message content at 4,000 chars, with rejection metrics logged (`openguild_messaging_rejections_total`). | Add configurable limits + client feedback docs. |
-| WebSocket resource exhaustion | Global semaphore caps concurrent channel connections; attempts over capacity receive HTTP 429 and increment rejection metrics. | Explore per-user limits and IP-based rate limiting. |
+| Messaging spam / abuse | Server enforces per-user and per-IP sliding window limits (`openguild_messaging_rejections_total{reason in ["message_rate_limit","ip_rate_limit"]}`) with metric visibility. | Tune limits per environment and add adaptive backoff/ban lists. |
+| WebSocket resource exhaustion | Global semaphore caps concurrent channel connections; attempts over capacity receive HTTP 429 and increment rejection metrics. | Evaluate shard-aware scaling once multi-node gateway lands. |
 | Clickjacking, response sniffing | Global CSP (`default-src 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` applied at the gateway. | Review compatibility once UI embeds server responses. |
 | Metrics exposure | Metrics listener can bind to separate interface; documentation instructs operators to ensure restricted network access. | Add auth/ACL story for multi-tenant deployments. |
 | Session token theft | Access tokens signed with ed25519; refresh tokens bound to device metadata. | Enforce token rotation telemetry + anomaly detection. |

@@ -104,7 +104,7 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md` (2025-10-13) *(audit logging TBD, middleware + docs shipped)*.
   - [x] Add tests asserting security headers + burst rate limiting, and capture Grafana/Alertmanager follow-ups for ops adoption (2025-10-13).
 - [x] Close out observability adoption gaps blocking M1.
-  - [x] Publish request ID usage guidance and confirm log sinks preserve `request_id` (2025-10-14 - see docs/OBSERVABILITY.md + docs/OPERATIONS.md).
+  - [x] Publish request ID usage guidance and confirm log sinks preserve `request_id` (2025-10-14 - see `docs/OBSERVABILITY.md` + `docs/OPERATIONS.md`).
   - [x] Promote Prometheus/Grafana deployment beyond local dev (CI + staging) and define alert thresholds for new security metrics (2025-10-14 - staging rollout plan documented, alert thresholds captured).
   - [x] Ensure `server_name` is surfaced in deployment manifests and ops docs (2025-10-14 - docker-compose + operations playbook updated).
 

@@ -150,6 +150,7 @@ This playbook captures day-to-day runbook items for the OpenGuild backend. Treat
 
 _Revision history_
 
-| Date       | Author | Notes                               |
-| ---------- | ------ | ----------------------------------- |
-| 2025-10-13 | Team   | Initial draft (observability + ops) |
+| Date       | Author | Notes                                       |
+| ---------- | ------ | ------------------------------------------- |
+| 2025-10-14 | Team   | Added server_name invariant + log guidance  |
+| 2025-10-13 | Team   | Initial draft (observability + ops)         |
