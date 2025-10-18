@@ -1,6 +1,7 @@
 ﻿# OpenGuild Delivery Timeline
 
 This living document tracks backend-focused milestones, weekly targets, and shared to-do lists. Check off items as we complete them and append dates, owners, or notes inline.
+Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update both documents together when new suites land.
 
 ## Working Assumptions
 

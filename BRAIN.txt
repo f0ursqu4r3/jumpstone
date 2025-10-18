@@ -19,6 +19,7 @@ Context Snapshot (updated 2025-10-14 18:30Z)
   * Messaging validation + enforcement: guild/channel names trimmed + capped at 64 chars; message bodies capped at 4,000 chars. Violations log warnings and increment `openguild_messaging_rejections_total` with reason labels (`unauthorized`, `guild_name_empty`, `guild_name_length`, `channel_name_empty`, `channel_name_length`, `message_empty`, `message_length`, `sender_mismatch`, `message_rate_limit`, `ip_rate_limit`, `websocket_limit`).
   * Observability guide now outlines request ID usage, staging/stable promotion steps, and rejection metric alert thresholds (docs/OBSERVABILITY.md refresh).
   * Docker Compose sets `OPENGUILD_SERVER__SERVER_NAME=dev.openguild.local`; operations playbook highlights per-environment overrides and log sink requirements.
+  * Testing matrix captured in `docs/TESTING.md` (commands mapped to Week 1-7 features; use `cargo xtask test` + `cargo xtask ci-metrics-smoke`).
   * WebSocket concurrency enforced via global semaphore; new integration test asserts HTTP 429 when capacity reached.
   * Global security headers applied via tower-http set-header layer (CSP `default-src 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); health test validates defaults.
   * Threat model expanded with messaging auth, validation, and metrics exposure; operations playbook documents header defaults.

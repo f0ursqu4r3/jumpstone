@@ -20,9 +20,13 @@ npm install -g pnpm
 # spin up infrastructure once docker-compose is defined
 pnpm install --prefix frontend
 cargo check --workspace --manifest-path backend/Cargo.toml
+# run the full backend test suite
+cargo xtask test
 ```
 
 _Add detailed steps as services are implemented._
+
+> Looking for coverage details? See `docs/TESTING.md` for a week-by-week breakdown of automated tests and the commands used to execute them.
 
 ## Server Runtime Config
 
