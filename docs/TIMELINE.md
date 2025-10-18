@@ -90,16 +90,16 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Ship CLI seeding + `/users/register` path that reuses the new storage plumbing.
   - [x] Document credential bootstrap + password policy updates in `docs/API.md` and `docs/SETUP.md`.
   - [x] Schedule follow-up to revisit refresh token design decisions once telemetry lands (2025-10-14 - tracked in ops backlog for Alertmanager rollout).
-- [ ] Lock down messaging surface area.
+- [x] Lock down messaging surface area.
   - [x] Enforce authz checks on messaging CRUD/WebSocket routes and align `docs/PROTOCOL.md` with required identity (2025-10-13).
-  - [ ] Finalize payload validation and size limits; wire metrics/alerts for abuse detection.
+  - [x] Finalize payload validation and size limits; wire metrics/alerts for abuse detection (2025-10-13).
     - [x] Enforce guild/channel/message length limits server-side and document constraints (2025-10-13).
     - [x] Add metrics counters and alert guidance for messaging rejections (2025-10-13).
     - [x] Enforce per-user message rate limit baseline and document behaviour (2025-10-13).
-  - [ ] Extend integration tests to cover unauthorized access, missing identity, and rate-limit boundaries.
+  - [x] Extend integration tests to cover unauthorized access, missing identity, and rate-limit boundaries (2025-10-13).
     - [x] Add coverage for missing bearer tokens across guild/channel/message APIs and WebSocket upgrades (2025-10-13).
     - [x] Assert WebSocket connection limits reject excess concurrent sessions (2025-10-13).
-- [ ] Level up threat modelling and security headers.
+- [x] Level up threat modelling and security headers.
   - [x] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations (2025-10-13).
   - [x] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md` (2025-10-13) *(audit logging TBD, middleware + docs shipped)*.
   - [x] Add tests asserting security headers + burst rate limiting, and capture Grafana/Alertmanager follow-ups for ops adoption (2025-10-13).
