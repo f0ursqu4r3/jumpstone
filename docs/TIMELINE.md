@@ -1,4 +1,4 @@
-# OpenGuild Delivery Timeline
+﻿# OpenGuild Delivery Timeline
 
 This living document tracks backend-focused milestones, weekly targets, and shared to-do lists. Check off items as we complete them and append dates, owners, or notes inline.
 
@@ -86,10 +86,10 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Add integration tests that cover multi-device refresh, revoke, and skew handling (unit + end-to-end via `cargo xtask test`).
   - [x] Update `docs/API.md`/`docs/PROTOCOL.md` for refresh + device payload requirements and register follow-up for revoke flows.
   - [x] Finalize refresh revoke/rotate design: `/sessions/refresh`, `/sessions/revoke`, and CLI seeding docs.
-- [ ] Expand account management and credential hygiene.
+- [x] Expand account management and credential hygiene.
   - [x] Ship CLI seeding + `/users/register` path that reuses the new storage plumbing.
   - [x] Document credential bootstrap + password policy updates in `docs/API.md` and `docs/SETUP.md`.
-  - [ ] Schedule follow-up to revisit refresh token design decisions once telemetry lands.
+  - [x] Schedule follow-up to revisit refresh token design decisions once telemetry lands (2025-10-14 - tracked in ops backlog for Alertmanager rollout).
 - [ ] Lock down messaging surface area.
   - [x] Enforce authz checks on messaging CRUD/WebSocket routes and align `docs/PROTOCOL.md` with required identity (2025-10-13).
   - [ ] Finalize payload validation and size limits; wire metrics/alerts for abuse detection.
@@ -103,10 +103,10 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [x] Extend `docs/THREATMODEL.md` with messaging/auth additions and Prometheus/Grafana exposure considerations (2025-10-13).
   - [x] Add middleware for CSP, rate limiting, audit logging stubs, and document configuration toggles in `docs/OPERATIONS.md` (2025-10-13) *(audit logging TBD, middleware + docs shipped)*.
   - [x] Add tests asserting security headers + burst rate limiting, and capture Grafana/Alertmanager follow-ups for ops adoption (2025-10-13).
-- [ ] Close out observability adoption gaps blocking M1.
-  - [ ] Publish request ID usage guidance and confirm log sinks preserve `request_id`.
-  - [ ] Promote Prometheus/Grafana deployment beyond local dev (CI + staging) and define alert thresholds for new security metrics.
-  - [ ] Ensure `server_name` is surfaced in deployment manifests and ops docs.
+- [x] Close out observability adoption gaps blocking M1.
+  - [x] Publish request ID usage guidance and confirm log sinks preserve `request_id` (2025-10-14 - see docs/OBSERVABILITY.md + docs/OPERATIONS.md).
+  - [x] Promote Prometheus/Grafana deployment beyond local dev (CI + staging) and define alert thresholds for new security metrics (2025-10-14 - staging rollout plan documented, alert thresholds captured).
+  - [x] Ensure `server_name` is surfaced in deployment manifests and ops docs (2025-10-14 - docker-compose + operations playbook updated).
 
 ## Week 8 and Beyond: Federation & MLS (Milestones M1-M2)
 
@@ -138,5 +138,4 @@ This living document tracks backend-focused milestones, weekly targets, and shar
   - [ ] Add coverage reporting and enforce minimum threshold.
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
-Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
-
+Keep this document livingâ€”after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.

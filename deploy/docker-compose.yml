@@ -39,6 +39,7 @@ services:
       context: ../backend
     environment:
       DATABASE_URL: postgres://openguild:openguild@postgres:5432/openguild
+      OPENGUILD_SERVER__SERVER_NAME: dev.openguild.local
       OPENGUILD_SERVER__METRICS__ENABLED: "true"
       OPENGUILD_SERVER__METRICS__BIND_ADDR: "0.0.0.0:9100"
       MEDIA_ENDPOINT: http://minio:9000
