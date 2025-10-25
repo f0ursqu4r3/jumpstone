@@ -11,15 +11,16 @@ This document expands on the federation model outlined in `../BRIEF.md`.
 ### Channel Messaging (Week 4 bootstrap)
 
 - Canonical event envelope emitted by the HTTP API and WebSocket fan-out (see `openguild-core::event`):
-  - `event_id`: `$`-prefixed UUID v4 string generated client-side by the homeserver.
+  - `schema_version`: currently `1`. Bumping this value changes the canonical JSON bytes (and thus event IDs/signatures).
+  - `event_id`: `$`-prefixed base58 string derived from the BLAKE3 hash of the canonical event body (excluding `event_id` and `signatures`).
   - `room_id`: stringified `channel_id` (`UUID`), reused for future multi-homeserver rooms.
   - `event_type`: `"message"` for chat payloads (more types will follow).
   - `sender`: authenticated user identifier (currently a UUID string sourced from the access token subject).
-  - `origin_server`: hostname reported by the current server instance (`ServerConfig::host`).
+  - `origin_server`: hostname reported by the current server instance (`ServerConfig::server_name`).
   - `origin_ts`: millisecond timestamp captured when the event is built.
   - `content`: JSON object containing domain-specific payload (`{ "content": "<body>" }` for MVP). Message bodies exceeding 4,000 Unicode scalar values are rejected by the homeserver.
   - `prev_events`/`auth_events`: currently empty lists; present for future DAG threading.
-  - `signatures`: empty map for now (signature plumbing will be added alongside federation).
+  - `signatures`: map keyed by origin server with inner keys matching `ed25519:<key_id>`. Locally generated events sign with the active homeserver key; inbound federation events must carry signatures that match trusted peer metadata.
 
 - Optimistic persistence layer (`backend/migrations/0003_messaging.sql`):
   - `guilds` / `channels` tables anchor CRUD metadata.
@@ -41,7 +42,11 @@ This document expands on the federation model outlined in `../BRIEF.md`.
 
 ## Federation APIs
 
-Document HTTP endpoints (`/_federation/...`) including authentication, payload schemas, and error handling.
+- `POST /federation/transactions` (Week 8 bootstrap)
+  - Body: `{ "origin": "<server name>", "pdus": [CanonicalEvent, ...] }`
+  - When `federation.trusted_servers` is empty the handler returns HTTP 501 with `{ "disabled": true }`.
+  - Otherwise events are verified by recomputing the canonical hash, comparing the provided `event_id`, and validating the `ed25519:{key_id}` signature with the configured verifying key.
+  - Results include `accepted` and `rejected` arrays so callers can retry failed PDUs. Failed events also produce structured warnings (`origin`, `event_id`, `reason`) in the server logs for audit visibility.
 
 ## State Resolution
 

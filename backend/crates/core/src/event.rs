@@ -8,6 +8,12 @@ use serde_json::Value;
 use thiserror::Error;
 /// Public alias representing canonical event identifiers.
 pub type EventId = String;
+/// Current schema version for canonical events.
+pub const EVENT_SCHEMA_VERSION: u8 = 1;
+
+fn default_event_version() -> u8 {
+    EVENT_SCHEMA_VERSION
+}
 
 #[derive(Debug, Error)]
 pub enum EventError {
@@ -19,6 +25,8 @@ pub enum EventError {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CanonicalEvent {
+    #[serde(default = "default_event_version")]
+    pub schema_version: u8,
     pub event_id: EventId,
     pub origin_server: String,
     pub room_id: String,
@@ -35,6 +43,10 @@ pub struct CanonicalEvent {
 }
 
 impl CanonicalEvent {
+    pub fn current_schema_version() -> u8 {
+        EVENT_SCHEMA_VERSION
+    }
+
     pub fn sign_with(&mut self, server_name: &str, key_id: &str, signing_key: &SigningKey) {
         let hash = self.canonical_hash();
         let signature = signing_key.sign(&hash);
@@ -101,6 +113,7 @@ impl EventBuilder {
         event_type: impl Into<String>,
     ) -> Self {
         let event = CanonicalEvent {
+            schema_version: EVENT_SCHEMA_VERSION,
             event_id: String::new(),
             origin_server: origin_server.into(),
             room_id: room_id.into(),
@@ -136,6 +149,11 @@ impl EventBuilder {
         self
     }
 
+    pub fn schema_version(mut self, version: u8) -> Self {
+        self.event.schema_version = version;
+        self
+    }
+
     pub fn build(mut self) -> CanonicalEvent {
         let hash = self.event.canonical_hash();
         self.event.event_id = CanonicalEvent::event_id_from_hash(&hash);
@@ -158,5 +176,25 @@ mod tests {
         let expected_id = CanonicalEvent::event_id_from_hash(&hash);
         assert_eq!(event.event_id, expected_id);
         assert!(event.event_id.starts_with('$'));
+    }
+
+    #[test]
+    fn schema_version_defaults_to_current() {
+        let event = EventBuilder::new("example.org", "!room:example.org", "message")
+            .sender("@user:example.org")
+            .content(serde_json::json!({ "content": "hello world" }))
+            .build();
+
+        assert_eq!(event.schema_version, EVENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn schema_version_can_be_overridden() {
+        let event = EventBuilder::new("example.org", "!room:example.org", "message")
+            .schema_version(2)
+            .build();
+
+        assert_eq!(event.schema_version, 2);
+        assert_ne!(event.event_id, String::new());
     }
 }

@@ -51,6 +51,9 @@ Common environment overrides:
 - `OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_USER_PER_WINDOW` - per-user rate limit budget for the configured window (default `60`).
 - `OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_IP_PER_WINDOW` - per-IP rate limit budget for the configured window (default `200`).
 - `OPENGUILD_SERVER__MESSAGING__RATE_LIMIT_WINDOW_SECS` - sliding window length in seconds applied to the limits above (default `60`).
+- `OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__{N}__SERVER_NAME` - declare a homeserver that may submit federation transactions (repeat per entry).
+- `OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__{N}__KEY_ID` - expected ed25519 key identifier referenced in incoming signatures for the server above.
+- `OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__{N}__VERIFYING_KEY` - URL-safe base64 ed25519 public key used to verify PDUs from the server above.
 - `RUST_LOG` - tracing filter (e.g. `info,openguild_server=debug`).
 
 > Build with `--features metrics` and set `OPENGUILD_SERVER__METRICS__ENABLED=true` to expose the `/metrics` endpoint.
@@ -85,6 +88,29 @@ Available flags:
 - `--session-fallback-verifying-key <key>` - append one or more base64 ed25519 public keys that remain valid while rotating the active signing key (repeat flag per key).
 
 The `/ready` endpoint reports `database` status using these settings. When a database URL is provided, the server performs an eager connection attempt during startup and surfaces either `configured` (success) or `error` (failure details); otherwise it reports `pending`.
+
+> Federation trusted peers are configured via config/env today (see below). CLI flags will join once we need runtime mutability.
+
+### Federation Trusted Servers
+
+To accept remote PDUs you must declare which homeservers you trust. Each entry requires the peer's canonical server name, an ed25519 key identifier (e.g. `"1"`), and the URL-safe base64 verifying key that matches the peer's private signing key. Example `config/server.toml` excerpt:
+
+```toml
+[federation]
+trusted_servers = [
+  { server_name = "remote.example.org", key_id = "1", verifying_key = "l_fTdwEVGikNH87d...==" }
+]
+```
+
+Environment-based setup uses indexed variables:
+
+```
+OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__0__SERVER_NAME=remote.example.org
+OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__0__KEY_ID=1
+OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__0__VERIFYING_KEY=l_fTdwEVGikNH87d...==
+```
+
+Leaving `trusted_servers` empty keeps `/federation/transactions` disabled (HTTP 501 + `{"disabled":true}`). When populated, the server verifies that the request `origin` matches a trusted entry, that each event was emitted by that origin, and that the `signatures` map includes `ed25519:{key_id}` with a valid ed25519 signature over the canonical event hash.
 
 ### Credential Bootstrap
 

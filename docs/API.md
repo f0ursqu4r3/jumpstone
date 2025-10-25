@@ -321,4 +321,67 @@ Each WebSocket message is a JSON object shaped as:
 ```
 
 The `event` payload is a canonical OpenGuild event (see `openguild-core::event`) and can be fed directly into future federation workflows.
+## Canonical Events
+
+Every persisted or federated message is wrapped in a canonical envelope produced by `openguild-core::event`. Important fields:
+
+- `schema_version`: unsigned integer describing the canonical JSON layout. Version `1` is the current default; bumps indicate hash/signature changes.
+- `event_id`: `$`-prefixed base58 string derived from the BLAKE3 hash of the canonical event bytes (event ID changes if any canonical field mutates).
+- `origin_server`: homeserver name from `ServerConfig::server_name` (e.g. `api.openguild.test`).
+- `room_id`: UUID string pointing at the channel the event belongs to.
+- `event_type`: `message` today, with future enum expansion.
+- `origin_ts`: UTC milliseconds when the event was created.
+- `sender`: authenticated user identifier (UUID string).
+- `content`: domain payload. The MVP uses `{ "content": "<body>" }`.
+- `prev_events` / `auth_events`: DAG metadata stubs reserved for future federation threading.
+- `signatures`: map keyed by homeserver (outer) and `ed25519:<key_id>` (inner). The server fills this when signing outgoing PDUs.
+
+Clients should treat unknown fields as opaque so schema migrations remain additive. The canonical hash excludes `event_id` and `signatures`, so verifiers can recompute the expected digest before comparing event IDs or validating signatures.
+
+## Federation Transactions
+
+The first federation endpoint accepts batches of PDUs from trusted homeservers. Transactions are only enabled when the server is configured with at least one `federation.trusted_servers` entry (see `docs/SETUP.md`).
+
+### `POST /federation/transactions`
+
+Processes one or more PDUs from a remote origin. The body is intentionally close to the Matrix `/send/{txnId}` shape so we can interop later.
+
+#### Request Body
+
+```json
+{
+  "origin": "remote.example.org",
+  "pdus": [
+    {
+      "schema_version": 1,
+      "event_id": "$z4Hh8y5MEt1X...",
+      "origin_server": "remote.example.org",
+      "room_id": "!room:remote.example.org",
+      "event_type": "message",
+      "sender": "@remote-user:remote.example.org",
+      "origin_ts": 1761426000000,
+      "content": { "content": "hello from remote" },
+      "prev_events": [],
+      "auth_events": [],
+      "signatures": {
+        "remote.example.org": {
+          "ed25519:1": "3O1qC0..."
+        }
+      }
+    }
+  ]
+}
+```
+
+- `origin` must match a trusted server entry (`server_name`).
+- Each PDU must declare the same `origin_server` and include a signature for `ed25519:{key_id}` configured for that origin.
+
+#### Responses
+
+- **Federation disabled**: HTTP 501 with `{"origin":"<request origin>","accepted":[],"rejected":[],"disabled":true}` when no trusted servers are configured.
+- **All events accepted**: HTTP 202 with `{ "accepted": ["$eventId"], "rejected": [], "disabled": false }`.
+- **Partial success**: HTTP 207 Multi-Status with both `accepted` and `rejected` arrays populated.
+- **All events rejected**: HTTP 400 with `accepted: []` plus `rejected` entries containing `{ "event_id": "...", "reason": "..." }`.
+
+The server logs each rejection with `origin`, `event_id`, and a human-readable reason (`missing signature`, `origin mismatch`, `invalid signature`, etc.) so operators can debug remote failures.
 

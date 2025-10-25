@@ -118,7 +118,8 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [ ] Define provisioning API plus persistent key store schema.
   - [ ] Build handshake and signing verification test vectors.
 - [ ] Deliver DAG-backed federation pipeline.
-  - [ ] Finalize canonical event structure in `openguild-core` with versioning plan.
+  - [x] Finalize canonical event structure in `openguild-core` with versioning plan.
+    - [x] 2025-10-25: Added explicit `schema_version` field (defaults to v1) and builder/test coverage so future migrations can bump the canonical hash inputs deterministically.
   - [x] 2025-10-25: Implemented `FederationService` signature verification plus structured rejection telemetry (logs tagged with origin/event id).
   - [x] 2025-10-25: Added `POST /federation/transactions` endpoint with integration tests covering enabled/disabled + valid/invalid PDUs.
 - [ ] Explore SFU client signalling (stretch).
