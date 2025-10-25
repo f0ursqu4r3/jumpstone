@@ -190,6 +190,12 @@ struct ConfigArgs {
     session_signing_key: Option<String>,
     #[arg(long = "session-fallback-verifying-key", action = ArgAction::Append)]
     session_fallback_verifying_key: Vec<String>,
+    #[arg(long)]
+    messaging_max_messages_per_user_per_window: Option<usize>,
+    #[arg(long)]
+    messaging_max_messages_per_ip_per_window: Option<usize>,
+    #[arg(long)]
+    messaging_rate_limit_window_secs: Option<u64>,
 }
 
 impl ConfigArgs {
@@ -210,6 +216,9 @@ impl ConfigArgs {
             database_url: self.database_url,
             session_signing_key: self.session_signing_key,
             session_fallback_verifying_keys: fallback_keys,
+            max_messages_per_user_per_window: self.messaging_max_messages_per_user_per_window,
+            max_messages_per_ip_per_window: self.messaging_max_messages_per_ip_per_window,
+            rate_limit_window_secs: self.messaging_rate_limit_window_secs,
         }
     }
 }

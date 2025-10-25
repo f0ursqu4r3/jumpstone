@@ -193,3 +193,97 @@ impl MessagingRepository {
         Ok(events)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{connect, StoragePool};
+    use anyhow::Context;
+    use serde_json::json;
+    use sqlx::migrate::Migrator;
+    use std::env;
+
+    static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
+
+    fn test_database_url() -> Option<String> {
+        env::var("OPENGUILD_TEST_DATABASE_URL")
+            .or_else(|_| env::var("DATABASE_URL"))
+            .ok()
+    }
+
+    async fn truncate_tables(pool: &StoragePool) -> anyhow::Result<()> {
+        sqlx::query("TRUNCATE channel_events, channel_memberships, channels, guilds RESTART IDENTITY CASCADE")
+            .execute(pool.pool())
+            .await
+            .map(|_| ())
+            .context("failed to truncate messaging tables")
+    }
+
+    #[tokio::test]
+    async fn messaging_repository_persists_entities_and_events() -> anyhow::Result<()> {
+        let Some(database_url) = test_database_url() else {
+            eprintln!("skipping messaging repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL");
+            return Ok(());
+        };
+
+        let pool = connect(&database_url).await?;
+        MIGRATOR
+            .run(pool.pool())
+            .await
+            .context("running migrations for messaging repository tests failed")?;
+
+        let repo = MessagingRepository::new(pool.clone());
+
+        let alpha = repo.create_guild("Alpha").await?;
+        let beta = repo.create_guild("Beta").await?;
+
+        let guilds = repo.list_guilds().await?;
+        assert!(guilds.iter().any(|g| g.guild_id == alpha.guild_id));
+        assert!(guilds.iter().any(|g| g.guild_id == beta.guild_id));
+
+        assert!(repo.guild_exists(alpha.guild_id).await?);
+        assert!(!repo.guild_exists(Uuid::new_v4()).await?);
+
+        let general = repo.create_channel(alpha.guild_id, "general").await?;
+        let support = repo.create_channel(alpha.guild_id, "support").await?;
+
+        let channels = repo.list_channels_for_guild(alpha.guild_id).await?;
+        let channel_ids: Vec<_> = channels.iter().map(|c| c.channel_id).collect();
+        assert!(channel_ids.contains(&general.channel_id));
+        assert!(channel_ids.contains(&support.channel_id));
+
+        assert!(repo.channel_exists(general.channel_id).await?);
+        assert!(!repo.channel_exists(Uuid::new_v4()).await?);
+
+        let first_event_id = format!("evt-{}", Uuid::new_v4());
+        let second_event_id = format!("evt-{}", Uuid::new_v4());
+        let payload = json!({ "content": "hello world" });
+
+        let first = repo
+            .append_event(general.channel_id, &first_event_id, "message", &payload)
+            .await?;
+        repo.append_event(general.channel_id, &second_event_id, "message", &payload)
+            .await?;
+
+        let all_events = repo
+            .recent_events(general.channel_id, None, 10)
+            .await
+            .context("fetching recent events without sequence should succeed")?;
+        assert_eq!(all_events.len(), 2, "expected two events in channel");
+        assert_eq!(all_events[0].event_id, first_event_id);
+        assert_eq!(all_events[1].event_id, second_event_id);
+
+        let limited = repo.recent_events(general.channel_id, None, 1).await?;
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].event_id, second_event_id);
+
+        let from_sequence = repo
+            .recent_events(general.channel_id, Some(first.sequence), 10)
+            .await?;
+        assert_eq!(from_sequence.len(), 1);
+        assert_eq!(from_sequence[0].event_id, second_event_id);
+
+        truncate_tables(&pool).await?;
+        Ok(())
+    }
+}

@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-14 18:30Z)
+Context Snapshot (updated 2025-10-22 00:12Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -17,6 +17,7 @@ Context Snapshot (updated 2025-10-14 18:30Z)
   * tower-http request ID middleware runs globally (propagation + logging); metrics use `MatchedPath`.
   * Week 6/7 security: messaging REST/WS routes require bearer tokens; `sender` must match authenticated user. Integration tests cover missing auth and sender mismatches.
   * Messaging validation + enforcement: guild/channel names trimmed + capped at 64 chars; message bodies capped at 4,000 chars. Violations log warnings and increment `openguild_messaging_rejections_total` with reason labels (`unauthorized`, `guild_name_empty`, `guild_name_length`, `channel_name_empty`, `channel_name_length`, `message_empty`, `message_length`, `sender_mismatch`, `message_rate_limit`, `ip_rate_limit`, `websocket_limit`).
+  * CLI overrides now expose `--messaging-max-messages-per-user-per-window`, `--messaging-max-messages-per-ip-per-window`, and `--messaging-rate-limit-window-secs`, keeping server binaries in sync with ServerConfig messaging knobs.
   * Observability guide now outlines request ID usage, staging/stable promotion steps, and rejection metric alert thresholds (docs/OBSERVABILITY.md refresh).
   * Docker Compose sets `OPENGUILD_SERVER__SERVER_NAME=dev.openguild.local`; operations playbook highlights per-environment overrides and log sink requirements.
   * Testing matrix captured in `docs/TESTING.md` (commands mapped to Week 1-7 features; use `cargo xtask test` + `cargo xtask ci-metrics-smoke`).
@@ -24,6 +25,8 @@ Context Snapshot (updated 2025-10-14 18:30Z)
   * Global security headers applied via tower-http set-header layer (CSP `default-src 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); health test validates defaults.
   * Threat model expanded with messaging auth, validation, and metrics exposure; operations playbook documents header defaults.
   * Persistent credential storage includes Argon2-backed `UserRepository`; `/users/register` and `seed-user` shipped.
+  * Storage crate now ships SQLx-backed tests for `MessagingRepository` and `UserRepository` (plus helper cleanup); they skip unless `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` is exported so CI/devs can opt in.
+  * Lightweight crates (`openguild-media`, `openguild-sfu-client`) have direct unit tests to keep coverage complete after the latest pushes.
   * Developer tooling: `backend/xtask` crate for fmt/lint/test/ci workflows; legacy Makefile wraps xtask.
   * Refresh-token lifecycle implemented (SigningKeyRing + refresh session store); login responses emit access+refresh tokens.
 - Week 5 observability prep:
@@ -43,8 +46,9 @@ Outstanding follow-ups:
 - Extend RBAC/rate limiting with configurable per-IP quotas and abuse detection (per-user & per-IP limits now in server).
 - Flesh out audit logging story (middleware placeholder still TODO).
 - CI workflows still missing (see docs/CI_PLAN.md).
+- Ensure DB-backed tests keep running in environments with `OPENGUILD_TEST_DATABASE_URL`; add guidance to docs/TESTING.md when documenting the opt-in flag set.
 
-Notes for next agent (2025-10-14 18:30Z):
+Notes for next agent (2025-10-22 00:12Z):
 - Align frontend on sender UUID requirement and rejection reason handling.
 - Ensure reverse proxies/CDNs preserve security headers; update deployment manifests as needed.
 - Coordinate with infra on the documented Alertmanager rollout plan and confirm rejection metric alerts page correctly.
@@ -52,6 +56,7 @@ Notes for next agent (2025-10-14 18:30Z):
 - Preserve readiness behaviour (pooled DB handle retained) during refactors.
 - Keep CI plan progress visible; aim to land workflows soon.
 - Maintain this BRAIN file as the handoff channel.
+ - New storage tests rely on live Postgres; before running `cargo test --workspace` in CI or shared dev environments, set `OPENGUILD_TEST_DATABASE_URL` (or fallback `DATABASE_URL`) or expect them to skip with a log message.
 
 Week 6 current gaps / TODOs:
 - [x] Document refreshed login contract (device metadata + refresh tokens) and coordinate with frontend.

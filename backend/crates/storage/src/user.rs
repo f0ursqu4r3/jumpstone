@@ -91,3 +91,97 @@ impl UserRepository {
         Ok(user_id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connect;
+    use sqlx::migrate::Migrator;
+    use std::env;
+
+    static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
+
+    fn test_database_url() -> Option<String> {
+        env::var("OPENGUILD_TEST_DATABASE_URL")
+            .or_else(|_| env::var("DATABASE_URL"))
+            .ok()
+    }
+
+    async fn setup_pool() -> anyhow::Result<Option<crate::StoragePool>> {
+        let Some(database_url) = test_database_url() else {
+            return Ok(None);
+        };
+
+        let pool = connect(&database_url).await?;
+        MIGRATOR
+            .run(pool.pool())
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow!(err).context("running user repository migrations failed"))?;
+        Ok(Some(pool))
+    }
+
+    #[tokio::test]
+    async fn create_user_persists_and_verifies_credentials() -> anyhow::Result<()> {
+        let Some(pool) = setup_pool().await? else {
+            eprintln!("skipping user repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL");
+            return Ok(());
+        };
+
+        let username = format!("user_{}", Uuid::new_v4());
+        let password = "hunter2!";
+        let wrong_password = "password123";
+
+        let user_id = UserRepository::create_user(pool.pool(), &username, password).await?;
+        let verified_id = UserRepository::verify_credentials(pool.pool(), &username, password).await?;
+        assert_eq!(verified_id, user_id);
+
+        let err = UserRepository::verify_credentials(pool.pool(), &username, wrong_password)
+            .await
+            .expect_err("verification with wrong password should fail");
+        let cred_err = err
+            .downcast::<CredentialError>()
+            .expect("error converts to CredentialError");
+        assert!(matches!(cred_err, CredentialError::InvalidCredentials));
+
+        let err = UserRepository::verify_credentials(pool.pool(), "missing_user", password)
+            .await
+            .expect_err("missing user should not authenticate");
+        let cred_err = err
+            .downcast::<CredentialError>()
+            .expect("error converts to CredentialError");
+        assert!(matches!(cred_err, CredentialError::UserNotFound));
+
+        sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(username)
+            .execute(pool.pool())
+            .await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn create_user_rejects_duplicate_usernames() -> anyhow::Result<()> {
+        let Some(pool) = setup_pool().await? else {
+            eprintln!("skipping user repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL");
+            return Ok(());
+        };
+
+        let username = format!("dupe_{}", Uuid::new_v4());
+        let password = "correct horse battery staple";
+
+        UserRepository::create_user(pool.pool(), &username, password).await?;
+
+        let err = UserRepository::create_user(pool.pool(), &username, password)
+            .await
+            .expect_err("creating user with duplicate username should fail");
+        assert!(matches!(err, CreateUserError::UsernameTaken));
+
+        sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(username)
+            .execute(pool.pool())
+            .await?;
+
+        Ok(())
+    }
+}

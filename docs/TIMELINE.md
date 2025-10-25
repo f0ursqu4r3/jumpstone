@@ -40,6 +40,7 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [x] Introduce `0004_create_users.sql` migration (UUID id, unique username, Argon2 password hash, timestamps).
   - [x] Implement `openguild-storage::UserRepository` with Argon2 hashing + verification via SQLx.
   - [x] Update `openguild-server` login path to prefer Postgres-backed authentication when a pool is available.
+  - [x] 2025-10-22: Added SQLx-backed tests that create, verify, and reject duplicate users (skips unless `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` is set).
 - [x] Align with frontend expectations.
   - [x] Sync with `frontend/stores/session.ts` owners on contract details (documented login contract in `docs/API.md` and circulated to frontend repo owners).
   - [x] Publish request/response samples in `docs/API.md`.
@@ -51,6 +52,7 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [x] Extend schema for guilds, channels, messages, and memberships (`backend/migrations/0003_messaging.sql`).
   - [x] Build repository layer plus optimistic event writer in `openguild-core`/`openguild-storage` (see `MessagingRepository` + `MessagePayload`).
   - [x] Write property tests for event IDs and ordering guarantees (proptest in `openguild-core::messaging`).
+  - [x] 2025-10-22: Added Postgres-backed `MessagingRepository` integration test validating guild/channel CRUD plus event ordering (skips unless DB env vars are configured).
 - [x] Stand up WebSocket gateway for single-server fan-out.
   - [x] Implement join/leave semantics and broadcast channel wiring (bounded broadcast channel per room).
   - [x] Enforce backpressure, connection caps, and timeout policies (256-slot buffer, ping/pong, send timeouts, global semaphore).
