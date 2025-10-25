@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-25 21:18Z)
+Context Snapshot (updated 2025-10-25 22:40Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -31,6 +31,7 @@ Context Snapshot (updated 2025-10-25 21:18Z)
   * Refresh-token lifecycle implemented (SigningKeyRing + refresh session store); login responses emit access+refresh tokens.
   * Federation groundwork (Week 8): new `FederationConfig` trusted server list, `FederationService` signature verification with telemetry, and `POST /federation/transactions` route + tests for enabled/disabled and success/failure flows. Accepted PDUs now persist via `MessagingService::ingest_event`, broadcasting to local clients when the channel UUID exists. Docs (SETUP/API/PROTOCOL) cover trusted peer config, canonical schema fields, and transaction payloads/status codes.
   * Canonical event schema now carries an explicit `schema_version` (default v1); builder/test coverage ensures hashing inputs change predictably when we bump versions. Docs describe the envelope so downstream services know what to expect.
+  * `GET /channels/{channel_id}/events` provides authenticated timeline pagination with `limit`/`since` filters so clients can sync without WebSockets; responses reuse canonical events and integration tests cover sequencing/limits.
 - Week 5 observability prep:
   * Request IDs flow through HTTP + WS traces (tests capture propagation).
   * Added latency histograms, messaging counters, WebSocket queue depth gauges.
@@ -49,9 +50,9 @@ Outstanding follow-ups:
 - Flesh out audit logging story (middleware placeholder still TODO).
 - CI workflows still missing (see docs/CI_PLAN.md).
 - Ensure DB-backed tests keep running in environments with `OPENGUILD_TEST_DATABASE_URL`; add guidance to docs/TESTING.md when documenting the opt-in flag set.
-- Capture CLI/env stories for future federation key rotation tooling, plus admin UX for trusted peer CRUD and recovery when remote PDUs target unknown channels (today they’re rejected with delivery errors).
+- Capture CLI/env stories for future federation key rotation tooling, plus admin UX for trusted peer CRUD and recovery when remote PDUs target unknown channels (today they're rejected with delivery errors).
 
-Notes for next agent (2025-10-25 21:18Z):
+Notes for next agent (2025-10-25 22:40Z):
 - Align frontend on sender UUID requirement and rejection reason handling.
 - Ensure reverse proxies/CDNs preserve security headers; update deployment manifests as needed.
 - Coordinate with infra on the documented Alertmanager rollout plan and confirm rejection metric alerts page correctly.

@@ -321,6 +321,41 @@ Each WebSocket message is a JSON object shaped as:
 ```
 
 The `event` payload is a canonical OpenGuild event (see `openguild-core::event`) and can be fed directly into future federation workflows.
+
+### `GET /channels/{channel_id}/events`
+
+Returns a paginated slice of recent events for the channel. Requires a valid bearer token. Accepts optional query parameters:
+
+- `limit` – maximum number of events to return (default `50`, max `200`).
+- `since` – only return events with `sequence` greater than this value (handy for incremental sync).
+
+Responses are ordered by sequence ascending:
+
+```json
+[
+  {
+    "sequence": 41,
+    "channel_id": "3b7f3e93-7c9c-47f5-91d3-cbf09dc5a8f6",
+    "event": {
+      "schema_version": 1,
+      "event_id": "$6kXQ1dTgvYyTF8uZnD8QyUQ9oP3Gvc9nR7fN6vXqBZ3F",
+      "event_type": "message",
+      "room_id": "3b7f3e93-7c9c-47f5-91d3-cbf09dc5a8f6",
+      "sender": "ec7c5138-ee1a-4112-95ef-e53514b670c2",
+      "origin_server": "api.openguild.test",
+      "origin_ts": 1749681600000,
+      "content": { "content": "hello world" },
+      "prev_events": [],
+      "auth_events": [],
+      "signatures": {}
+    }
+  }
+]
+```
+
+- **404** when the channel UUID is unknown.
+- **401** when the bearer token is missing or invalid.
+- **503** when messaging persistence is unavailable (in-memory service not initialized).
 ## Canonical Events
 
 Every persisted or federated message is wrapped in a canonical envelope produced by `openguild-core::event`. Important fields:

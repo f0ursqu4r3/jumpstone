@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use axum::{
     extract::{
         ws::{Message as WsMessage, WebSocket},
-        MatchedPath, Path, State, WebSocketUpgrade,
+        MatchedPath, Path, Query, State, WebSocketUpgrade,
     },
     http::{HeaderMap, StatusCode},
     response::Response,
@@ -39,6 +39,9 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_GUILD_NAME_LENGTH: usize = 64;
 const MAX_CHANNEL_NAME_LENGTH: usize = 64;
 const MAX_MESSAGE_LENGTH: usize = 4000;
+const MESSAGE_RATE_WINDOW: Duration = Duration::from_secs(60);
+const DEFAULT_TIMELINE_LIMIT: i64 = 50;
+const MAX_TIMELINE_LIMIT: i64 = 200;
 #[cfg(test)]
 const MAX_MESSAGES_PER_USER_PER_WINDOW: usize = 3;
 #[cfg(not(test))]
@@ -47,7 +50,6 @@ const MAX_MESSAGES_PER_USER_PER_WINDOW: usize = 60;
 const MAX_MESSAGES_PER_IP_PER_WINDOW: usize = 5;
 #[cfg(not(test))]
 const MAX_MESSAGES_PER_IP_PER_WINDOW: usize = 200;
-const MESSAGE_RATE_WINDOW: Duration = Duration::from_secs(60);
 
 #[cfg(test)]
 pub(crate) const TEST_MAX_MESSAGES_PER_IP_PER_WINDOW: usize = MAX_MESSAGES_PER_IP_PER_WINDOW;
@@ -1018,6 +1020,103 @@ pub async fn post_message(
         }
         Err(err) => {
             tracing::error!(?err, "failed to append channel event");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            Err(status)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TimelineQuery {
+    pub since: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TimelineEvent {
+    pub sequence: i64,
+    pub channel_id: Uuid,
+    pub event: serde_json::Value,
+}
+
+impl From<ChannelEvent> for TimelineEvent {
+    fn from(event: ChannelEvent) -> Self {
+        Self {
+            sequence: event.sequence,
+            channel_id: event.channel_id,
+            event: event.body,
+        }
+    }
+}
+
+#[cfg_attr(not(feature = "metrics"), allow(unused_variables))]
+pub async fn list_events(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Query(query): Query<TimelineQuery>,
+) -> Result<Json<Vec<TimelineEvent>>, StatusCode> {
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        if status == StatusCode::UNAUTHORIZED {
+            state.record_messaging_rejection("unauthorized");
+        }
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
+    match messaging.channel_exists(channel_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let status = StatusCode::NOT_FOUND;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+        Err(err) => {
+            tracing::error!(?err, channel_id = %channel_id, "failed to verify channel");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+    }
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    let limit = query
+        .limit
+        .unwrap_or(DEFAULT_TIMELINE_LIMIT)
+        .clamp(1, MAX_TIMELINE_LIMIT);
+
+    match messaging
+        .recent_events(channel_id, query.since, limit)
+        .await
+    {
+        Ok(events) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
+            Ok(Json(events.into_iter().map(TimelineEvent::from).collect()))
+        }
+        Err(MessagingError::ChannelNotFound) => {
+            let status = StatusCode::NOT_FOUND;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            Err(status)
+        }
+        Err(err) => {
+            tracing::error!(?err, channel_id = %channel_id, "failed to list events");
             let status = StatusCode::INTERNAL_SERVER_ERROR;
             #[cfg(feature = "metrics")]
             state.record_http_request(matched_path.as_str(), status.as_u16());

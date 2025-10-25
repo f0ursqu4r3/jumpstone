@@ -734,6 +734,7 @@ fn build_app(state: AppState) -> Router {
             "/channels/:channel_id/messages",
             post(messaging::post_message),
         )
+        .route("/channels/:channel_id/events", get(messaging::list_events))
         .route("/channels/:channel_id/ws", get(messaging::channel_socket));
 
     #[cfg(feature = "metrics")]
@@ -2166,6 +2167,60 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn list_events_returns_recent_messages() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let guild = messaging
+            .create_guild("Timeline Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        let (session_harness, auth_header, user_id) = session_with_logged_in_user().await;
+        messaging
+            .append_message(channel.channel_id, &user_id.to_string(), "first")
+            .await
+            .expect("first message stored");
+        messaging
+            .append_message(channel.channel_id, &user_id.to_string(), "second")
+            .await
+            .expect("second message stored");
+
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone());
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/channels/{}/events?limit=1", channel.channel_id))
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let events: Vec<messaging::TimelineEvent> =
+            serde_json::from_slice(&body).expect("timeline parses");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].sequence, 2);
+        assert_eq!(
+            events[0].event["content"]["content"]
+                .as_str()
+                .expect("content string"),
+            "second"
+        );
     }
 
     #[tokio::test]

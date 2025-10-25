@@ -53,6 +53,7 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [x] Build repository layer plus optimistic event writer in `openguild-core`/`openguild-storage` (see `MessagingRepository` + `MessagePayload`).
   - [x] Write property tests for event IDs and ordering guarantees (proptest in `openguild-core::messaging`).
   - [x] 2025-10-22: Added Postgres-backed `MessagingRepository` integration test validating guild/channel CRUD plus event ordering (skips unless DB env vars are configured).
+  - [x] 2025-10-25: Added authenticated `GET /channels/{channel_id}/events` with `since`/`limit` filters so clients can sync timeline slices outside WebSockets.
 - [x] Stand up WebSocket gateway for single-server fan-out.
   - [x] Implement join/leave semantics and broadcast channel wiring (bounded broadcast channel per room).
   - [x] Enforce backpressure, connection caps, and timeout policies (256-slot buffer, ping/pong, send timeouts, global semaphore).
