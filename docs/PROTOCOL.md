@@ -47,6 +47,11 @@ This document expands on the federation model outlined in `../BRIEF.md`.
   - When `federation.trusted_servers` is empty the handler returns HTTP 501 with `{ "disabled": true }`.
   - Otherwise events are verified by recomputing the canonical hash, comparing the provided `event_id`, and validating the `ed25519:{key_id}` signature with the configured verifying key.
   - Results include `accepted` and `rejected` arrays so callers can retry failed PDUs. Failed events also produce structured warnings (`origin`, `event_id`, `reason`) in the server logs for audit visibility.
+- `GET /federation/channels/{channel_id}/events`
+  - Query params: `limit` (default 50, max 200) and `since` (sequence watermark).
+  - Requires header `X-OpenGuild-Origin` and the origin must exist in `federation.trusted_servers`.
+  - Returns `{ "origin": "<this server>", "channel_id": "<uuid>", "events": [{ "sequence": N, "event": CanonicalEventJson }, ...] }`.
+  - Unknown channels return 404; missing/untrusted origins return 401/403; when federation is disabled the handler responds 501 with an empty payload.
 
 ## State Resolution
 

@@ -32,6 +32,7 @@ Context Snapshot (updated 2025-10-25 22:40Z)
   * Federation groundwork (Week 8): new `FederationConfig` trusted server list, `FederationService` signature verification with telemetry, and `POST /federation/transactions` route + tests for enabled/disabled and success/failure flows. Accepted PDUs now persist via `MessagingService::ingest_event`, broadcasting to local clients when the channel UUID exists. Docs (SETUP/API/PROTOCOL) cover trusted peer config, canonical schema fields, and transaction payloads/status codes.
   * Canonical event schema now carries an explicit `schema_version` (default v1); builder/test coverage ensures hashing inputs change predictably when we bump versions. Docs describe the envelope so downstream services know what to expect.
   * `GET /channels/{channel_id}/events` provides authenticated timeline pagination with `limit`/`since` filters so clients can sync without WebSockets; responses reuse canonical events and integration tests cover sequencing/limits.
+  * `/federation/channels/{channel_id}/events` mirrors the timeline slice for trusted homeservers (requires `X-OpenGuild-Origin`); signed peers can now page local history after catching up via `/federation/transactions`.
 - Week 5 observability prep:
   * Request IDs flow through HTTP + WS traces (tests capture propagation).
   * Added latency histograms, messaging counters, WebSocket queue depth gauges.

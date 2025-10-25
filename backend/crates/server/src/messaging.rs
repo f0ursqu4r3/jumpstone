@@ -39,9 +39,9 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_GUILD_NAME_LENGTH: usize = 64;
 const MAX_CHANNEL_NAME_LENGTH: usize = 64;
 const MAX_MESSAGE_LENGTH: usize = 4000;
-const MESSAGE_RATE_WINDOW: Duration = Duration::from_secs(60);
-const DEFAULT_TIMELINE_LIMIT: i64 = 50;
-const MAX_TIMELINE_LIMIT: i64 = 200;
+pub(crate) const MESSAGE_RATE_WINDOW: Duration = Duration::from_secs(60);
+pub(crate) const DEFAULT_TIMELINE_LIMIT: i64 = 50;
+pub(crate) const MAX_TIMELINE_LIMIT: i64 = 200;
 #[cfg(test)]
 const MAX_MESSAGES_PER_USER_PER_WINDOW: usize = 3;
 #[cfg(not(test))]

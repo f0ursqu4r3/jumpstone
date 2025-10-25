@@ -6,8 +6,9 @@ use openguild_crypto::{verify_signature, verifying_key_from_base64, Signature, V
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
+use uuid::Uuid;
 
-use crate::config::FederationConfig;
+use crate::{config::FederationConfig, messaging};
 
 #[derive(Debug, Error)]
 pub enum FederationError {
@@ -66,6 +67,10 @@ impl FederationService {
         }
 
         Ok(Some(Self { peers }))
+    }
+
+    pub fn is_trusted(&self, origin: &str) -> bool {
+        self.peers.contains_key(origin)
     }
 
     pub fn evaluate_transaction(
@@ -146,6 +151,13 @@ pub struct TransactionRequest {
     pub origin: String,
     #[serde(default)]
     pub pdus: Vec<CanonicalEvent>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FederationEventsResponse {
+    pub origin: String,
+    pub channel_id: Uuid,
+    pub events: Vec<messaging::TimelineEvent>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

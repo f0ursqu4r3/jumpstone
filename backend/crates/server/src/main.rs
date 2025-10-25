@@ -12,14 +12,15 @@ const CONTENT_SECURITY_POLICY: &str =
 const REFERRER_POLICY: &str = "no-referrer";
 const X_CONTENT_TYPE_OPTIONS: &str = "nosniff";
 const X_FRAME_OPTIONS: &str = "DENY";
+const FEDERATION_ORIGIN_HEADER: &str = "x-openguild-origin";
 
 #[cfg(feature = "metrics")]
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 use axum::{
     body::HttpBody,
-    extract::{MatchedPath, State},
-    http::{header::HeaderName, HeaderValue},
+    extract::{MatchedPath, Path, Query, State},
+    http::{header::HeaderName, HeaderMap, HeaderValue},
     routing::{get, post},
     Json, Router,
 };
@@ -72,9 +73,13 @@ use session::{
     SessionSigner,
 };
 
-use crate::config::{CliOverrides, LogFormat, ServerConfig};
 #[cfg(feature = "metrics")]
 use crate::metrics::MetricsContext;
+use crate::{
+    config::{CliOverrides, LogFormat, ServerConfig},
+    messaging::MessagingError,
+};
+use uuid::Uuid;
 
 #[derive(Clone)]
 struct StorageState {
@@ -502,6 +507,10 @@ impl AppState {
         Some(self.messaging.clone())
     }
 
+    fn server_name(&self) -> String {
+        self.config.server_name.clone()
+    }
+
     fn storage_pool(&self) -> Option<StoragePool> {
         self.storage.pool()
     }
@@ -644,6 +653,103 @@ fn federation_status(response: &federation::TransactionResponse) -> axum::http::
     }
 }
 
+async fn federation_events(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Query(query): Query<messaging::TimelineQuery>,
+) -> (
+    axum::http::StatusCode,
+    Json<federation::FederationEventsResponse>,
+) {
+    let Some(service) = state.federation() else {
+        let status = axum::http::StatusCode::NOT_IMPLEMENTED;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        let response = federation::FederationEventsResponse {
+            origin: state.server_name(),
+            channel_id,
+            events: Vec::new(),
+        };
+        return (status, Json(response));
+    };
+
+    let Some(origin) = headers
+        .get(FEDERATION_ORIGIN_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+    else {
+        let status = axum::http::StatusCode::UNAUTHORIZED;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        let response = federation::FederationEventsResponse {
+            origin: state.server_name(),
+            channel_id,
+            events: Vec::new(),
+        };
+        return (status, Json(response));
+    };
+
+    if !service.is_trusted(&origin) {
+        let status = axum::http::StatusCode::FORBIDDEN;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        let response = federation::FederationEventsResponse {
+            origin: state.server_name(),
+            channel_id,
+            events: Vec::new(),
+        };
+        return (status, Json(response));
+    }
+
+    let Some(messaging) = state.messaging() else {
+        let status = axum::http::StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        let response = federation::FederationEventsResponse {
+            origin: state.server_name(),
+            channel_id,
+            events: Vec::new(),
+        };
+        return (status, Json(response));
+    };
+
+    let limit = query
+        .limit
+        .unwrap_or(messaging::DEFAULT_TIMELINE_LIMIT)
+        .clamp(1, messaging::MAX_TIMELINE_LIMIT);
+
+    let events_result = messaging
+        .recent_events(channel_id, query.since, limit)
+        .await;
+
+    let (status, events) = match events_result {
+        Ok(events) => (axum::http::StatusCode::OK, events),
+        Err(MessagingError::ChannelNotFound) => (axum::http::StatusCode::NOT_FOUND, Vec::new()),
+        Err(err) => {
+            tracing::error!(?err, channel_id = %channel_id, "failed to list federated events");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Vec::new())
+        }
+    };
+
+    #[cfg(feature = "metrics")]
+    state.record_http_request(matched_path.as_str(), status.as_u16());
+
+    let response = federation::FederationEventsResponse {
+        origin: state.server_name(),
+        channel_id,
+        events: events
+            .into_iter()
+            .map(messaging::TimelineEvent::from)
+            .collect(),
+    };
+
+    (status, Json(response))
+}
+
 fn init_tracing(config: &ServerConfig) {
     // Respect RUST_LOG if set, otherwise default to info for our crates.
     let env_filter = EnvFilter::try_from_default_env()
@@ -735,6 +841,10 @@ fn build_app(state: AppState) -> Router {
             post(messaging::post_message),
         )
         .route("/channels/:channel_id/events", get(messaging::list_events))
+        .route(
+            "/federation/channels/:channel_id/events",
+            get(federation_events),
+        )
         .route("/channels/:channel_id/ws", get(messaging::channel_socket));
 
     #[cfg(feature = "metrics")]

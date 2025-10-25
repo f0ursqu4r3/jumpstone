@@ -1,4 +1,4 @@
-﻿# OpenGuild Delivery Timeline
+# OpenGuild Delivery Timeline
 
 This living document tracks backend-focused milestones, weekly targets, and shared to-do lists. Check off items as we complete them and append dates, owners, or notes inline.
 Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update both documents together when new suites land.
@@ -123,6 +123,7 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
     - [x] 2025-10-25: Added explicit `schema_version` field (defaults to v1) and builder/test coverage so future migrations can bump the canonical hash inputs deterministically.
   - [x] 2025-10-25: Implemented `FederationService` signature verification plus structured rejection telemetry (logs tagged with origin/event id).
   - [x] 2025-10-25: Added `POST /federation/transactions` endpoint with integration tests covering enabled/disabled + valid/invalid PDUs.
+  - [x] 2025-10-25: Added `/federation/channels/{channel_id}/events` for trusted peers to page canonical history via `X-OpenGuild-Origin`.
   - [x] 2025-10-25: Accepted PDUs now flow into the messaging service (UUID-backed channels only) so remote events are persisted/broadcast once verification succeeds (tests cover storage + replay).
 - [ ] Explore SFU client signalling (stretch).
   - [ ] Map signalling requirements against existing SFU client crate.
@@ -144,4 +145,5 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [ ] Add coverage reporting and enforce minimum threshold.
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
-Keep this document livingâ€”after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
+Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
+
