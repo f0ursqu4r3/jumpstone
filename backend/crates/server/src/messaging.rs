@@ -17,7 +17,7 @@ use axum::{
     response::Response,
     Extension, Json,
 };
-use openguild_core::messaging::MessagePayload;
+use openguild_core::{event::CanonicalEvent, messaging::MessagePayload};
 use openguild_storage::{Channel, ChannelEvent, Guild, MessagingRepository, StoragePool};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -58,6 +58,8 @@ pub enum MessagingError {
     GuildNotFound,
     #[error("channel not found")]
     ChannelNotFound,
+    #[error("invalid room id '{0}'")]
+    InvalidRoomId(String),
     #[error("storage error: {0}")]
     Storage(#[from] anyhow::Error),
 }
@@ -413,6 +415,55 @@ impl MessagingService {
         }
 
         Ok(stored)
+    }
+
+    pub async fn ingest_event(
+        &self,
+        event: &CanonicalEvent,
+    ) -> Result<ChannelEvent, MessagingError> {
+        let channel_id = Uuid::parse_str(&event.room_id)
+            .map_err(|_| MessagingError::InvalidRoomId(event.room_id.clone()))?;
+        let body =
+            serde_json::to_value(event).map_err(|err| MessagingError::Storage(err.into()))?;
+
+        let stored = self
+            .store
+            .append_event(channel_id, &event.event_id, &event.event_type, &body)
+            .await?;
+
+        let broadcast_event = Arc::new(OutboundEvent {
+            sequence: stored.sequence,
+            channel_id,
+            event: body,
+        });
+        let send_result = self.broadcast(channel_id, broadcast_event).await;
+
+        #[cfg(feature = "metrics")]
+        if let Some(metrics) = self.metrics() {
+            let outcome = match &send_result {
+                Ok(delivered) if *delivered == 0 => "no_subscribers",
+                Ok(_) => "delivered",
+                Err(_) => "dropped",
+            };
+            metrics.increment_messaging_events(outcome);
+        }
+
+        if let Err(err) = send_result {
+            tracing::warn!(?err, channel_id = %channel_id, "failed to broadcast federated event");
+        }
+
+        Ok(stored)
+    }
+
+    pub async fn recent_events(
+        &self,
+        channel_id: Uuid,
+        since_sequence: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<ChannelEvent>, MessagingError> {
+        self.store
+            .recent_events(channel_id, since_sequence, limit)
+            .await
     }
 
     pub async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError> {

@@ -122,6 +122,7 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
     - [x] 2025-10-25: Added explicit `schema_version` field (defaults to v1) and builder/test coverage so future migrations can bump the canonical hash inputs deterministically.
   - [x] 2025-10-25: Implemented `FederationService` signature verification plus structured rejection telemetry (logs tagged with origin/event id).
   - [x] 2025-10-25: Added `POST /federation/transactions` endpoint with integration tests covering enabled/disabled + valid/invalid PDUs.
+  - [x] 2025-10-25: Accepted PDUs now flow into the messaging service (UUID-backed channels only) so remote events are persisted/broadcast once verification succeeds (tests cover storage + replay).
 - [ ] Explore SFU client signalling (stretch).
   - [ ] Map signalling requirements against existing SFU client crate.
   - [ ] Draft design doc for voice federation handshake flows.

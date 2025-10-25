@@ -386,10 +386,7 @@ mod tests {
             "OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_IP_PER_WINDOW",
             "400",
         );
-        env::set_var(
-            "OPENGUILD_SERVER__MESSAGING__RATE_LIMIT_WINDOW_SECS",
-            "120",
-        );
+        env::set_var("OPENGUILD_SERVER__MESSAGING__RATE_LIMIT_WINDOW_SECS", "120");
 
         let config = ServerConfig::load().expect("config loads");
         assert_eq!(config.host, "127.0.0.1");

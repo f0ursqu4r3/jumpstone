@@ -29,7 +29,7 @@ Context Snapshot (updated 2025-10-25 21:18Z)
   * Lightweight crates (`openguild-media`, `openguild-sfu-client`) have direct unit tests to keep coverage complete after the latest pushes.
   * Developer tooling: `backend/xtask` crate for fmt/lint/test/ci workflows; legacy Makefile wraps xtask.
   * Refresh-token lifecycle implemented (SigningKeyRing + refresh session store); login responses emit access+refresh tokens.
-  * Federation groundwork (Week 8): new `FederationConfig` trusted server list, `FederationService` signature verification with telemetry, and `POST /federation/transactions` route + tests for enabled/disabled and success/failure flows. Docs (SETUP/API/PROTOCOL) now cover trusted peer config, canonical schema fields, and transaction payloads/status codes.
+  * Federation groundwork (Week 8): new `FederationConfig` trusted server list, `FederationService` signature verification with telemetry, and `POST /federation/transactions` route + tests for enabled/disabled and success/failure flows. Accepted PDUs now persist via `MessagingService::ingest_event`, broadcasting to local clients when the channel UUID exists. Docs (SETUP/API/PROTOCOL) cover trusted peer config, canonical schema fields, and transaction payloads/status codes.
   * Canonical event schema now carries an explicit `schema_version` (default v1); builder/test coverage ensures hashing inputs change predictably when we bump versions. Docs describe the envelope so downstream services know what to expect.
 - Week 5 observability prep:
   * Request IDs flow through HTTP + WS traces (tests capture propagation).
@@ -49,7 +49,7 @@ Outstanding follow-ups:
 - Flesh out audit logging story (middleware placeholder still TODO).
 - CI workflows still missing (see docs/CI_PLAN.md).
 - Ensure DB-backed tests keep running in environments with `OPENGUILD_TEST_DATABASE_URL`; add guidance to docs/TESTING.md when documenting the opt-in flag set.
-- Capture CLI/env stories for future federation key rotation tooling and consider surfacing trusted peer mutations via `openguild-server` subcommands once requirements stabilize.
+- Capture CLI/env stories for future federation key rotation tooling, plus admin UX for trusted peer CRUD and recovery when remote PDUs target unknown channels (today they’re rejected with delivery errors).
 
 Notes for next agent (2025-10-25 21:18Z):
 - Align frontend on sender UUID requirement and rejection reason handling.

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use base64::Engine;
 use openguild_core::{CanonicalEvent, EventId};
-use openguild_crypto::{
-    verify_signature, verifying_key_from_base64, Signature, VerifyingKey,
-};
+use openguild_crypto::{verify_signature, verifying_key_from_base64, Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
@@ -18,7 +16,10 @@ pub enum FederationError {
     #[error("received event from untrusted origin '{origin}'")]
     UntrustedOrigin { origin: String },
     #[error("event origin '{event_origin}' mismatched transaction origin '{origin}'")]
-    OriginMismatch { origin: String, event_origin: String },
+    OriginMismatch {
+        origin: String,
+        event_origin: String,
+    },
     #[error("missing signature '{key_id}' for origin '{origin}'")]
     MissingSignature { origin: String, key_id: String },
     #[error("event id mismatch (expected {expected}, got {actual})")]
@@ -71,12 +72,12 @@ impl FederationService {
         &self,
         origin: &str,
         events: Vec<CanonicalEvent>,
-    ) -> TransactionResponse {
-        let mut response = TransactionResponse::new(origin.to_string());
+    ) -> FederationEvaluation {
+        let mut evaluation = FederationEvaluation::new(origin.to_string());
 
         for event in events {
             match self.verify_event(origin, &event) {
-                Ok(()) => response.accepted.push(event.event_id.clone()),
+                Ok(()) => evaluation.accepted_events.push(event),
                 Err(err) => {
                     warn!(
                         %origin,
@@ -84,7 +85,7 @@ impl FederationService {
                         error = %err,
                         "federation event rejected"
                     );
-                    response.rejected.push(RejectedEvent {
+                    evaluation.rejected.push(RejectedEvent {
                         event_id: event.event_id.clone(),
                         reason: err.to_string(),
                     });
@@ -92,7 +93,7 @@ impl FederationService {
             }
         }
 
-        response
+        evaluation
     }
 
     fn verify_event(&self, origin: &str, event: &CanonicalEvent) -> Result<(), FederationError> {
@@ -156,15 +157,6 @@ pub struct TransactionResponse {
 }
 
 impl TransactionResponse {
-    pub fn new(origin: String) -> Self {
-        Self {
-            origin,
-            accepted: Vec::new(),
-            rejected: Vec::new(),
-            disabled: false,
-        }
-    }
-
     pub fn disabled(origin: String) -> Self {
         Self {
             origin,
@@ -179,4 +171,33 @@ impl TransactionResponse {
 pub struct RejectedEvent {
     pub event_id: EventId,
     pub reason: String,
+}
+
+pub struct FederationEvaluation {
+    pub origin: String,
+    pub accepted_events: Vec<CanonicalEvent>,
+    pub rejected: Vec<RejectedEvent>,
+}
+
+impl FederationEvaluation {
+    pub fn new(origin: String) -> Self {
+        Self {
+            origin,
+            accepted_events: Vec::new(),
+            rejected: Vec::new(),
+        }
+    }
+
+    pub fn into_response(self, disabled: bool) -> TransactionResponse {
+        TransactionResponse {
+            origin: self.origin,
+            accepted: self
+                .accepted_events
+                .into_iter()
+                .map(|event| event.event_id)
+                .collect(),
+            rejected: self.rejected,
+            disabled,
+        }
+    }
 }

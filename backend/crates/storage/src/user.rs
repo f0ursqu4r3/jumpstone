@@ -124,7 +124,9 @@ mod tests {
     #[tokio::test]
     async fn create_user_persists_and_verifies_credentials() -> anyhow::Result<()> {
         let Some(pool) = setup_pool().await? else {
-            eprintln!("skipping user repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL");
+            eprintln!(
+                "skipping user repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL"
+            );
             return Ok(());
         };
 
@@ -133,7 +135,8 @@ mod tests {
         let wrong_password = "password123";
 
         let user_id = UserRepository::create_user(pool.pool(), &username, password).await?;
-        let verified_id = UserRepository::verify_credentials(pool.pool(), &username, password).await?;
+        let verified_id =
+            UserRepository::verify_credentials(pool.pool(), &username, password).await?;
         assert_eq!(verified_id, user_id);
 
         let err = UserRepository::verify_credentials(pool.pool(), &username, wrong_password)
@@ -163,7 +166,9 @@ mod tests {
     #[tokio::test]
     async fn create_user_rejects_duplicate_usernames() -> anyhow::Result<()> {
         let Some(pool) = setup_pool().await? else {
-            eprintln!("skipping user repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL");
+            eprintln!(
+                "skipping user repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL"
+            );
             return Ok(());
         };
 

@@ -462,10 +462,7 @@ impl AppState {
         self
     }
 
-    fn with_federation(
-        mut self,
-        federation: Option<Arc<federation::FederationService>>,
-    ) -> Self {
+    fn with_federation(mut self, federation: Option<Arc<federation::FederationService>>) -> Self {
         self.federation = federation;
         self
     }
@@ -585,12 +582,39 @@ async fn federation_transactions(
     matched_path: MatchedPath,
     State(state): State<AppState>,
     Json(payload): Json<federation::TransactionRequest>,
-) -> (axum::http::StatusCode, Json<federation::TransactionResponse>) {
+) -> (
+    axum::http::StatusCode,
+    Json<federation::TransactionResponse>,
+) {
     let federation::TransactionRequest { origin, pdus } = payload;
 
     let (status, body) = match state.federation() {
         Some(service) => {
-            let response = service.evaluate_transaction(&origin, pdus);
+            let mut evaluation = service.evaluate_transaction(&origin, pdus);
+            if let Some(messaging) = state.messaging() {
+                let mut stored = Vec::new();
+                let mut rejections = Vec::new();
+                for event in evaluation.accepted_events.into_iter() {
+                    match messaging.ingest_event(&event).await {
+                        Ok(_) => stored.push(event),
+                        Err(err) => {
+                            tracing::warn!(
+                                event_id = %event.event_id,
+                                %origin,
+                                ?err,
+                                "failed to persist federated event"
+                            );
+                            rejections.push(federation::RejectedEvent {
+                                event_id: event.event_id.clone(),
+                                reason: format!("delivery failed: {err}"),
+                            });
+                        }
+                    }
+                }
+                evaluation.accepted_events = stored;
+                evaluation.rejected.extend(rejections);
+            }
+            let response = evaluation.into_response(false);
             let status = federation_status(&response);
             (status, response)
         }
@@ -608,9 +632,7 @@ async fn federation_transactions(
     (status, Json(body))
 }
 
-fn federation_status(
-    response: &federation::TransactionResponse,
-) -> axum::http::StatusCode {
+fn federation_status(response: &federation::TransactionResponse) -> axum::http::StatusCode {
     if response.disabled {
         axum::http::StatusCode::NOT_IMPLEMENTED
     } else if response.rejected.is_empty() {
@@ -699,10 +721,7 @@ fn build_app(state: AppState) -> Router {
         .route("/sessions/login", post(session::login))
         .route("/sessions/refresh", post(session::refresh))
         .route("/sessions/revoke", post(session::revoke))
-        .route(
-            "/federation/transactions",
-            post(federation_transactions),
-        )
+        .route("/federation/transactions", post(federation_transactions))
         .route(
             "/guilds",
             get(messaging::list_guilds).post(messaging::create_guild),
@@ -2586,11 +2605,13 @@ mod tests {
         let signing = generate_signing_key();
         let verifying = verifying_key_from(&signing);
         let verifying_b64 = URL_SAFE_NO_PAD.encode(verifying.to_bytes());
-        cfg.federation.trusted_servers.push(config::FederatedServerConfig {
-            server_name: "remote.example.org".into(),
-            key_id: "1".into(),
-            verifying_key: verifying_b64,
-        });
+        cfg.federation
+            .trusted_servers
+            .push(config::FederatedServerConfig {
+                server_name: "remote.example.org".into(),
+                key_id: "1".into(),
+                verifying_key: verifying_b64,
+            });
         let config = Arc::new(cfg);
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
             config.server_name.clone(),
@@ -2634,15 +2655,24 @@ mod tests {
     #[tokio::test]
     async fn federation_transactions_accept_valid_events() {
         let (config, messaging, federation_service, signing) = federation_ready_state();
-        let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
+        let guild = messaging.create_guild("Remote Guild").await.unwrap();
+        let channel = messaging
+            .create_channel(guild.guild_id, "federation")
+            .await
+            .unwrap();
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
             .with_session(default_session_context())
             .with_federation(Some(federation_service));
         let app = build_app(state);
 
-        let mut event = EventBuilder::new("remote.example.org", "!room:remote", "m.room.message")
-            .sender("@remote:example.org")
-            .content(json!({ "body": "hello federation" }))
-            .build();
+        let mut event = EventBuilder::new(
+            "remote.example.org",
+            &channel.channel_id.to_string(),
+            "m.room.message",
+        )
+        .sender("@remote:example.org")
+        .content(json!({ "body": "hello federation" }))
+        .build();
         event.sign_with("remote.example.org", "1", &signing);
         let expected_id = event.event_id.clone();
 
@@ -2671,20 +2701,36 @@ mod tests {
         assert_eq!(parsed.accepted, vec![expected_id]);
         assert!(parsed.rejected.is_empty());
         assert!(!parsed.disabled);
+
+        let recent = messaging
+            .recent_events(channel.channel_id, None, 10)
+            .await
+            .expect("recent events load");
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].event_id, parsed.accepted[0]);
     }
 
     #[tokio::test]
     async fn federation_transactions_report_invalid_events() {
         let (config, messaging, federation_service, _signing) = federation_ready_state();
+        let guild = messaging.create_guild("Remote Guild").await.unwrap();
+        let channel = messaging
+            .create_channel(guild.guild_id, "federation")
+            .await
+            .unwrap();
         let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
             .with_session(default_session_context())
             .with_federation(Some(federation_service));
         let app = build_app(state);
 
-        let event = EventBuilder::new("remote.example.org", "!room:remote", "m.room.message")
-            .sender("@remote:example.org")
-            .content(json!({ "body": "unsigned" }))
-            .build();
+        let event = EventBuilder::new(
+            "remote.example.org",
+            &channel.channel_id.to_string(),
+            "m.room.message",
+        )
+        .sender("@remote:example.org")
+        .content(json!({ "body": "unsigned" }))
+        .build();
 
         let payload = json!({
             "origin": "remote.example.org",
@@ -2838,7 +2884,7 @@ mod tests {
         let state = AppState::new(config.clone(), storage, messaging.clone())
             .with_session(default_session_context())
             .with_metrics(Some(metrics_ctx));
-        let mut app = build_app(state);
+        let app = build_app(state);
 
         let guild = messaging.create_guild("Metrics Guild").await.unwrap();
         let channel = messaging
