@@ -119,8 +119,8 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [ ] Build handshake and signing verification test vectors.
 - [ ] Deliver DAG-backed federation pipeline.
   - [ ] Finalize canonical event structure in `openguild-core` with versioning plan.
-  - [ ] Implement signature verification service and failure telemetry emitters.
-  - [ ] Build `/federation/*` endpoints and local peer integration harness.
+  - [x] 2025-10-25: Implemented `FederationService` signature verification plus structured rejection telemetry (logs tagged with origin/event id).
+  - [x] 2025-10-25: Added `POST /federation/transactions` endpoint with integration tests covering enabled/disabled + valid/invalid PDUs.
 - [ ] Explore SFU client signalling (stretch).
   - [ ] Map signalling requirements against existing SFU client crate.
   - [ ] Draft design doc for voice federation handshake flows.

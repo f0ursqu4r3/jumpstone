@@ -14,6 +14,8 @@ pub enum ConfigError {
     InvalidSessionKey(String),
     #[error("invalid messaging configuration: {0}")]
     InvalidMessagingConfig(String),
+    #[error("invalid federation configuration: {0}")]
+    InvalidFederationConfig(String),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -64,6 +66,27 @@ impl Default for MessagingConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
+pub struct FederationConfig {
+    pub trusted_servers: Vec<FederatedServerConfig>,
+}
+
+impl Default for FederationConfig {
+    fn default() -> Self {
+        Self {
+            trusted_servers: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FederatedServerConfig {
+    pub server_name: String,
+    pub key_id: String,
+    pub verifying_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct SessionConfig {
     /// Base64-encoded ed25519 signing key (32 bytes) used for session token signing.
     #[serde(alias = "signing_key", rename = "signing_key")]
@@ -91,6 +114,7 @@ pub struct ServerConfig {
     pub log_format: LogFormat,
     pub metrics: MetricsConfig,
     pub messaging: MessagingConfig,
+    pub federation: FederationConfig,
     pub database_url: Option<String>,
     pub session: SessionConfig,
 }
@@ -105,6 +129,7 @@ impl Default for ServerConfig {
             log_format: LogFormat::Compact,
             metrics: MetricsConfig::default(),
             messaging: MessagingConfig::default(),
+            federation: FederationConfig::default(),
             database_url: None,
             session: SessionConfig::default(),
         }
@@ -197,6 +222,24 @@ impl ServerConfig {
         for key in &self.session.fallback_verifying_keys {
             verifying_key_from_base64(key)
                 .map_err(|err| ConfigError::InvalidSessionKey(err.to_string()))?;
+        }
+        for peer in &self.federation.trusted_servers {
+            if peer.server_name.trim().is_empty() {
+                return Err(ConfigError::InvalidFederationConfig(
+                    "trusted server entries require a server_name".into(),
+                ));
+            }
+            if peer.key_id.trim().is_empty() {
+                return Err(ConfigError::InvalidFederationConfig(
+                    "trusted server entries require a key_id".into(),
+                ));
+            }
+            verifying_key_from_base64(&peer.verifying_key).map_err(|err| {
+                ConfigError::InvalidFederationConfig(format!(
+                    "invalid verifying key for '{}': {}",
+                    peer.server_name, err
+                ))
+            })?;
         }
         Ok(())
     }
@@ -457,5 +500,17 @@ mod tests {
 
         let err = cfg.apply_overrides(&overrides).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidBindAddr(_)));
+    }
+
+    #[test]
+    fn federation_entries_require_valid_data() {
+        let mut cfg = ServerConfig::default();
+        cfg.federation.trusted_servers.push(FederatedServerConfig {
+            server_name: "".into(),
+            key_id: "".into(),
+            verifying_key: "invalid".into(),
+        });
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(err, ConfigError::InvalidFederationConfig(_)));
     }
 }

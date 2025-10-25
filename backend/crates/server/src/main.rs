@@ -1,4 +1,5 @@
 mod config;
+mod federation;
 mod messaging;
 #[cfg(feature = "metrics")]
 mod metrics;
@@ -359,14 +360,19 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
     #[cfg(not(feature = "metrics"))]
     let messaging_service = Arc::new(messaging::init_messaging_service(&config, storage.pool()));
 
+    let federation_service =
+        federation::FederationService::from_config(&config.federation)?.map(Arc::new);
+
     #[cfg(feature = "metrics")]
     let state = AppState::new(config.clone(), storage.clone(), messaging_service.clone())
         .with_session(session_context.clone())
+        .with_federation(federation_service.clone())
         .with_metrics(metrics_ctx.clone());
 
     #[cfg(not(feature = "metrics"))]
     let state = AppState::new(config.clone(), storage, messaging_service.clone())
-        .with_session(session_context.clone());
+        .with_session(session_context.clone())
+        .with_federation(federation_service.clone());
 
     #[cfg(feature = "metrics")]
     let metrics_state = state.clone();
@@ -409,6 +415,7 @@ struct AppState {
     storage: StorageState,
     messaging: Arc<messaging::MessagingService>,
     session: Option<Arc<SessionContext>>,
+    federation: Option<Arc<federation::FederationService>>,
     #[cfg(feature = "metrics")]
     metrics: Option<Arc<MetricsContext>>,
 }
@@ -425,6 +432,7 @@ impl AppState {
             storage,
             messaging,
             session: None,
+            federation: None,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
@@ -443,6 +451,7 @@ impl AppState {
             storage,
             messaging,
             session: None,
+            federation: None,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
@@ -450,6 +459,14 @@ impl AppState {
 
     fn with_session(mut self, session: Arc<SessionContext>) -> Self {
         self.session = Some(session);
+        self
+    }
+
+    fn with_federation(
+        mut self,
+        federation: Option<Arc<federation::FederationService>>,
+    ) -> Self {
+        self.federation = federation;
         self
     }
 
@@ -478,6 +495,10 @@ impl AppState {
             .as_ref()
             .cloned()
             .expect("session context not configured")
+    }
+
+    fn federation(&self) -> Option<Arc<federation::FederationService>> {
+        self.federation.clone()
     }
 
     fn messaging(&self) -> Option<Arc<messaging::MessagingService>> {
@@ -560,6 +581,47 @@ async fn readiness(
     })
 }
 
+async fn federation_transactions(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    Json(payload): Json<federation::TransactionRequest>,
+) -> (axum::http::StatusCode, Json<federation::TransactionResponse>) {
+    let federation::TransactionRequest { origin, pdus } = payload;
+
+    let (status, body) = match state.federation() {
+        Some(service) => {
+            let response = service.evaluate_transaction(&origin, pdus);
+            let status = federation_status(&response);
+            (status, response)
+        }
+        None => (
+            axum::http::StatusCode::NOT_IMPLEMENTED,
+            federation::TransactionResponse::disabled(origin),
+        ),
+    };
+
+    #[cfg(feature = "metrics")]
+    state.record_http_request(matched_path.as_str(), status.as_u16());
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    (status, Json(body))
+}
+
+fn federation_status(
+    response: &federation::TransactionResponse,
+) -> axum::http::StatusCode {
+    if response.disabled {
+        axum::http::StatusCode::NOT_IMPLEMENTED
+    } else if response.rejected.is_empty() {
+        axum::http::StatusCode::ACCEPTED
+    } else if response.accepted.is_empty() {
+        axum::http::StatusCode::BAD_REQUEST
+    } else {
+        axum::http::StatusCode::MULTI_STATUS
+    }
+}
+
 fn init_tracing(config: &ServerConfig) {
     // Respect RUST_LOG if set, otherwise default to info for our crates.
     let env_filter = EnvFilter::try_from_default_env()
@@ -637,6 +699,10 @@ fn build_app(state: AppState) -> Router {
         .route("/sessions/login", post(session::login))
         .route("/sessions/refresh", post(session::refresh))
         .route("/sessions/revoke", post(session::revoke))
+        .route(
+            "/federation/transactions",
+            post(federation_transactions),
+        )
         .route(
             "/guilds",
             get(messaging::list_guilds).post(messaging::create_guild),
@@ -1055,13 +1121,16 @@ mod tests {
     use super::*;
     #[cfg(feature = "metrics")]
     use crate::metrics::MetricsContext;
-    use crate::{messaging, session};
+    use crate::{federation, messaging, session};
     use axum::body::{to_bytes, Body};
     use axum::http::{HeaderValue, Request, StatusCode};
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
     use chrono::Utc;
     use futures::StreamExt;
-    use serde_json::Value;
+    use openguild_core::EventBuilder;
+    use openguild_crypto::{generate_signing_key, verifying_key_from, SigningKey};
+    use serde_json::{json, Value};
     use serial_test::serial;
     use std::io::Write;
     use std::str;
@@ -2505,6 +2574,145 @@ mod tests {
             config.session.fallback_verifying_keys,
             vec![fallback_base64]
         );
+    }
+
+    fn federation_ready_state() -> (
+        Arc<ServerConfig>,
+        Arc<messaging::MessagingService>,
+        Arc<federation::FederationService>,
+        SigningKey,
+    ) {
+        let mut cfg = ServerConfig::default();
+        let signing = generate_signing_key();
+        let verifying = verifying_key_from(&signing);
+        let verifying_b64 = URL_SAFE_NO_PAD.encode(verifying.to_bytes());
+        cfg.federation.trusted_servers.push(config::FederatedServerConfig {
+            server_name: "remote.example.org".into(),
+            key_id: "1".into(),
+            verifying_key: verifying_b64,
+        });
+        let config = Arc::new(cfg);
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let service = federation::FederationService::from_config(&config.federation)
+            .expect("federation config loads")
+            .expect("service enabled");
+        (config, messaging, Arc::new(service), signing)
+    }
+
+    #[tokio::test]
+    async fn federation_transactions_route_disabled() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
+            .with_session(default_session_context());
+        let app = build_app(state);
+
+        let payload = json!({
+            "origin": "remote.example.org",
+            "pdus": [],
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/federation/transactions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    #[tokio::test]
+    async fn federation_transactions_accept_valid_events() {
+        let (config, messaging, federation_service, signing) = federation_ready_state();
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
+            .with_session(default_session_context())
+            .with_federation(Some(federation_service));
+        let app = build_app(state);
+
+        let mut event = EventBuilder::new("remote.example.org", "!room:remote", "m.room.message")
+            .sender("@remote:example.org")
+            .content(json!({ "body": "hello federation" }))
+            .build();
+        event.sign_with("remote.example.org", "1", &signing);
+        let expected_id = event.event_id.clone();
+
+        let payload = json!({
+            "origin": "remote.example.org",
+            "pdus": [event],
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/federation/transactions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let parsed: federation::TransactionResponse =
+            serde_json::from_slice(&body).expect("response parses");
+        assert_eq!(parsed.origin, "remote.example.org");
+        assert_eq!(parsed.accepted, vec![expected_id]);
+        assert!(parsed.rejected.is_empty());
+        assert!(!parsed.disabled);
+    }
+
+    #[tokio::test]
+    async fn federation_transactions_report_invalid_events() {
+        let (config, messaging, federation_service, _signing) = federation_ready_state();
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging)
+            .with_session(default_session_context())
+            .with_federation(Some(federation_service));
+        let app = build_app(state);
+
+        let event = EventBuilder::new("remote.example.org", "!room:remote", "m.room.message")
+            .sender("@remote:example.org")
+            .content(json!({ "body": "unsigned" }))
+            .build();
+
+        let payload = json!({
+            "origin": "remote.example.org",
+            "pdus": [event],
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/federation/transactions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let parsed: federation::TransactionResponse =
+            serde_json::from_slice(&body).expect("response parses");
+        assert!(parsed.accepted.is_empty());
+        assert_eq!(parsed.rejected.len(), 1);
+        assert!(parsed.rejected[0]
+            .reason
+            .to_lowercase()
+            .contains("signature"));
     }
 
     #[cfg(feature = "metrics")]

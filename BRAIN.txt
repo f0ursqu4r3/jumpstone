@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-22 00:12Z)
+Context Snapshot (updated 2025-10-25 20:56Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -29,6 +29,7 @@ Context Snapshot (updated 2025-10-22 00:12Z)
   * Lightweight crates (`openguild-media`, `openguild-sfu-client`) have direct unit tests to keep coverage complete after the latest pushes.
   * Developer tooling: `backend/xtask` crate for fmt/lint/test/ci workflows; legacy Makefile wraps xtask.
   * Refresh-token lifecycle implemented (SigningKeyRing + refresh session store); login responses emit access+refresh tokens.
+  * Federation groundwork (Week 8): new `FederationConfig` trusted server list, `FederationService` signature verification with telemetry, and `POST /federation/transactions` route + tests for enabled/disabled and success/failure flows.
 - Week 5 observability prep:
   * Request IDs flow through HTTP + WS traces (tests capture propagation).
   * Added latency histograms, messaging counters, WebSocket queue depth gauges.
@@ -47,8 +48,9 @@ Outstanding follow-ups:
 - Flesh out audit logging story (middleware placeholder still TODO).
 - CI workflows still missing (see docs/CI_PLAN.md).
 - Ensure DB-backed tests keep running in environments with `OPENGUILD_TEST_DATABASE_URL`; add guidance to docs/TESTING.md when documenting the opt-in flag set.
+- Finish canonical event versioning story for federation (Timeline Week 8 first bullet) and document how trusted key IDs rotate; add docs/TESTING.md + docs/API.md guidance for `/federation/transactions`.
 
-Notes for next agent (2025-10-22 00:12Z):
+Notes for next agent (2025-10-25 20:56Z):
 - Align frontend on sender UUID requirement and rejection reason handling.
 - Ensure reverse proxies/CDNs preserve security headers; update deployment manifests as needed.
 - Coordinate with infra on the documented Alertmanager rollout plan and confirm rejection metric alerts page correctly.
@@ -57,6 +59,7 @@ Notes for next agent (2025-10-22 00:12Z):
 - Keep CI plan progress visible; aim to land workflows soon.
 - Maintain this BRAIN file as the handoff channel.
  - New storage tests rely on live Postgres; before running `cargo test --workspace` in CI or shared dev environments, set `OPENGUILD_TEST_DATABASE_URL` (or fallback `DATABASE_URL`) or expect them to skip with a log message.
+- Federated endpoints now depend on `ServerConfig.federation.trusted_servers` entries (server name + ed25519 key id); extend docs/SETUP.md/docs/API.md with sample config + signing guidance and consider CLI/env overrides when requirements settle.
 
 Week 6 current gaps / TODOs:
 - [x] Document refreshed login contract (device metadata + refresh tokens) and coordinate with frontend.
