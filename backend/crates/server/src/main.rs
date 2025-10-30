@@ -81,7 +81,7 @@ use crate::metrics::MetricsContext;
 use crate::{
     config::{CliOverrides, LogFormat, ServerConfig},
     messaging::MessagingError,
-    mls::{list_key_packages, MlsKeyStore},
+    mls::{handshake_test_vectors, list_key_packages, rotate_key_package, MlsKeyStore},
 };
 use uuid::Uuid;
 
@@ -875,6 +875,11 @@ fn build_app(state: AppState) -> Router {
         .route("/sessions/revoke", post(session::revoke))
         .route("/federation/transactions", post(federation_transactions))
         .route("/mls/key-packages", get(list_key_packages))
+        .route("/mls/handshake-test-vectors", get(handshake_test_vectors))
+        .route(
+            "/mls/key-packages/:identity/rotate",
+            post(rotate_key_package),
+        )
         .route(
             "/guilds",
             get(messaging::list_guilds).post(messaging::create_guild),
@@ -1309,6 +1314,7 @@ mod tests {
     use openguild_crypto::{generate_signing_key, verifying_key_from, SigningKey};
     use serde_json::{json, Value};
     use serial_test::serial;
+    use std::convert::TryInto;
     use std::io::Write;
     use std::str;
     use std::sync::{Arc, Mutex};
@@ -2431,6 +2437,127 @@ mod tests {
             serde_json::from_slice(&body).expect("packages parse");
         assert_eq!(packages.len(), 1);
         assert_eq!(packages[0].identity, "alice");
+    }
+
+    #[tokio::test]
+    async fn rotate_key_package_requires_managed_identity() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let mls_store = Arc::new(mls::MlsKeyStore::new(
+            "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+            vec!["alice".into()],
+        ));
+
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone())
+            .with_mls(Some(mls_store));
+        let app = build_app(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mls/key-packages/alice/rotate")
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let rotated: mls::PublicKeyPackage =
+            serde_json::from_slice(&body).expect("rotation result parses");
+        assert_eq!(rotated.identity, "alice");
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mls/key-packages/bob/rotate")
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handshake_test_vectors_require_auth() {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine;
+        use openguild_crypto::{verifying_key_from_base64, Signature};
+
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let mls_store = Arc::new(mls::MlsKeyStore::new(
+            "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+            vec!["alice".into()],
+        ));
+
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
+            .with_mls(Some(mls_store.clone()));
+        let app = build_app(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/mls/handshake-test-vectors")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone())
+            .with_mls(Some(mls_store));
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/mls/handshake-test-vectors")
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let vectors: Vec<mls::HandshakeTestVector> =
+            serde_json::from_slice(&body).expect("vectors parse");
+        assert_eq!(vectors.len(), 1);
+        let vector = &vectors[0];
+        assert_eq!(vector.identity, "alice");
+
+        let verifying =
+            verifying_key_from_base64(&vector.verifying_key).expect("verifying key decodes");
+        let signature_bytes = URL_SAFE_NO_PAD
+            .decode(vector.signature.as_bytes())
+            .expect("signature decodes");
+        let signature_array: [u8; 64] = signature_bytes.try_into().expect("signature length");
+        let signature = Signature::from_bytes(&signature_array);
+        verifying
+            .verify_strict(vector.message.as_bytes(), &signature)
+            .expect("signature verifies");
     }
 
     #[tokio::test]

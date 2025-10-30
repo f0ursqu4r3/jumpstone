@@ -7,7 +7,7 @@ use anyhow::{self, Context};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use openguild_crypto::{
-    generate_signing_key, signing_key_from_base64, verifying_key_from, SigningKey,
+    generate_signing_key, sign_message, signing_key_from_base64, verifying_key_from, SigningKey,
 };
 use openguild_storage::{MlsKeyPackageStore, NewMlsKeyPackage};
 use rand::{rngs::OsRng, RngCore};
@@ -16,10 +16,11 @@ use thiserror::Error;
 
 use crate::{session, AppState};
 use axum::{
-    extract::{MatchedPath, State},
+    extract::{MatchedPath, Path, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
+use tracing::error;
 
 #[derive(Debug, Error)]
 pub enum MlsError {
@@ -35,6 +36,15 @@ pub struct PublicKeyPackage {
     pub ciphersuite: String,
     pub signature_key: String,
     pub hpke_public_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeTestVector {
+    pub identity: String,
+    pub ciphersuite: String,
+    pub message: String,
+    pub signature: String,
+    pub verifying_key: String,
 }
 
 struct StoredKeyPackage {
@@ -172,6 +182,27 @@ impl MlsKeyStore {
         result
     }
 
+    pub fn handshake_vectors(&self) -> Vec<HandshakeTestVector> {
+        const MESSAGE: &str = "OpenGuild MLS handshake test vector v1";
+        let packages = self.packages.read().expect("packages lock poisoned");
+        let mut vectors: Vec<_> = packages
+            .values()
+            .map(|pkg| {
+                let signature = sign_message(&pkg.signing, MESSAGE.as_bytes());
+                HandshakeTestVector {
+                    identity: pkg.identity.clone(),
+                    ciphersuite: pkg.ciphersuite.clone(),
+                    message: MESSAGE.to_string(),
+                    signature: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+                    verifying_key: URL_SAFE_NO_PAD
+                        .encode(verifying_key_from(&pkg.signing).to_bytes()),
+                }
+            })
+            .collect();
+        vectors.sort_by(|a, b| a.identity.cmp(&b.identity));
+        vectors
+    }
+
     pub async fn rotate(&self, identity: &str) -> Result<PublicKeyPackage, MlsError> {
         if !self
             .packages
@@ -225,9 +256,84 @@ pub async fn list_key_packages(
     Ok(Json(packages))
 }
 
+pub async fn rotate_key_package(
+    matched_path: MatchedPath,
+    Path(identity): Path<String>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<PublicKeyPackage>, StatusCode> {
+    let Some(mls) = state.mls() else {
+        let status = StatusCode::NOT_IMPLEMENTED;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    match mls.rotate(&identity).await {
+        Ok(package) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
+            Ok(Json(package))
+        }
+        Err(MlsError::UnknownIdentity(_)) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), StatusCode::NOT_FOUND.as_u16());
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(MlsError::Persistence(err)) => {
+            error!(identity, %err, "failed to persist MLS key package rotation");
+            #[cfg(feature = "metrics")]
+            state.record_http_request(
+                matched_path.as_str(),
+                StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn handshake_test_vectors(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<HandshakeTestVector>>, StatusCode> {
+    let Some(mls) = state.mls() else {
+        let status = StatusCode::NOT_IMPLEMENTED;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    };
+
+    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    let vectors = mls.handshake_vectors();
+    #[cfg(feature = "metrics")]
+    state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
+
+    Ok(Json(vectors))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openguild_crypto::{verifying_key_from_base64, Signature};
+    use std::convert::TryInto;
 
     #[tokio::test]
     async fn generates_and_rotates_packages() {
@@ -250,5 +356,34 @@ mod tests {
         assert_eq!(rotated.identity, "alice");
         assert_ne!(rotated.signature_key, alice_before);
         assert!(store.rotate("carol").await.is_err());
+    }
+
+    #[test]
+    fn handshake_vectors_sign_constant_message() {
+        let store = MlsKeyStore::new(
+            "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+            vec!["alice".into()],
+        );
+
+        let vectors = store.handshake_vectors();
+        assert_eq!(vectors.len(), 1);
+        let vector = &vectors[0];
+        assert_eq!(vector.identity, "alice");
+        assert_eq!(
+            vector.message,
+            "OpenGuild MLS handshake test vector v1".to_string()
+        );
+
+        let verifying =
+            verifying_key_from_base64(&vector.verifying_key).expect("verifying key decodes");
+        let signature_bytes = URL_SAFE_NO_PAD
+            .decode(vector.signature.as_bytes())
+            .expect("signature decodes");
+        let signature_array: [u8; 64] = signature_bytes.try_into().expect("signature size");
+        let signature = Signature::from_bytes(&signature_array);
+
+        verifying
+            .verify_strict(vector.message.as_bytes(), &signature)
+            .expect("signature verifies");
     }
 }

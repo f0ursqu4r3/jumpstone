@@ -442,5 +442,44 @@ Returns the set of MLS key packages the homeserver currently manages. Requires a
 - **401** when the bearer token is missing or invalid.
 - **501** when MLS is disabled.
 
-MLS key material can be rotated via future admin endpoints; for now, restart the server after updating identities to mint fresh packages.
+### `POST /mls/key-packages/{identity}/rotate`
+
+Mint a fresh key package for the specified identity. Requires a valid bearer token. When a database is configured the new package is persisted (with historical records retained); otherwise the rotation applies in-memory only.
+
+```json
+{
+  "identity": "alice",
+  "ciphersuite": "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+  "signature_key": "SOObU7S1u4y...snip...",
+  "hpke_public_key": "kn5W7vW7c2g...snip..."
+}
+```
+
+- **200** returns the freshly rotated package.
+- **401** when the bearer token is missing or invalid.
+- **404** when the identity is not managed by the homeserver.
+- **500** when persistence is configured but storing the key fails (see logs for details).
+- **501** when MLS is disabled.
+
+MLS key material is also generated automatically on startup for any configured identities lacking persisted packages.
+
+### `GET /mls/handshake-test-vectors`
+
+Provides deterministic test vectors so clients can validate their signature verification plumbing. Requires a valid bearer token.
+
+```json
+[
+  {
+    "identity": "alice",
+    "ciphersuite": "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+    "message": "OpenGuild MLS handshake test vector v1",
+    "signature": "lQ_J2gkK9S....snip...",
+    "verifying_key": "SBTNTn5s61s+5PmzyjYwUiZHv7fPPcJVso1lXaI6OvCYQv0CTCJ9uhsvEZLIWldRaFL16mHJ3kChzWr+XU5oAQ=="
+  }
+]
+```
+
+- **200** returns one entry per managed identity.
+- **401** when the bearer token is missing or invalid.
+- **501** when MLS is disabled.
 

@@ -1,4 +1,4 @@
-Context Snapshot (updated 2025-10-25 23:40Z)
+Context Snapshot (updated 2025-10-25 23:55Z)
 -----------------------------------
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
@@ -35,7 +35,8 @@ Context Snapshot (updated 2025-10-25 23:40Z)
   * `/federation/channels/{channel_id}/events` mirrors the timeline slice for trusted homeservers (requires `X-OpenGuild-Origin`); signed peers can now page local history after catching up via `/federation/transactions`.
   * MLS bootstrap: configurable key store generates URL-safe base64 packages for listed identities, available via `/mls/key-packages`; tests cover rotation semantics.
   * `docs/TIMELINE.md` updated with completed Week 8 federation foundations plus a Week 9+ MLS roadmap; keep it in sync with `docs/TESTING.md` as new coverage lands.
-  * Week 9 MLS persistence: added `mls_key_packages` table + repository, server now hydrates/saves packages from Postgres (falls back to in-memory with a log) and persists future rotations.
+  * Week 9 MLS persistence: added `mls_key_packages` table + repository, server now hydrates/saves packages from Postgres (falls back to in-memory with a log), persists future rotations, and exposes `POST /mls/key-packages/{identity}/rotate` for operators.
+  * MLS handshake test vectors land via `GET /mls/handshake-test-vectors`; responses include deterministic signatures verified in unit/integration tests so clients can validate their verification flow.
 - Week 5 observability prep:
   * Request IDs flow through HTTP + WS traces (tests capture propagation).
   * Added latency histograms, messaging counters, WebSocket queue depth gauges.
@@ -55,9 +56,9 @@ Outstanding follow-ups:
 - CI workflows still missing (see docs/CI_PLAN.md).
 - Ensure DB-backed tests keep running in environments with `OPENGUILD_TEST_DATABASE_URL`; add guidance to docs/TESTING.md when documenting the opt-in flag set.
 - Capture CLI/env stories for future federation key rotation tooling, plus admin UX for trusted peer CRUD and recovery when remote PDUs target unknown channels (today they're rejected with delivery errors).
-- Week 10+ federation/MLS next steps: evaluate `openmls`, design handshake/signature verification test vectors, and tackle SFU signalling stretch items (see `docs/TIMELINE.md`).
+- Week 10+ federation/MLS next steps: evaluate `openmls` and tackle SFU signalling stretch items (see `docs/TIMELINE.md`); handshake vectors are live.
 
-Notes for next agent (2025-10-25 23:40Z):
+Notes for next agent (2025-10-25 23:55Z):
 - Align frontend on sender UUID requirement and rejection reason handling.
 - Ensure reverse proxies/CDNs preserve security headers; update deployment manifests as needed.
 - Coordinate with infra on the documented Alertmanager rollout plan and confirm rejection metric alerts page correctly.
@@ -67,7 +68,7 @@ Notes for next agent (2025-10-25 23:40Z):
 - Maintain this BRAIN file as the handoff channel.
  - New storage tests rely on live Postgres; before running `cargo test --workspace` in CI or shared dev environments, set `OPENGUILD_TEST_DATABASE_URL` (or fallback `DATABASE_URL`) or expect them to skip with a log message.
  - Federated endpoints now depend on `ServerConfig.federation.trusted_servers` entries (server name + ed25519 key id); CLI/env setup is documented, but consider adding admin tooling for CRUD operations on trusted peers plus key rotation runbooks.
-- Next focus: evaluate `openmls` integration paths, design MLS handshake test vectors, and keep SFU signalling stretch goals visible; consider adding admin/runtime hooks to trigger MLS key rotations via the new persistence layer.
+- Next focus: evaluate `openmls` integration paths and keep SFU signalling stretch goals visible; consider admin tooling for MLS persistence (bulk rotation, identity CRUD).
 
 Week 6 current gaps / TODOs:
 - [x] Document refreshed login contract (device metadata + refresh tokens) and coordinate with frontend.

@@ -137,11 +137,15 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [x] Added Postgres-backed `mls_key_packages` table and `MlsKeyPackageStore` in `openguild-storage`.
   - [x] Server boot now hydrates MLS key packages from persistence, seeding missing identities automatically and logging when falling back to in-memory keys.
   - [x] `GET /mls/key-packages` continues to serve authenticated clients using the stored packages; rotations persist new records for audit history.
+- [x] Expose admin rotation workflow.
+  - [x] Added authenticated `POST /mls/key-packages/{identity}/rotate` so operators can mint fresh packages per identity (persists to Postgres when available).
+- [x] Build handshake and signing verification test vectors.
+  - [x] Added authenticated `GET /mls/handshake-test-vectors` with deterministic payloads clients can verify against persisted keys.
+  - [x] Server/unit tests assert the returned signatures verify with the published verifying keys.
 
 ## Week 10+: Federation & MLS Roadmap (Milestones M1-M2)
 
 - [ ] Evaluate `openmls` versus alternatives and lock dependency choice.
-- [ ] Build handshake and signing verification test vectors.
 - [ ] Explore SFU client signalling (stretch).
   - [ ] Map signalling requirements against existing SFU client crate.
   - [ ] Draft design doc for voice federation handshake flows.
