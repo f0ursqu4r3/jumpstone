@@ -3,6 +3,7 @@ mod federation;
 mod messaging;
 #[cfg(feature = "metrics")]
 mod metrics;
+mod mls;
 mod session;
 mod users;
 
@@ -78,6 +79,7 @@ use crate::metrics::MetricsContext;
 use crate::{
     config::{CliOverrides, LogFormat, ServerConfig},
     messaging::MessagingError,
+    mls::{list_key_packages, MlsKeyStore},
 };
 use uuid::Uuid;
 
@@ -367,17 +369,27 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
 
     let federation_service =
         federation::FederationService::from_config(&config.federation)?.map(Arc::new);
+    let mls_store = if config.mls.enabled {
+        Some(Arc::new(mls::MlsKeyStore::new(
+            config.mls.ciphersuite.clone(),
+            config.mls.identities.clone(),
+        )))
+    } else {
+        None
+    };
 
     #[cfg(feature = "metrics")]
     let state = AppState::new(config.clone(), storage.clone(), messaging_service.clone())
         .with_session(session_context.clone())
         .with_federation(federation_service.clone())
+        .with_mls(mls_store.clone())
         .with_metrics(metrics_ctx.clone());
 
     #[cfg(not(feature = "metrics"))]
     let state = AppState::new(config.clone(), storage, messaging_service.clone())
         .with_session(session_context.clone())
-        .with_federation(federation_service.clone());
+        .with_federation(federation_service.clone())
+        .with_mls(mls_store.clone());
 
     #[cfg(feature = "metrics")]
     let metrics_state = state.clone();
@@ -421,6 +433,7 @@ struct AppState {
     messaging: Arc<messaging::MessagingService>,
     session: Option<Arc<SessionContext>>,
     federation: Option<Arc<federation::FederationService>>,
+    mls: Option<Arc<MlsKeyStore>>,
     #[cfg(feature = "metrics")]
     metrics: Option<Arc<MetricsContext>>,
 }
@@ -438,6 +451,7 @@ impl AppState {
             messaging,
             session: None,
             federation: None,
+            mls: None,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
@@ -457,6 +471,7 @@ impl AppState {
             messaging,
             session: None,
             federation: None,
+            mls: None,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
@@ -469,6 +484,11 @@ impl AppState {
 
     fn with_federation(mut self, federation: Option<Arc<federation::FederationService>>) -> Self {
         self.federation = federation;
+        self
+    }
+
+    fn with_mls(mut self, mls: Option<Arc<MlsKeyStore>>) -> Self {
+        self.mls = mls;
         self
     }
 
@@ -501,6 +521,10 @@ impl AppState {
 
     fn federation(&self) -> Option<Arc<federation::FederationService>> {
         self.federation.clone()
+    }
+
+    fn mls(&self) -> Option<Arc<MlsKeyStore>> {
+        self.mls.clone()
     }
 
     fn messaging(&self) -> Option<Arc<messaging::MessagingService>> {
@@ -675,6 +699,9 @@ async fn federation_events(
         return (status, Json(response));
     };
 
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
     let Some(origin) = headers
         .get(FEDERATION_ORIGIN_HEADER)
         .and_then(|value| value.to_str().ok())
@@ -828,6 +855,7 @@ fn build_app(state: AppState) -> Router {
         .route("/sessions/refresh", post(session::refresh))
         .route("/sessions/revoke", post(session::revoke))
         .route("/federation/transactions", post(federation_transactions))
+        .route("/mls/key-packages", get(list_key_packages))
         .route(
             "/guilds",
             get(messaging::list_guilds).post(messaging::create_guild),
@@ -1251,7 +1279,7 @@ mod tests {
     use super::*;
     #[cfg(feature = "metrics")]
     use crate::metrics::MetricsContext;
-    use crate::{federation, messaging, session};
+    use crate::{federation, messaging, mls, session};
     use axum::body::{to_bytes, Body};
     use axum::http::{HeaderValue, Request, StatusCode};
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -2334,6 +2362,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_key_packages_requires_auth() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let mls_store = Arc::new(mls::MlsKeyStore::new(
+            "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+            vec!["alice".into()],
+        ));
+
+        let state = AppState::new(config.clone(), storage_unconfigured(), messaging.clone())
+            .with_mls(Some(mls_store.clone()));
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/mls/key-packages")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let (session_harness, auth_header, _user_id) = session_with_logged_in_user().await;
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone())
+            .with_mls(Some(mls_store));
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/mls/key-packages")
+                    .header("authorization", auth_header.as_str())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let packages: Vec<mls::PublicKeyPackage> =
+            serde_json::from_slice(&body).expect("packages parse");
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].identity, "alice");
+    }
+
+    #[tokio::test]
     async fn websocket_requires_bearer_token() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
@@ -2924,6 +3005,92 @@ mod tests {
             .reason
             .to_lowercase()
             .contains("signature"));
+    }
+
+    #[tokio::test]
+    async fn federation_events_require_trusted_origin() {
+        let (config, messaging, federation_service, _signing) = federation_ready_state();
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context())
+            .with_federation(Some(federation_service));
+        let app = build_app(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/federation/channels/{}/events", Uuid::new_v4()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/federation/channels/{}/events", Uuid::new_v4()))
+                    .header(FEDERATION_ORIGIN_HEADER, "untrusted.example.org")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn federation_events_return_events() {
+        let (config, messaging, federation_service, _signing) = federation_ready_state();
+        let guild = messaging
+            .create_guild("Federation Timeline")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        let user_id = Uuid::new_v4().to_string();
+        messaging
+            .append_message(channel.channel_id, &user_id, "first")
+            .await
+            .expect("first message");
+        messaging
+            .append_message(channel.channel_id, &user_id, "second")
+            .await
+            .expect("second message");
+
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(default_session_context())
+            .with_federation(Some(federation_service));
+        let app = build_app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/federation/channels/{}/events?limit=1",
+                        channel.channel_id
+                    ))
+                    .header(FEDERATION_ORIGIN_HEADER, "remote.example.org")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let parsed: federation::FederationEventsResponse =
+            serde_json::from_slice(&body).expect("response parses");
+        assert_eq!(parsed.channel_id, channel.channel_id);
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].sequence, 2);
     }
 
     #[cfg(feature = "metrics")]

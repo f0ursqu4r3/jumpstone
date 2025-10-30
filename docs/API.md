@@ -420,3 +420,27 @@ Processes one or more PDUs from a remote origin. The body is intentionally close
 
 The server logs each rejection with `origin`, `event_id`, and a human-readable reason (`missing signature`, `origin mismatch`, `invalid signature`, etc.) so operators can debug remote failures.
 
+## MLS Key Packages
+
+When MLS support is enabled, authenticated clients can retrieve pre-generated key packages:
+
+### `GET /mls/key-packages`
+
+Returns the set of MLS key packages the homeserver currently manages. Requires a valid bearer token.
+
+```json
+[
+  {
+    "identity": "alice",
+    "ciphersuite": "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+    "signature_key": "SBTNTn5s61s+5PmzyjYwUiZHv7fPPcJVso1lXaI6OvCYQv0CTCJ9uhsvEZLIWldRaFL16mHJ3kChzWr+XU5oAQ==",
+    "hpke_public_key": "S9PYo7b6-BZ3nR-..."
+  }
+]
+```
+
+- **401** when the bearer token is missing or invalid.
+- **501** when MLS is disabled.
+
+MLS key material can be rotated via future admin endpoints; for now, restart the server after updating identities to mint fresh packages.
+

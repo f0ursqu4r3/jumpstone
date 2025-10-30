@@ -31,6 +31,7 @@ uuid = { version = "1", features = ["serde", "v4"] }
 futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["request-id", "trace", "propagate-header", "set-header"] }
+rand = "0.8"
 
 [dev-dependencies]
 serial_test = "2"

@@ -153,7 +153,7 @@ pub struct TransactionRequest {
     pub pdus: Vec<CanonicalEvent>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FederationEventsResponse {
     pub origin: String,
     pub channel_id: Uuid,

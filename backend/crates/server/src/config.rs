@@ -16,6 +16,8 @@ pub enum ConfigError {
     InvalidMessagingConfig(String),
     #[error("invalid federation configuration: {0}")]
     InvalidFederationConfig(String),
+    #[error("invalid MLS configuration: {0}")]
+    InvalidMlsConfig(String),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -115,6 +117,7 @@ pub struct ServerConfig {
     pub metrics: MetricsConfig,
     pub messaging: MessagingConfig,
     pub federation: FederationConfig,
+    pub mls: MlsConfig,
     pub database_url: Option<String>,
     pub session: SessionConfig,
 }
@@ -130,6 +133,7 @@ impl Default for ServerConfig {
             metrics: MetricsConfig::default(),
             messaging: MessagingConfig::default(),
             federation: FederationConfig::default(),
+            mls: MlsConfig::default(),
             database_url: None,
             session: SessionConfig::default(),
         }
@@ -166,7 +170,9 @@ impl ServerConfig {
             .set_default(
                 "messaging.rate_limit_window_secs",
                 defaults.messaging.rate_limit_window_secs as i64,
-            )?;
+            )?
+            .set_default("mls.enabled", defaults.mls.enabled)?
+            .set_default("mls.ciphersuite", defaults.mls.ciphersuite.clone())?;
 
         let settings: ServerConfig = builder.build()?.try_deserialize()?;
         settings.validate()?;
@@ -222,6 +228,18 @@ impl ServerConfig {
         for key in &self.session.fallback_verifying_keys {
             verifying_key_from_base64(key)
                 .map_err(|err| ConfigError::InvalidSessionKey(err.to_string()))?;
+        }
+        if self.mls.enabled {
+            if self.mls.ciphersuite.trim().is_empty() {
+                return Err(ConfigError::InvalidMlsConfig(
+                    "mls.ciphersuite must be provided when MLS is enabled".into(),
+                ));
+            }
+            if self.mls.identities.is_empty() {
+                return Err(ConfigError::InvalidMlsConfig(
+                    "mls.identities must include at least one identity when MLS is enabled".into(),
+                ));
+            }
         }
         for peer in &self.federation.trusted_servers {
             if peer.server_name.trim().is_empty() {
@@ -509,5 +527,22 @@ mod tests {
         });
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, ConfigError::InvalidFederationConfig(_)));
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct MlsConfig {
+    pub enabled: bool,
+    pub ciphersuite: String,
+    pub identities: Vec<String>,
+}
+
+impl Default for MlsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ciphersuite: "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519".into(),
+            identities: Vec::new(),
+        }
     }
 }

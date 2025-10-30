@@ -51,6 +51,9 @@ Common environment overrides:
 - `OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_USER_PER_WINDOW` - per-user rate limit budget for the configured window (default `60`).
 - `OPENGUILD_SERVER__MESSAGING__MAX_MESSAGES_PER_IP_PER_WINDOW` - per-IP rate limit budget for the configured window (default `200`).
 - `OPENGUILD_SERVER__MESSAGING__RATE_LIMIT_WINDOW_SECS` - sliding window length in seconds applied to the limits above (default `60`).
+- `OPENGUILD_SERVER__MLS__ENABLED` - set to `true` to expose MLS key package APIs.
+- `OPENGUILD_SERVER__MLS__CIPHERSUITE` - override the MLS ciphersuite identifier (default `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`).
+- `OPENGUILD_SERVER__MLS__IDENTITIES__{N}` - pre-provision MLS client identities for which the server will publish and rotate key packages (repeat per entry).
 - `OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__{N}__SERVER_NAME` - declare a homeserver that may submit federation transactions (repeat per entry).
 - `OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__{N}__KEY_ID` - expected ed25519 key identifier referenced in incoming signatures for the server above.
 - `OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__{N}__VERIFYING_KEY` - URL-safe base64 ed25519 public key used to verify PDUs from the server above.
@@ -111,6 +114,27 @@ OPENGUILD_SERVER__FEDERATION__TRUSTED_SERVERS__0__VERIFYING_KEY=l_fTdwEVGikNH87d
 ```
 
 Leaving `trusted_servers` empty keeps `/federation/transactions` disabled (HTTP 501 + `{"disabled":true}`). When populated, the server verifies that the request `origin` matches a trusted entry, that each event was emitted by that origin, and that the `signatures` map includes `ed25519:{key_id}` with a valid ed25519 signature over the canonical event hash.
+
+### MLS Key Packages
+
+When MLS is enabled (via config or environment), the server hosts `/mls/key-packages` for authenticated clients and `/federation/channels/{id}/events` for trusted homeservers. Provide at least one identity:
+
+```toml
+[mls]
+enabled = true
+ciphersuite = "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519"
+identities = ["alice", "bob"]
+```
+
+Env variant:
+
+```
+OPENGUILD_SERVER__MLS__ENABLED=true
+OPENGUILD_SERVER__MLS__IDENTITIES__0=alice
+OPENGUILD_SERVER__MLS__IDENTITIES__1=bob
+```
+
+Key packages are derived on boot and can be rotated via future admin APIs.
 
 ### Credential Bootstrap
 

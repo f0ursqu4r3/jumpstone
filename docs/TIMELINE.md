@@ -112,24 +112,34 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [x] Promote Prometheus/Grafana deployment beyond local dev (CI + staging) and define alert thresholds for new security metrics (2025-10-14 - staging rollout plan documented, alert thresholds captured).
   - [x] Ensure `server_name` is surfaced in deployment manifests and ops docs (2025-10-14 - docker-compose + operations playbook updated).
 
-## Week 8 and Beyond: Federation & MLS (Milestones M1-M2)
+## Week 8: Federation Foundations (Milestone M1 bridge)
 
-- [ ] Integrate MLS key management.
-  - [ ] Evaluate `openmls` versus alternatives and lock dependency choice.
-  - [ ] Define provisioning API plus persistent key store schema.
-  - [ ] Build handshake and signing verification test vectors.
-- [ ] Deliver DAG-backed federation pipeline.
-  - [x] Finalize canonical event structure in `openguild-core` with versioning plan.
-    - [x] 2025-10-25: Added explicit `schema_version` field (defaults to v1) and builder/test coverage so future migrations can bump the canonical hash inputs deterministically.
-  - [x] 2025-10-25: Implemented `FederationService` signature verification plus structured rejection telemetry (logs tagged with origin/event id).
-  - [x] 2025-10-25: Added `POST /federation/transactions` endpoint with integration tests covering enabled/disabled + valid/invalid PDUs.
-  - [x] 2025-10-25: Added `/federation/channels/{channel_id}/events` for trusted peers to page canonical history via `X-OpenGuild-Origin`.
-  - [x] 2025-10-25: Accepted PDUs now flow into the messaging service (UUID-backed channels only) so remote events are persisted/broadcast once verification succeeds (tests cover storage + replay).
+- [x] Establish trusted federation plumbing.
+  - [x] Introduced `FederationConfig` trusted server list gating inbound requests.
+  - [x] Implemented `POST /federation/transactions` with signature verification, structured rejection telemetry, and enabled/disabled integration coverage.
+  - [x] Ensured accepted PDUs persist via `MessagingService::ingest_event`, broadcasting to local clients once verification succeeds.
+- [x] Harden canonical event schema for interoperability.
+  - [x] Added explicit `schema_version` field (default v1) plus builder/tests so future bumps adjust canonical hashing deterministically.
+  - [x] Logged origin/event identifiers to aid audit trails when federation checks fail.
+- [x] Provide timeline paging for local and remote peers.
+  - [x] Shipped authenticated `/channels/{channel_id}/events` pagination for first-party clients.
+  - [x] Added `/federation/channels/{channel_id}/events` so trusted homeservers can request canonical slices (`X-OpenGuild-Origin` header).
+- [x] Bootstrap MLS key package distribution.
+  - [x] Stubbed deterministic key package generation and rotation for configured identities, exposed via `/mls/key-packages`.
+  - [x] Documented configuration toggles and rotation workflow across `docs/SETUP.md`, `docs/API.md`, and `docs/PROTOCOL.md`.
+- [x] Refresh docs and playbooks for federation rollout.
+  - [x] Captured trusted peer setup, canonical schema fields, and telemetry expectations in the docs set.
+  - [x] Updated operations guidance with rejection metrics and follow-ups for Alertmanager adoption.
+
+## Week 9+: Federation & MLS Roadmap (Milestones M1-M2)
+
+- [ ] Evaluate `openmls` versus alternatives and lock dependency choice.
+- [ ] Define provisioning API plus persistent key store schema.
+- [ ] Build handshake and signing verification test vectors.
 - [ ] Explore SFU client signalling (stretch).
   - [ ] Map signalling requirements against existing SFU client crate.
   - [ ] Draft design doc for voice federation handshake flows.
   - [ ] Prototype DTOs shared between voice and federation services.
-
 ## Ongoing Backlog (Parallel Streams)
 
 - [ ] Establish automated load/perf testing harness (wrk, k6, or Rust bench) with nightly execution.
@@ -146,4 +156,3 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
 Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.
-
