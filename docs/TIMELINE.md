@@ -131,15 +131,22 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [x] Captured trusted peer setup, canonical schema fields, and telemetry expectations in the docs set.
   - [x] Updated operations guidance with rejection metrics and follow-ups for Alertmanager adoption.
 
-## Week 9+: Federation & MLS Roadmap (Milestones M1-M2)
+## Week 9: MLS Persistence Ramp (Milestones M1-M2)
+
+- [x] Define provisioning API plus persistent key store schema.
+  - [x] Added Postgres-backed `mls_key_packages` table and `MlsKeyPackageStore` in `openguild-storage`.
+  - [x] Server boot now hydrates MLS key packages from persistence, seeding missing identities automatically and logging when falling back to in-memory keys.
+  - [x] `GET /mls/key-packages` continues to serve authenticated clients using the stored packages; rotations persist new records for audit history.
+
+## Week 10+: Federation & MLS Roadmap (Milestones M1-M2)
 
 - [ ] Evaluate `openmls` versus alternatives and lock dependency choice.
-- [ ] Define provisioning API plus persistent key store schema.
 - [ ] Build handshake and signing verification test vectors.
 - [ ] Explore SFU client signalling (stretch).
   - [ ] Map signalling requirements against existing SFU client crate.
   - [ ] Draft design doc for voice federation handshake flows.
   - [ ] Prototype DTOs shared between voice and federation services.
+
 ## Ongoing Backlog (Parallel Streams)
 
 - [ ] Establish automated load/perf testing harness (wrk, k6, or Rust bench) with nightly execution.

@@ -68,7 +68,9 @@ use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use openguild_storage::{connect, CreateUserError, StoragePool, UserRepository};
+use openguild_storage::{
+    connect, CreateUserError, MlsKeyPackageStore, StoragePool, UserRepository,
+};
 use session::{
     DatabaseSessionAuthenticator, InMemorySessionStore, PostgresSessionRepository, SessionContext,
     SessionSigner,
@@ -370,10 +372,27 @@ async fn run(config: Arc<ServerConfig>) -> Result<()> {
     let federation_service =
         federation::FederationService::from_config(&config.federation)?.map(Arc::new);
     let mls_store = if config.mls.enabled {
-        Some(Arc::new(mls::MlsKeyStore::new(
-            config.mls.ciphersuite.clone(),
-            config.mls.identities.clone(),
-        )))
+        let persistence = storage
+            .pool()
+            .map(|pool| MlsKeyPackageStore::new(pool.cloned()));
+        let store = match persistence {
+            Some(store) => {
+                mls::MlsKeyStore::with_persistence(
+                    config.mls.ciphersuite.clone(),
+                    config.mls.identities.clone(),
+                    store,
+                )
+                .await?
+            }
+            None => {
+                info!("MLS persistence unavailable; using in-memory key store");
+                mls::MlsKeyStore::new(
+                    config.mls.ciphersuite.clone(),
+                    config.mls.identities.clone(),
+                )
+            }
+        };
+        Some(Arc::new(store))
     } else {
         None
     };
