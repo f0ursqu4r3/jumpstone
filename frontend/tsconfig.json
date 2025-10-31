@@ -5,7 +5,9 @@
     "paths": {
       "~/*": ["./*"],
       "@/*": ["./*"],
-      "@@/*": ["./.nuxt/*"]
+      "@@/*": ["./.nuxt/*"],
+      "#shared-types": ["./types/generated/index"],
+      "#shared-types/*": ["./types/generated/*"]
     }
   }
 }
