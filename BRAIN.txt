@@ -37,6 +37,7 @@ Context Snapshot (updated 2025-10-25 23:55Z)
   * `docs/TIMELINE.md` updated with completed Week 8 federation foundations plus a Week 9+ MLS roadmap; keep it in sync with `docs/TESTING.md` as new coverage lands.
   * Week 9 MLS persistence: added `mls_key_packages` table + repository, server now hydrates/saves packages from Postgres (falls back to in-memory with a log), persists future rotations, and exposes `POST /mls/key-packages/{identity}/rotate` for operators.
   * MLS handshake test vectors land via `GET /mls/handshake-test-vectors`; responses include deterministic signatures verified in unit/integration tests so clients can validate their verification flow.
+  * Frontend timeline captured in `docs/FRONTEND_TIMELINE.md`; keep it in lock-step with backend milestones during weekly syncs.
 - Week 5 observability prep:
   * Request IDs flow through HTTP + WS traces (tests capture propagation).
   * Added latency histograms, messaging counters, WebSocket queue depth gauges.
