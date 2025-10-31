@@ -1,13 +1,18 @@
 {
-  "extends": "./.nuxt/tsconfig.json",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "~/*": ["./*"],
-      "@/*": ["./*"],
-      "@@/*": ["./.nuxt/*"],
-      "#shared-types": ["./types/generated/index"],
-      "#shared-types/*": ["./types/generated/*"]
+  // https://nuxt.com/docs/guide/concepts/typescript
+  "files": [],
+  "references": [
+    {
+      "path": "./.nuxt/tsconfig.app.json"
+    },
+    {
+      "path": "./.nuxt/tsconfig.server.json"
+    },
+    {
+      "path": "./.nuxt/tsconfig.shared.json"
+    },
+    {
+      "path": "./.nuxt/tsconfig.node.json"
     }
-  }
+  ]
 }

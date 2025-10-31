@@ -1,47 +1,75 @@
-# OpenGuild Frontend
+# Nuxt Minimal Starter
 
-Nuxt 3 web application for the OpenGuild federated chat platform. The app leans on Pinia for state management and [Nuxt UI](https://ui.nuxt.com) for the component library, with Tailwind tokens layered on top for custom theming.
+Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
 
-## Prerequisites
+## Setup
 
-- Node.js 20.x (or Bun 1.1+)
-- Package manager of choice: pnpm 9.x, npm 10.x, or Bun 1.1+
-
-Install dependencies with your preferred runtime:
+Make sure to install dependencies:
 
 ```bash
-pnpm install        # or: npm install / bun install
+# npm
+npm install
+
+# pnpm
+pnpm install
+
+# yarn
+yarn install
+
+# bun
+bun install
 ```
 
-## Environment
+## Development Server
 
-Copy `.env.example` to `.env` (or `.env.local`) and adjust values for your environment:
+Start the development server on `http://localhost:3000`:
 
 ```bash
-cp .env.example .env
+# npm
+npm run dev
+
+# pnpm
+pnpm dev
+
+# yarn
+yarn dev
+
+# bun
+bun run dev
 ```
 
-Nuxt exposes any keys prefixed with `NUXT_PUBLIC_` to the client; keep secrets on the backend.
+## Production
 
-## Common Commands
+Build the application for production:
 
-| Goal        | pnpm              | npm                  | bun                    | Notes                            |
-| ----------- | ----------------- | -------------------- | ---------------------- | -------------------------------- |
-| Develop     | `pnpm dev`        | `npm run dev`        | `bun run dev`          | Starts Nuxt with hot reload      |
-| Lint        | `pnpm lint`       | `npm run lint`       | `bun run lint`         | ESLint over the entire repo      |
-| Test*       | `pnpm test`       | `npm test`           | `bun test`             | Vitest + Vue Testing Library     |
-| Build       | `pnpm build`      | `npm run build`      | `bun run build`        | Production build (SSR ready)     |
-| Preview     | `pnpm preview`    | `npm run preview`    | `bun run preview`      | Serves the built app locally     |
+```bash
+# npm
+npm run build
 
-\*`test` wiring lands alongside the Vitest setup (tracked in Week 1-2 milestone).
+# pnpm
+pnpm build
 
-CI mirrors the `lint`, `test`, and `build` steps; keep feature branches passing these commands before opening a PR.
+# yarn
+yarn build
 
-## Project Structure
+# bun
+bun run build
+```
 
-- `app/` & `pages/`: Nuxt routing and top-level layout shells that consume Nuxt UI primitives.
-- `components/`: Layout scaffolding (`LayoutAppShell`) and feature-specific building blocks.
-- `stores/`: Pinia stores for session, guild, and channel state.
-- `assets/css/`: Tailwind entry point and design tokens.
+Locally preview production build:
 
-The development server runs on `http://localhost:3000` by default.
+```bash
+# npm
+npm run preview
+
+# pnpm
+pnpm preview
+
+# yarn
+yarn preview
+
+# bun
+bun run preview
+```
+
+Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
