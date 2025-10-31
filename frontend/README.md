@@ -1,6 +1,6 @@
 # OpenGuild Frontend
 
-Nuxt 3 web application for the OpenGuild federated chat platform. The app leans on Pinia for state management and Tailwind for the design system.
+Nuxt 3 web application for the OpenGuild federated chat platform. The app leans on Pinia for state management and [Nuxt UI](https://ui.nuxt.com) for the component library, with Tailwind tokens layered on top for custom theming.
 
 ## Prerequisites
 
@@ -39,8 +39,8 @@ CI mirrors the `lint`, `test`, and `build` steps; keep feature branches passing 
 
 ## Project Structure
 
-- `app/` & `pages/`: Nuxt routing and top-level layout shells.
-- `components/`: Shared UI components (design system work begins in Week 1-2).
+- `app/` & `pages/`: Nuxt routing and top-level layout shells that consume Nuxt UI primitives.
+- `components/`: Layout scaffolding (`LayoutAppShell`) and feature-specific building blocks.
 - `stores/`: Pinia stores for session, guild, and channel state.
 - `assets/css/`: Tailwind entry point and design tokens.
 

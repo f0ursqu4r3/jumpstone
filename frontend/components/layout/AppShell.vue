@@ -7,26 +7,26 @@
         OG
       </div>
       <nav class="flex flex-1 flex-col items-center gap-4">
-        <button
+        <UTooltip
           v-for="guild in guilds"
           :key="guild.id"
-          :title="guild.name"
-          type="button"
-          class="flex h-12 w-12 items-center justify-center rounded-2xl border border-transparent text-sm font-semibold transition"
-          :class="[
-            guild.active
-              ? 'bg-brand-primary text-white shadow-elevated-sm'
-              : 'bg-surface-subtle text-slate-300 hover:bg-surface-muted border-surface-muted/60',
-          ]"
+          :text="guild.name"
+          :open-delay="100"
         >
-          <span>{{ guild.initials }}</span>
-        </button>
-        <button
-          type="button"
-          class="flex h-12 w-12 items-center justify-center rounded-2xl border border-dashed border-slate-600 text-slate-500 transition hover:border-slate-400 hover:text-white"
-        >
-          +
-        </button>
+          <UButton
+            :color="guild.active ? 'primary' : 'gray'"
+            :variant="guild.active ? 'solid' : 'soft'"
+            class="h-12 w-12 rounded-2xl font-semibold transition"
+          >
+            {{ guild.initials }}
+          </UButton>
+        </UTooltip>
+        <UButton
+          icon="i-heroicons-plus"
+          color="gray"
+          variant="ghost"
+          class="h-12 w-12 rounded-2xl border border-dashed border-slate-600 text-slate-400"
+        />
       </nav>
     </aside>
 
@@ -42,9 +42,9 @@
             {{ activeGuild?.name ?? 'Select a guild' }}
           </p>
         </div>
-        <UiButton variant="secondary" size="xs">
+        <UButton color="primary" variant="soft" size="xs">
           Invite
-        </UiButton>
+        </UButton>
       </div>
       <div class="flex-1 overflow-y-auto px-3 pb-4">
         <template
@@ -57,9 +57,10 @@
           >
             {{ channel.category }}
           </p>
-          <button
-            type="button"
-            class="group mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition"
+          <UButton
+            color="gray"
+            variant="ghost"
+            class="group mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition"
             :class="[
               channel.active
                 ? 'bg-surface-subtle text-white shadow-elevated-sm'
@@ -69,20 +70,11 @@
             <span
               class="flex h-5 w-5 items-center justify-center text-xs text-slate-400"
             >
-              <svg
+              <UIcon
                 v-if="channel.locked"
+                name="i-heroicons-lock-closed"
                 class="h-3 w-3"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M5 8V6a5 5 0 1110 0v2h.5A1.5 1.5 0 0117 9.5v7A1.5 1.5 0 0115.5 18h-11A1.5 1.5 0 013 16.5v-7A1.5 1.5 0 014.5 8H5zm2-2a3 3 0 116 0v2H7V6zm3 5a1 1 0 00-1 1v2a1 1 0 002 0v-2a1 1 0 00-1-1z"
-                  clip-rule="evenodd"
-                />
-              </svg>
+              />
               <span v-else>#</span>
             </span>
             <span class="flex-1 truncate">
@@ -92,7 +84,7 @@
               v-if="channel.unread"
               class="ml-2 inline-flex h-2 w-2 rounded-full bg-brand-accent"
             />
-          </button>
+          </UButton>
         </template>
       </div>
     </aside>
@@ -102,9 +94,9 @@
         class="flex h-14 items-center justify-between border-b border-surface-muted bg-background-elevated/80 px-6"
       >
         <div class="flex items-center gap-3">
-          <UiBadge variant="outline">
+          <UBadge color="primary" variant="outline">
             {{ activeChannel?.category ?? 'general' }}
-          </UiBadge>
+          </UBadge>
           <h1 class="text-lg font-semibold text-white">
             {{ activeChannel?.name ?? 'Welcome' }}
           </h1>
@@ -117,25 +109,14 @@
           <span v-if="latencyMs !== null">
             {{ latencyLabel }}
           </span>
-          <UiButton variant="ghost" size="sm">
-            <template #icon>
-              <svg
-                class="h-4 w-4"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M8.25 4.5l7.5 7.5-7.5 7.5"
-                />
-              </svg>
-            </template>
+          <UButton
+            variant="ghost"
+            color="gray"
+            size="sm"
+            icon="i-heroicons-arrow-right-circle"
+          >
             Switch guild
-          </UiButton>
+          </UButton>
         </div>
       </header>
 
@@ -147,25 +128,31 @@
         class="flex h-12 items-center justify-between border-t border-surface-muted bg-background-elevated/70 px-6 text-xs text-slate-400"
       >
         <div class="flex items-center gap-3">
-          <UiAvatar
+          <UAvatar
             v-if="currentUser"
+            :text="currentUserInitials"
             size="sm"
-            :name="currentUser.name"
+            class="bg-surface-subtle text-slate-100"
           />
           <div class="flex flex-col">
             <span class="font-medium text-white">
               {{ currentUser?.name ?? 'Guest' }}
             </span>
-            <span class="text-[0.7rem] uppercase tracking-widest text-slate-500">
-              {{ currentUser?.status ?? 'offline' }}
-            </span>
+            <UBadge
+              size="xs"
+              :color="currentUserStatusColor"
+              variant="soft"
+              class="w-fit uppercase tracking-widest"
+            >
+              {{ currentUserStatusLabel }}
+            </UBadge>
           </div>
         </div>
         <div class="flex items-center gap-3">
           <slot name="status" />
-          <UiBadge variant="ghost">
+          <UBadge variant="ghost" color="gray">
             {{ guilds.length }} Guilds
-          </UiBadge>
+          </UBadge>
         </div>
       </footer>
     </div>
@@ -213,12 +200,41 @@ const props = withDefaults(
   },
 );
 
+const statusColors: Record<string, string> = {
+  online: 'green',
+  idle: 'yellow',
+  dnd: 'red',
+  offline: 'gray',
+};
+
 const activeGuild = computed(() =>
   props.guilds.find((guild) => guild.active) ?? null,
 );
 
 const activeChannel = computed(() =>
   props.channels.find((channel) => channel.active) ?? null,
+);
+
+const currentUserInitials = computed(() => {
+  const name = props.currentUser?.name?.trim();
+  if (!name) {
+    return '?';
+  }
+  const parts = name.split(/\s+/);
+  if (parts.length === 1) {
+    return parts[0][0]?.toUpperCase() ?? '?';
+  }
+  const first = parts[0][0] ?? '';
+  const last = parts[parts.length - 1][0] ?? '';
+  return `${first}${last}`.toUpperCase();
+});
+
+const currentUserStatusColor = computed(
+  () => statusColors[props.currentUser?.status ?? 'offline'] ?? 'gray',
+);
+
+const currentUserStatusLabel = computed(() =>
+  (props.currentUser?.status ?? 'offline').toUpperCase(),
 );
 
 const latencyLabel = computed(() => {

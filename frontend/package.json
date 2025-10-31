@@ -11,16 +11,18 @@
         "preview": "nuxt preview"
     },
     "dependencies": {
-        "nuxt": "^3.12.4",
-        "pinia": "^2.1.7",
-        "vue": "^3.4.21"
+        "@nuxt/ui": "4.1.0",
+        "nuxt": "4.2.0",
+        "pinia": "3.0.3",
+        "vue": "3.5.22"
     },
     "devDependencies": {
-        "@nuxt/eslint-config": "^0.3.12",
+        "@iconify-json/heroicons": "^1.1.16",
+        "@nuxt/eslint-config": "1.10.0",
         "@nuxtjs/tailwindcss": "^6.12.1",
-        "eslint": "^8.57.0",
+        "eslint": "9.38.0",
         "postcss": "^8.4.38",
-        "tailwindcss": "^3.4.4",
+        "tailwindcss": "4.1.16",
         "typescript": "^5.5.4"
     }
 }

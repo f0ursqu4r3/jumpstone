@@ -25,7 +25,11 @@ export default defineNuxtConfig({
         .filter(Boolean),
     },
   },
-  modules: ['@nuxtjs/tailwindcss'],
+  modules: ['@nuxtjs/tailwindcss', '@nuxthq/ui'],
+  ui: {
+    global: true,
+    icons: ['heroicons'],
+  },
   css: ['@/assets/css/tailwind.css'],
   app: {
     head: {

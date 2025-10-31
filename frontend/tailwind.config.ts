@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import ui from '@nuxthq/ui/tailwind.config';
 
 export default {
   content: [
@@ -8,6 +9,7 @@ export default {
     './pages/**/*.{vue,js,ts}',
     './plugins/**/*.{js,ts}',
     './nuxt.config.{js,ts}',
+    './node_modules/@nuxthq/ui/dist/runtime/**/*.{js,ts,vue}',
   ],
   theme: {
     extend: {
@@ -67,4 +69,5 @@ export default {
     },
   },
   plugins: [],
+  presets: [ui],
 } satisfies Config;
