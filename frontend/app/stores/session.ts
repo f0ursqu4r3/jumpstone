@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { extractErrorMessage } from '~/utils/errors';
 import type {
   ApiErrorResponse,
+  CurrentUser,
   LoginParameters,
   LoginRequestBody,
   LoginResponse,
@@ -16,11 +17,20 @@ interface SessionTokens {
   refreshExpiresAt: string;
 }
 
+interface StoredProfile {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  email?: string | null;
+}
+
 interface PersistedSession {
   identifier: string;
   deviceId: string;
   deviceName: string;
   tokens: SessionTokens | null;
+  profile: StoredProfile | null;
 }
 
 interface SessionState extends PersistedSession {
@@ -28,6 +38,9 @@ interface SessionState extends PersistedSession {
   error: string | null;
   fieldErrors: Record<string, string>;
   hydrated: boolean;
+  profileLoading: boolean;
+  profileError: string | null;
+  profileFetchedAt: number | null;
 }
 
 const isIsoFuture = (iso: string | null | undefined): boolean => {
@@ -71,6 +84,37 @@ const sanitizeTokens = (value: unknown): SessionTokens | null => {
   };
 };
 
+const sanitizeProfile = (value: unknown): StoredProfile | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = value as Partial<StoredProfile>;
+
+  if (typeof raw.username !== 'string' || !raw.username) {
+    return null;
+  }
+
+  const displayName =
+    typeof raw.displayName === 'string' && raw.displayName.trim().length
+      ? raw.displayName.trim()
+      : raw.username;
+
+  return {
+    userId:
+      typeof raw.userId === 'string' && raw.userId.length
+        ? raw.userId
+        : raw.username,
+    username: raw.username,
+    displayName,
+    avatarUrl:
+      typeof raw.avatarUrl === 'string'
+        ? raw.avatarUrl || null
+        : raw.avatarUrl ?? null,
+    email: typeof raw.email === 'string' ? raw.email : null,
+  };
+};
+
 const readFromStorage = (): PersistedSession | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -90,6 +134,7 @@ const readFromStorage = (): PersistedSession | null => {
       deviceName:
         typeof parsed.deviceName === 'string' ? parsed.deviceName : '',
       tokens: sanitizeTokens(parsed.tokens),
+      profile: sanitizeProfile(parsed.profile),
     };
   } catch {
     return null;
@@ -115,10 +160,14 @@ const initialState = (): SessionState => {
       deviceId: '',
       deviceName: '',
       tokens: null,
+      profile: null,
       loading: false,
       error: null,
       fieldErrors: {},
       hydrated: false,
+      profileLoading: false,
+      profileError: null,
+      profileFetchedAt: null,
     };
   }
 
@@ -133,10 +182,14 @@ const initialState = (): SessionState => {
     deviceId: persisted?.deviceId ?? '',
     deviceName: persisted?.deviceName ?? '',
     tokens,
+    profile: persisted?.profile ?? null,
     loading: false,
     error: null,
     fieldErrors: {},
     hydrated: true,
+    profileLoading: false,
+    profileError: null,
+    profileFetchedAt: persisted?.profile ? Date.now() : null,
   };
 };
 
@@ -217,6 +270,18 @@ const toPersistedSession = (state: PersistedSession): PersistedSession => ({
   deviceId: state.deviceId,
   deviceName: state.deviceName,
   tokens: state.tokens,
+  profile: state.profile,
+});
+
+const mapCurrentUser = (payload: CurrentUser): StoredProfile => ({
+  userId: payload.user_id,
+  username: payload.username,
+  displayName:
+    payload.display_name && payload.display_name.trim().length
+      ? payload.display_name.trim()
+      : payload.username,
+  avatarUrl: payload.avatar_url ?? null,
+  email: payload.email ?? null,
 });
 
 export const useSessionStore = defineStore('session', {
@@ -232,6 +297,8 @@ export const useSessionStore = defineStore('session', {
       return isIsoFuture(state.tokens.accessExpiresAt);
     },
     accessToken: (state): string => state.tokens?.accessToken ?? '',
+    displayName: (state): string => state.profile?.displayName ?? state.identifier,
+    profileAvatar: (state): string | null => state.profile?.avatarUrl ?? null,
   },
   actions: {
     resetErrors() {
@@ -249,6 +316,7 @@ export const useSessionStore = defineStore('session', {
           deviceId: this.deviceId,
           deviceName: this.deviceName,
           tokens: this.tokens,
+          profile: this.profile,
         })
       );
     },
@@ -273,6 +341,10 @@ export const useSessionStore = defineStore('session', {
       this.deviceId = persisted.deviceId;
       this.deviceName = persisted.deviceName;
       this.tokens = tokens;
+      this.profile = persisted.profile;
+      this.profileError = null;
+      this.profileLoading = false;
+      this.profileFetchedAt = persisted.profile ? Date.now() : null;
       this.hydrated = true;
     },
 
@@ -316,6 +388,10 @@ export const useSessionStore = defineStore('session', {
         };
         this.hydrated = true;
 
+        await this.fetchProfile(true).catch((err) => {
+          console.error('Failed to load profile after login', err);
+        });
+
         this.persist();
       } catch (error) {
         const { message, fieldErrors } = formatLoginError(error);
@@ -331,6 +407,10 @@ export const useSessionStore = defineStore('session', {
       this.tokens = null;
       this.resetErrors();
       this.hydrated = true;
+      this.profile = null;
+      this.profileError = null;
+      this.profileLoading = false;
+      this.profileFetchedAt = null;
       this.persist();
     },
 
@@ -339,8 +419,58 @@ export const useSessionStore = defineStore('session', {
       this.deviceId = '';
       this.deviceName = '';
       this.tokens = null;
+      this.profile = null;
+      this.profileError = null;
+      this.profileLoading = false;
+      this.profileFetchedAt = null;
       this.hydrated = true;
       this.persist();
+    },
+
+    async fetchProfile(force = false): Promise<StoredProfile | null> {
+      if (!this.isAuthenticated) {
+        this.profile = null;
+        this.profileFetchedAt = null;
+        this.persist();
+        return null;
+      }
+
+      if (this.profileLoading) {
+        return this.profile;
+      }
+
+      if (
+        !force &&
+        this.profile &&
+        this.profileFetchedAt &&
+        Date.now() - this.profileFetchedAt < 60_000
+      ) {
+        return this.profile;
+      }
+
+      const nuxtApp = useNuxtApp();
+      const api = nuxtApp.$api;
+
+      this.profileLoading = true;
+      this.profileError = null;
+
+      try {
+        const payload = await api<CurrentUser>('/users/me');
+        const profile = mapCurrentUser(payload);
+        this.profile = profile;
+        this.profileFetchedAt = Date.now();
+        this.persist();
+        return profile;
+      } catch (error) {
+        this.profileError = extractErrorMessage(error);
+        const maybeFetchError = error as { response?: { status?: number } };
+        if (maybeFetchError.response?.status === 401) {
+          this.logout();
+        }
+        throw error;
+      } finally {
+        this.profileLoading = false;
+      }
     },
   },
 });

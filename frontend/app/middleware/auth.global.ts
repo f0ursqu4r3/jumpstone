@@ -23,6 +23,10 @@ export default defineNuxtRouteMiddleware((to) => {
     session.hydrate();
   }
 
+  if (!session.isAuthenticated && session.tokens) {
+    session.logout();
+  }
+
   const requiresAuth = to.meta.auth !== false;
 
   if (requiresAuth && !session.isAuthenticated) {

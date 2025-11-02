@@ -31,3 +31,11 @@ export interface ApiErrorResponse {
   message?: string;
   details?: ApiErrorDetail[];
 }
+
+export interface CurrentUser {
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+}

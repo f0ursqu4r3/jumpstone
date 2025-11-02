@@ -21,9 +21,16 @@ const guildName = computed(() => props.guildName);
 const channels = computed(() => props.channels);
 const sessionStore = useSessionStore();
 const isAuthenticated = computed(() => sessionStore.isAuthenticated);
-const accountLabel = computed(
-  () => sessionStore.identifier || 'Signed out user'
-);
+const profile = computed(() => sessionStore.profile);
+const accountLabel = computed(() => {
+  if (profile.value?.displayName) {
+    return profile.value.displayName;
+  }
+  if (profile.value?.username) {
+    return profile.value.username;
+  }
+  return sessionStore.identifier || 'Signed out user';
+});
 const accountStatus = computed(() =>
   isAuthenticated.value ? 'Online' : 'Logged out'
 );
@@ -31,10 +38,15 @@ const accountStatusClass = computed(() =>
   isAuthenticated.value ? 'text-emerald-400' : 'text-slate-500'
 );
 const avatarUrl = computed(() => {
-  const seed = sessionStore.identifier || 'OpenGuild';
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-    seed
-  )}`;
+  if (profile.value?.avatarUrl) {
+    return profile.value.avatarUrl;
+  }
+  const seed =
+    profile.value?.displayName ||
+    profile.value?.username ||
+    sessionStore.identifier ||
+    'OpenGuild';
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`;
 });
 
 const route = useRoute();
@@ -173,6 +185,9 @@ const groupedChannels = computed(() => {
         <div class="flex-1 text-sm">
           <p class="font-semibold text-white">
             {{ accountLabel }}
+          </p>
+          <p v-if="profile?.email" class="text-xs text-slate-500">
+            {{ profile.email }}
           </p>
           <p class="text-xs" :class="accountStatusClass">
             {{ accountStatus }}
