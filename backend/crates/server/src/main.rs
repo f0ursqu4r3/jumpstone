@@ -106,6 +106,7 @@ impl StorageState {
         }
     }
 
+    #[allow(dead_code)]
     fn connected() -> Self {
         Self {
             status: StorageStatus::Connected,
@@ -292,6 +293,42 @@ async fn seed_user(config: &ServerConfig, cmd: SeedUserCommand) -> Result<()> {
 
 async fn run(config: Arc<ServerConfig>) -> Result<()> {
     init_tracing(&config);
+
+    let env_override_keys = ServerConfig::environment_override_keys();
+    if env_override_keys.is_empty() {
+        info!("no OPENGUILD_SERVER environment overrides detected");
+    } else {
+        info!(keys = ?env_override_keys, "detected OPENGUILD_SERVER environment overrides");
+    }
+
+    let log_bind_addr = config.bind_addr.clone();
+    let log_host = config.host.clone();
+    let log_server_name = config.server_name.clone();
+    let log_metrics_bind_addr = config.metrics.bind_addr.clone();
+    let log_format = config.log_format;
+    let log_mls_ciphersuite = config.mls.ciphersuite.clone();
+    let log_mls_identity_count = config.mls.identities.len();
+
+    info!(
+        bind_addr = ?log_bind_addr,
+        host = %log_host,
+        server_name = %log_server_name,
+        port = config.port,
+        log_format = ?log_format,
+        metrics_enabled = config.metrics.enabled,
+        metrics_bind_addr = ?log_metrics_bind_addr,
+        database_url_configured = config.database_url.is_some(),
+        session_active_signing_key_configured = config.session.active_signing_key.is_some(),
+        session_fallback_verifying_key_count = config.session.fallback_verifying_keys.len(),
+        messaging_max_messages_per_user_per_window = config.messaging.max_messages_per_user_per_window,
+        messaging_max_messages_per_ip_per_window = config.messaging.max_messages_per_ip_per_window,
+        messaging_rate_limit_window_secs = config.messaging.rate_limit_window_secs,
+        federation_trusted_server_count = config.federation.trusted_servers.len(),
+        mls_enabled = config.mls.enabled,
+        mls_ciphersuite = %log_mls_ciphersuite,
+        mls_identity_count = log_mls_identity_count,
+        "resolved server configuration"
+    );
 
     let storage = match config.database_url.as_deref() {
         Some(url) => match connect(url).await {
@@ -877,7 +914,7 @@ fn build_app(state: AppState) -> Router {
         .route("/mls/key-packages", get(list_key_packages))
         .route("/mls/handshake-test-vectors", get(handshake_test_vectors))
         .route(
-            "/mls/key-packages/:identity/rotate",
+            "/mls/key-packages/{identity}/rotate",
             post(rotate_key_package),
         )
         .route(
@@ -885,19 +922,19 @@ fn build_app(state: AppState) -> Router {
             get(messaging::list_guilds).post(messaging::create_guild),
         )
         .route(
-            "/guilds/:guild_id/channels",
+            "/guilds/{guild_id}/channels",
             get(messaging::list_channels).post(messaging::create_channel),
         )
         .route(
-            "/channels/:channel_id/messages",
+            "/channels/{channel_id}/messages",
             post(messaging::post_message),
         )
-        .route("/channels/:channel_id/events", get(messaging::list_events))
+        .route("/channels/{channel_id}/events", get(messaging::list_events))
         .route(
-            "/federation/channels/:channel_id/events",
+            "/federation/channels/{channel_id}/events",
             get(federation_events),
         )
-        .route("/channels/:channel_id/ws", get(messaging::channel_socket));
+        .route("/channels/{channel_id}/ws", get(messaging::channel_socket));
 
     #[cfg(feature = "metrics")]
     {
@@ -1086,6 +1123,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn build_subscriber_with_writer<W>(
     json: bool,
     env_filter: EnvFilter,

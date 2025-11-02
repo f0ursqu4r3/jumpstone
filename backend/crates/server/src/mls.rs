@@ -10,7 +10,7 @@ use openguild_crypto::{
     generate_signing_key, sign_message, signing_key_from_base64, verifying_key_from, SigningKey,
 };
 use openguild_storage::{MlsKeyPackageStore, NewMlsKeyPackage};
-use rand::{rngs::OsRng, RngCore};
+use rand::{rng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -58,7 +58,7 @@ impl StoredKeyPackage {
     fn generate(identity: &str, ciphersuite: &str) -> Self {
         let signing = generate_signing_key();
         let mut hpke_public = [0u8; 32];
-        OsRng.fill_bytes(&mut hpke_public);
+        rng().fill_bytes(&mut hpke_public);
         Self {
             identity: identity.to_owned(),
             ciphersuite: ciphersuite.to_owned(),

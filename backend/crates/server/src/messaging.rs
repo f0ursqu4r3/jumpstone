@@ -569,7 +569,7 @@ impl MessagingService {
                 if let Err(err) = timeout(
                     SEND_TIMEOUT,
                     socket.send(WsMessage::Text(
-                        serde_json::to_string(&*payload).unwrap_or_default(),
+                        serde_json::to_string(&*payload).unwrap_or_default().into(),
                     )),
                 )
                 .await
@@ -589,7 +589,7 @@ impl MessagingService {
                         Ok(event) => {
                             if timeout(
                                 SEND_TIMEOUT,
-                                socket.send(WsMessage::Text(serde_json::to_string(&*event).unwrap_or_default()))
+                                socket.send(WsMessage::Text(serde_json::to_string(&*event).unwrap_or_default().into()))
                             ).await.is_err() {
                                 tracing::warn!("websocket send timeout");
                                 break;

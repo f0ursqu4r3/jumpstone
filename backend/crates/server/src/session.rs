@@ -113,8 +113,10 @@ pub struct RefreshTokenRecord {
 
 #[derive(Debug, Clone)]
 pub struct AccessTokenClaims {
+    #[allow(dead_code)]
     pub session_id: Uuid,
     pub user_id: Uuid,
+    #[allow(dead_code)]
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -562,6 +564,7 @@ impl InMemorySessionStore {
         Self::default()
     }
 
+    #[allow(dead_code)]
     pub async fn register_user(
         &self,
         identifier: impl Into<String>,

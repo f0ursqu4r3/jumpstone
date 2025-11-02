@@ -1,0 +1,77 @@
+   0.134062583s  INFO prepare_target{force=false package_id=openguild-server v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/server) target="openguild-server"}: cargo::core::compiler::fingerprint: fingerprint error for openguild-server v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/server)/Check { test: false }/TargetInner { name: "openguild-server", doc: true, ..: with_path("/Users/kyle/git/jumpstone/backend/crates/server/src/main.rs", Edition2021) }
+   0.134081041s  INFO prepare_target{force=false package_id=openguild-server v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/server) target="openguild-server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/kyle/git/jumpstone/backend/target/debug/.fingerprint/openguild-server-f5add00dc619d243/bin-openguild-server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.142375958s  INFO prepare_target{force=false package_id=openguild-server v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/server) target="openguild-server"}: cargo::core::compiler::fingerprint: fingerprint error for openguild-server v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/server)/Check { test: true }/TargetInner { name: "openguild-server", doc: true, ..: with_path("/Users/kyle/git/jumpstone/backend/crates/server/src/main.rs", Edition2021) }
+   0.142389916s  INFO prepare_target{force=false package_id=openguild-server v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/server) target="openguild-server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/kyle/git/jumpstone/backend/target/debug/.fingerprint/openguild-server-93562ab55abec592/test-bin-openguild-server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.143505125s  INFO prepare_target{force=false package_id=openguild-storage v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/storage) target="openguild_storage"}: cargo::core::compiler::fingerprint: fingerprint error for openguild-storage v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/storage)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openguild_storage", ["lib"], "/Users/kyle/git/jumpstone/backend/crates/storage/src/lib.rs", Edition2021) }
+   0.143518666s  INFO prepare_target{force=false package_id=openguild-storage v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/storage) target="openguild_storage"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/kyle/git/jumpstone/backend/target/debug/.fingerprint/openguild-storage-2313caaecf6771ea/test-lib-openguild_storage`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+    Checking openguild-storage v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/storage)
+    Checking openguild-server v0.0.1 (/Users/kyle/git/jumpstone/backend/crates/server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.37s
+warning: the following packages contain code that will be rejected by a future version of Rust: sqlx-postgres v0.7.4
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

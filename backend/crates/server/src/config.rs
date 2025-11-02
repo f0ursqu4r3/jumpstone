@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, str::FromStr};
 
+#[cfg(test)]
 use base64::Engine;
 use openguild_crypto::{signing_key_from_base64, verifying_key_from_base64};
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
@@ -316,6 +317,20 @@ impl ServerConfig {
         }
 
         self.validate()
+    }
+
+    pub fn environment_override_keys() -> Vec<String> {
+        let mut keys: Vec<String> = std::env::vars()
+            .filter_map(|(key, _)| {
+                if key.starts_with(Self::ENV_PREFIX) {
+                    Some(key)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        keys.sort();
+        keys
     }
 }
 
