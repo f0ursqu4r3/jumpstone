@@ -1,7 +1,0 @@
-/target
-**/target
-**/node_modules
-**/.nuxt
-**/dist
-**/.env
-.DS_Store

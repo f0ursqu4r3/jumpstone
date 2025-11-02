@@ -1,0 +1,89 @@
+# Rust/Cargo
+/target
+Cargo.lock
+# Allow Cargo.lock for applications, but comment out for libraries
+# Cargo.lock
+
+# Rust compiled files
+*.rlib
+*.rmeta
+*.so
+*.dll
+*.dylib
+*.exe
+*.pdb
+
+# Environment files
+.env
+.env.local
+.env.*.local
+# Keep example files
+!.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.#*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+
+# Coverage reports
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+
+# Profiling data
+*.prof
+flamegraph.svg
+
+# Documentation build
+/doc
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local configuration
+config/local.toml
+config/*.local.toml
+
+# Test artifacts
+test-results/
+test-output/
+
+# Cache directories
+.cache/
+
+# Local development tools
+.direnv
+.envrc
+
+# SQLx offline query data (if using sqlx offline mode)
+.sqlx/
+
+# Migration backups
+migrations/*.backup
