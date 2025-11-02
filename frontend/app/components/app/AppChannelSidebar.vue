@@ -85,10 +85,7 @@ const groupedChannels = computed(() => {
         </template>
       </UTooltip>
 
-      <USeparator
-        label="Channels"
-        class="uppercase tracking-wide text-xs text-balance"
-      />
+      <USeparator class="uppercase tracking-wide m-0" />
 
       <div class="space-y-4 p-0 px-2 overflow-y-auto flex-1 min-h-0">
         <section
