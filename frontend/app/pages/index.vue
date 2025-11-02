@@ -1,4 +1,11 @@
 ﻿<script setup lang="ts">
+import type {
+  BackendStatusPayload,
+  ComponentStatus,
+  ReadinessResponse,
+  VersionResponse,
+} from '~/types/api';
+
 const timelineEntries = [
   {
     id: 'kickoff',
@@ -55,6 +62,126 @@ const quickMetrics = [
   { label: 'Active channels', value: '28', trend: 'Guild sync focus' },
   { label: 'Pending invites', value: '14', trend: 'Awaiting approval' },
 ] as const;
+
+const runtimeConfig = useRuntimeConfig();
+
+const apiBaseHost = computed(() => {
+  const base = runtimeConfig.public.apiBaseUrl;
+  if (!base) {
+    return '';
+  }
+
+  try {
+    return new URL(base).host;
+  } catch {
+    return base;
+  }
+});
+
+const {
+  data: backendStatus,
+  pending: backendPending,
+  error: backendError,
+  refresh: refreshBackend,
+} = await useAsyncData<BackendStatusPayload>('backend-status', async () => {
+  const api = useApiClient();
+
+  const [ready, version] = await Promise.all([
+    api<ReadinessResponse>('/ready'),
+    api<VersionResponse>('/version'),
+  ]);
+
+  return {
+    ready,
+    version: version.version,
+  };
+});
+
+const readiness = computed(() => backendStatus.value?.ready);
+const readinessStatus = computed(() => readiness.value?.status ?? 'unknown');
+const readinessBadgeColor = computed(() => {
+  if (readinessStatus.value === 'ready') {
+    return 'success';
+  }
+  if (readinessStatus.value === 'degraded') {
+    return 'warning';
+  }
+  return 'neutral';
+});
+
+const readinessStatusLabel = computed(() => {
+  const label = readinessStatus.value ?? 'unknown';
+  return label.charAt(0).toUpperCase() + label.slice(1);
+});
+
+const backendVersion = computed(() => backendStatus.value?.version ?? '—');
+
+const componentStatuses = computed<ComponentStatus[]>(
+  () => readiness.value?.components ?? []
+);
+
+const componentBadgeColor = (status: string) => {
+  if (status === 'configured') {
+    return 'success';
+  }
+  if (status === 'pending') {
+    return 'warning';
+  }
+  if (status === 'error') {
+    return 'error';
+  }
+  return 'neutral';
+};
+
+const componentStatusLabel = (status: string) =>
+  status.charAt(0).toUpperCase() + status.slice(1);
+
+const formatDuration = (totalSeconds: number) => {
+  if (!Number.isFinite(totalSeconds)) {
+    return '—';
+  }
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+
+  const segments = [];
+  if (hours) {
+    segments.push(`${hours}h`);
+  }
+  if (minutes) {
+    segments.push(`${minutes}m`);
+  }
+  if (!segments.length) {
+    segments.push(`${seconds}s`);
+  }
+
+  return segments.join(' ');
+};
+
+const uptime = computed(() => {
+  const seconds = readiness.value?.uptime_seconds;
+  return typeof seconds === 'number' ? formatDuration(seconds) : '—';
+});
+
+const describeError = (err: unknown) => {
+  if (!err) {
+    return '';
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === 'string') {
+    return err;
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return 'Unexpected error';
+  }
+};
+
+const backendErrorMessage = computed(() => describeError(backendError.value));
 </script>
 
 <template>
@@ -84,7 +211,7 @@ const quickMetrics = [
             icon="i-heroicons-academic-cap"
             color="neutral"
             label="Developer setup"
-            to="https://github.com/openguild"
+            to="https://github.com/f0ursqu4r3/jumpstone.git"
             target="_blank"
             variant="ghost"
           />
@@ -150,6 +277,106 @@ const quickMetrics = [
       </UCard>
 
       <div class="space-y-6">
+        <UCard class="border border-white/5 bg-slate-950/60">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-semibold text-white">Backend status</h2>
+              <UButton
+                icon="i-heroicons-arrow-path"
+                color="neutral"
+                variant="ghost"
+                :loading="backendPending"
+                @click="refreshBackend()"
+                aria-label="Refresh backend status"
+              />
+            </div>
+          </template>
+
+          <div v-if="backendPending" class="space-y-4">
+            <div class="h-4 w-32 animate-pulse rounded bg-slate-800" />
+            <div class="space-y-3 rounded-2xl bg-slate-900/60 p-4">
+              <div class="h-4 w-full animate-pulse rounded bg-slate-800" />
+              <div class="h-4 w-4/5 animate-pulse rounded bg-slate-800" />
+              <div class="h-4 w-3/5 animate-pulse rounded bg-slate-800" />
+            </div>
+            <div class="h-4 w-40 animate-pulse rounded bg-slate-800" />
+          </div>
+
+          <div v-else-if="backendError" class="space-y-4">
+            <UAlert
+              color="warning"
+              variant="soft"
+              title="Unable to reach backend"
+              :description="backendErrorMessage"
+            />
+            <p class="text-xs text-slate-500">
+              Check that the Rust server is running locally (port
+              {{ apiBaseHost }}) or update
+              <code class="text-slate-200">NUXT_PUBLIC_API_BASE_URL</code>
+              in your environment.
+            </p>
+          </div>
+
+          <div v-else class="space-y-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-slate-400">
+                  Overall
+                </p>
+                <UBadge
+                  :label="readinessStatusLabel"
+                  :color="readinessBadgeColor"
+                  variant="soft"
+                />
+              </div>
+              <div class="text-right">
+                <p class="text-xs uppercase tracking-wide text-slate-400">
+                  Version
+                </p>
+                <p class="text-sm font-semibold text-white">
+                  {{ backendVersion }}
+                </p>
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-white/5 bg-slate-900/60 p-4">
+              <p class="text-xs uppercase tracking-wide text-slate-400">
+                Components
+              </p>
+              <ul class="mt-3 space-y-3">
+                <li
+                  v-for="component in componentStatuses"
+                  :key="component.name"
+                  class="flex items-start justify-between gap-4"
+                >
+                  <div>
+                    <p class="text-sm font-medium text-white">
+                      {{ component.name }}
+                    </p>
+                    <p v-if="component.details" class="text-xs text-slate-500">
+                      {{ component.details }}
+                    </p>
+                  </div>
+                  <UBadge
+                    :label="componentStatusLabel(component.status)"
+                    :color="componentBadgeColor(component.status)"
+                    variant="subtle"
+                  />
+                </li>
+                <li
+                  v-if="!componentStatuses.length"
+                  class="text-xs text-slate-500"
+                >
+                  No service components reported. Verify the backend readiness
+                  endpoint.
+                </li>
+              </ul>
+            </div>
+
+            <p class="text-xs text-slate-500">Uptime: {{ uptime }}</p>
+          </div>
+        </UCard>
+
         <UCard class="border border-white/5 bg-slate-950/60">
           <template #header>
             <h2 class="text-lg font-semibold text-white">Quick metrics</h2>
