@@ -6,9 +6,15 @@ import type {
   LoginParameters,
   LoginRequestBody,
   LoginResponse,
+  RefreshRequestBody,
 } from '~/types/session';
 
 const STORAGE_KEY = 'openguild.session.v1';
+const ACCESS_REFRESH_THRESHOLD_MS = 60_000;
+const PROFILE_ENDPOINTS = ['/client/v1/users/me', '/users/me'] as const;
+
+let resolvedProfileEndpoint: string | null = null;
+let refreshPromise: Promise<boolean> | null = null;
 
 interface SessionTokens {
   accessToken: string;
@@ -17,12 +23,36 @@ interface SessionTokens {
   refreshExpiresAt: string;
 }
 
+interface StoredDevice {
+  deviceId: string;
+  deviceName?: string | null;
+  lastSeenAt?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+interface StoredGuild {
+  guildId: string;
+  name?: string | null;
+  role?: string | null;
+}
+
 interface StoredProfile {
   userId: string;
   username: string;
   displayName: string;
   avatarUrl?: string | null;
   email?: string | null;
+  serverName?: string | null;
+  defaultGuildId?: string | null;
+  timezone?: string | null;
+  locale?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  roles?: string[];
+  guilds?: StoredGuild[];
+  devices?: StoredDevice[];
+  metadata?: Record<string, unknown>;
 }
 
 interface PersistedSession {
@@ -41,6 +71,8 @@ interface SessionState extends PersistedSession {
   profileLoading: boolean;
   profileError: string | null;
   profileFetchedAt: number | null;
+  refreshing: boolean;
+  refreshError: string | null;
 }
 
 const isIsoFuture = (iso: string | null | undefined): boolean => {
@@ -54,23 +86,33 @@ const isIsoFuture = (iso: string | null | undefined): boolean => {
   return parsed > Date.now();
 };
 
+const msUntil = (iso: string | null | undefined): number => {
+  if (!iso) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  return parsed - Date.now();
+};
+
 const sanitizeTokens = (value: unknown): SessionTokens | null => {
   if (!value || typeof value !== 'object') {
     return null;
   }
+
   const tokens = value as Partial<Record<keyof SessionTokens, unknown>>;
   const accessToken =
     typeof tokens.accessToken === 'string' ? tokens.accessToken : '';
   const refreshToken =
     typeof tokens.refreshToken === 'string' ? tokens.refreshToken : '';
   const accessExpiresAt =
-    typeof tokens.accessExpiresAt === 'string'
-      ? tokens.accessExpiresAt
-      : '';
+    typeof tokens.accessExpiresAt === 'string' ? tokens.accessExpiresAt : '';
   const refreshExpiresAt =
-    typeof tokens.refreshExpiresAt === 'string'
-      ? tokens.refreshExpiresAt
-      : '';
+    typeof tokens.refreshExpiresAt === 'string' ? tokens.refreshExpiresAt : '';
 
   if (!accessToken || !refreshToken) {
     return null;
@@ -82,6 +124,112 @@ const sanitizeTokens = (value: unknown): SessionTokens | null => {
     accessExpiresAt,
     refreshExpiresAt,
   };
+};
+
+const sanitizeDevices = (value: unknown): StoredDevice[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const devices = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+
+      const base = entry as Partial<StoredDevice> & {
+        device_id?: string;
+        device_name?: string | null;
+        last_seen_at?: string | null;
+        ip_address?: string | null;
+        user_agent?: string | null;
+      };
+
+      const deviceId =
+        typeof base.deviceId === 'string'
+          ? base.deviceId
+          : typeof base.device_id === 'string'
+          ? base.device_id
+          : null;
+
+      if (!deviceId) {
+        return null;
+      }
+
+      return {
+        deviceId,
+        deviceName:
+          typeof base.deviceName === 'string'
+            ? base.deviceName
+            : typeof base.device_name === 'string'
+            ? base.device_name
+            : null,
+        lastSeenAt:
+          typeof base.lastSeenAt === 'string'
+            ? base.lastSeenAt
+            : typeof base.last_seen_at === 'string'
+            ? base.last_seen_at
+            : null,
+        ipAddress:
+          typeof base.ipAddress === 'string'
+            ? base.ipAddress
+            : typeof base.ip_address === 'string'
+            ? base.ip_address
+            : null,
+        userAgent:
+          typeof base.userAgent === 'string'
+            ? base.userAgent
+            : typeof base.user_agent === 'string'
+            ? base.user_agent
+            : null,
+      };
+    })
+    .filter(Boolean) as StoredDevice[];
+
+  return devices.length ? devices : undefined;
+};
+
+const sanitizeGuilds = (value: unknown): StoredGuild[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const guilds = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+
+      const base = entry as Partial<StoredGuild> & {
+        guild_id?: string;
+        display_name?: string | null;
+      };
+
+      const guildId =
+        typeof base.guildId === 'string'
+          ? base.guildId
+          : typeof base.guild_id === 'string'
+          ? base.guild_id
+          : null;
+
+      if (!guildId) {
+        return null;
+      }
+
+      return {
+        guildId,
+        name:
+          typeof base.name === 'string'
+            ? base.name
+            : typeof base.display_name === 'string'
+            ? base.display_name
+            : null,
+        role: typeof base.role === 'string' ? base.role : null,
+      };
+    })
+    .filter(Boolean) as StoredGuild[];
+
+  return guilds.length ? guilds : undefined;
 };
 
 const sanitizeProfile = (value: unknown): StoredProfile | null => {
@@ -100,7 +248,7 @@ const sanitizeProfile = (value: unknown): StoredProfile | null => {
       ? raw.displayName.trim()
       : raw.username;
 
-  return {
+  const profile: StoredProfile = {
     userId:
       typeof raw.userId === 'string' && raw.userId.length
         ? raw.userId
@@ -112,7 +260,35 @@ const sanitizeProfile = (value: unknown): StoredProfile | null => {
         ? raw.avatarUrl || null
         : raw.avatarUrl ?? null,
     email: typeof raw.email === 'string' ? raw.email : null,
+    serverName:
+      typeof raw.serverName === 'string'
+        ? raw.serverName
+        : raw.serverName ?? null,
+    defaultGuildId:
+      typeof raw.defaultGuildId === 'string'
+        ? raw.defaultGuildId
+        : raw.defaultGuildId ?? null,
+    timezone:
+      typeof raw.timezone === 'string' ? raw.timezone : raw.timezone ?? null,
+    locale: typeof raw.locale === 'string' ? raw.locale : raw.locale ?? null,
+    createdAt:
+      typeof raw.createdAt === 'string' ? raw.createdAt : raw.createdAt ?? null,
+    updatedAt:
+      typeof raw.updatedAt === 'string' ? raw.updatedAt : raw.updatedAt ?? null,
+    roles: Array.isArray(raw.roles)
+      ? raw.roles.filter(
+          (role): role is string => typeof role === 'string' && role.length > 0
+        )
+      : undefined,
+    guilds: sanitizeGuilds(raw.guilds),
+    devices: sanitizeDevices(raw.devices),
+    metadata:
+      raw.metadata && typeof raw.metadata === 'object'
+        ? raw.metadata
+        : undefined,
   };
+
+  return profile;
 };
 
 const readFromStorage = (): PersistedSession | null => {
@@ -168,6 +344,8 @@ const initialState = (): SessionState => {
       profileLoading: false,
       profileError: null,
       profileFetchedAt: null,
+      refreshing: false,
+      refreshError: null,
     };
   }
 
@@ -190,6 +368,8 @@ const initialState = (): SessionState => {
     profileLoading: false,
     profileError: null,
     profileFetchedAt: persisted?.profile ? Date.now() : null,
+    refreshing: false,
+    refreshError: null,
   };
 };
 
@@ -273,6 +453,21 @@ const toPersistedSession = (state: PersistedSession): PersistedSession => ({
   profile: state.profile,
 });
 
+const unwrapCurrentUser = (
+  payload: CurrentUser | { user: CurrentUser }
+): CurrentUser => {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'user' in payload &&
+    payload.user
+  ) {
+    return payload.user;
+  }
+
+  return payload as CurrentUser;
+};
+
 const mapCurrentUser = (payload: CurrentUser): StoredProfile => ({
   userId: payload.user_id,
   username: payload.username,
@@ -282,6 +477,23 @@ const mapCurrentUser = (payload: CurrentUser): StoredProfile => ({
       : payload.username,
   avatarUrl: payload.avatar_url ?? null,
   email: payload.email ?? null,
+  serverName: payload.server_name ?? null,
+  defaultGuildId: payload.default_guild_id ?? null,
+  timezone: payload.timezone ?? null,
+  locale: payload.locale ?? null,
+  createdAt: payload.created_at ?? null,
+  updatedAt: payload.updated_at ?? null,
+  roles: Array.isArray(payload.roles)
+    ? payload.roles.filter(
+        (role): role is string => typeof role === 'string' && role.length > 0
+      )
+    : undefined,
+  guilds: sanitizeGuilds(payload.guilds),
+  devices: sanitizeDevices(payload.devices),
+  metadata:
+    payload.metadata && typeof payload.metadata === 'object'
+      ? payload.metadata
+      : undefined,
 });
 
 export const useSessionStore = defineStore('session', {
@@ -297,7 +509,8 @@ export const useSessionStore = defineStore('session', {
       return isIsoFuture(state.tokens.accessExpiresAt);
     },
     accessToken: (state): string => state.tokens?.accessToken ?? '',
-    displayName: (state): string => state.profile?.displayName ?? state.identifier,
+    displayName: (state): string =>
+      state.profile?.displayName ?? state.identifier,
     profileAvatar: (state): string | null => state.profile?.avatarUrl ?? null,
   },
   actions: {
@@ -345,6 +558,8 @@ export const useSessionStore = defineStore('session', {
       this.profileError = null;
       this.profileLoading = false;
       this.profileFetchedAt = persisted.profile ? Date.now() : null;
+      this.refreshing = false;
+      this.refreshError = null;
       this.hydrated = true;
     },
 
@@ -355,6 +570,7 @@ export const useSessionStore = defineStore('session', {
 
       this.loading = true;
       this.resetErrors();
+      this.refreshError = null;
 
       const nuxtApp = useNuxtApp();
       const api = nuxtApp.$api;
@@ -411,6 +627,8 @@ export const useSessionStore = defineStore('session', {
       this.profileError = null;
       this.profileLoading = false;
       this.profileFetchedAt = null;
+      this.refreshing = false;
+      this.refreshError = null;
       this.persist();
     },
 
@@ -423,8 +641,95 @@ export const useSessionStore = defineStore('session', {
       this.profileError = null;
       this.profileLoading = false;
       this.profileFetchedAt = null;
+      this.refreshing = false;
+      this.refreshError = null;
       this.hydrated = true;
       this.persist();
+    },
+
+    needsAccessRefresh(thresholdMs = ACCESS_REFRESH_THRESHOLD_MS): boolean {
+      if (!this.tokens?.accessExpiresAt) {
+        return false;
+      }
+
+      const delta = msUntil(this.tokens.accessExpiresAt);
+      return delta <= thresholdMs;
+    },
+
+    async ensureFreshAccessToken(): Promise<boolean> {
+      if (!this.isAuthenticated) {
+        return false;
+      }
+
+      if (!this.needsAccessRefresh()) {
+        return true;
+      }
+
+      return this.refreshTokens();
+    },
+
+    async refreshTokens(force = false): Promise<boolean> {
+      if (!this.tokens) {
+        return false;
+      }
+
+      if (!this.tokens.refreshToken) {
+        return false;
+      }
+
+      if (!force && !this.needsAccessRefresh()) {
+        return true;
+      }
+
+      if (!isIsoFuture(this.tokens.refreshExpiresAt)) {
+        this.logout();
+        return false;
+      }
+
+      if (refreshPromise) {
+        return refreshPromise;
+      }
+
+      const nuxtApp = useNuxtApp();
+      const api = nuxtApp.$api;
+
+      refreshPromise = (async () => {
+        this.refreshing = true;
+        this.refreshError = null;
+
+        try {
+          const body: RefreshRequestBody = {
+            refresh_token: this.tokens!.refreshToken,
+          };
+
+          const response = await api<LoginResponse>('/sessions/refresh', {
+            method: 'POST',
+            body,
+          });
+
+          this.tokens = {
+            accessToken: response.access_token,
+            accessExpiresAt: response.access_expires_at,
+            refreshToken: response.refresh_token,
+            refreshExpiresAt: response.refresh_expires_at,
+          };
+
+          this.persist();
+          return true;
+        } catch (error) {
+          this.refreshError = extractErrorMessage(error);
+          const maybeFetchError = error as { response?: { status?: number } };
+          if (maybeFetchError.response?.status === 401) {
+            this.logout();
+          }
+          return false;
+        } finally {
+          this.refreshing = false;
+          refreshPromise = null;
+        }
+      })();
+
+      return refreshPromise;
     },
 
     async fetchProfile(force = false): Promise<StoredProfile | null> {
@@ -455,8 +760,38 @@ export const useSessionStore = defineStore('session', {
       this.profileError = null;
 
       try {
-        const payload = await api<CurrentUser>('/users/me');
-        const profile = mapCurrentUser(payload);
+        const endpoints = resolvedProfileEndpoint
+          ? [resolvedProfileEndpoint]
+          : PROFILE_ENDPOINTS;
+
+        let payload: CurrentUser | { user: CurrentUser } | null = null;
+        let lastError: unknown = null;
+
+        for (const endpoint of endpoints) {
+          try {
+            const data = await api<CurrentUser | { user: CurrentUser }>(
+              endpoint
+            );
+            resolvedProfileEndpoint = endpoint;
+            payload = data;
+            break;
+          } catch (err) {
+            lastError = err;
+            const status = (err as { response?: { status?: number } })?.response
+              ?.status;
+            if (status === 404) {
+              continue;
+            }
+            throw err;
+          }
+        }
+
+        if (!payload) {
+          throw lastError ?? new Error('Profile endpoint unavailable');
+        }
+
+        const currentUser = unwrapCurrentUser(payload);
+        const profile = mapCurrentUser(currentUser);
         this.profile = profile;
         this.profileFetchedAt = Date.now();
         this.persist();

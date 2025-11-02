@@ -907,6 +907,7 @@ fn build_app(state: AppState) -> Router {
         .route("/ready", get(readiness))
         .route("/version", get(version))
         .route("/users/register", post(users::register))
+        .route("/users/me", get(users::me))
         .route("/sessions/login", post(session::login))
         .route("/sessions/refresh", post(session::refresh))
         .route("/sessions/revoke", post(session::revoke))

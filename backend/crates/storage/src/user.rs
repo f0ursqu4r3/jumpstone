@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use chrono::{DateTime, Utc};
 use pwhash::rand_core::OsRng;
 use sqlx::PgPool;
 use thiserror::Error;
@@ -22,6 +23,14 @@ pub enum CreateUserError {
     UsernameTaken,
     #[error("failed to create user: {0}")]
     Other(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Clone)]
+pub struct UserRecord {
+    pub user_id: Uuid,
+    pub username: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl UserRepository {
@@ -89,6 +98,27 @@ impl UserRepository {
             .map_err(|_| CredentialError::InvalidCredentials)?;
 
         Ok(user_id)
+    }
+
+    pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<Option<UserRecord>> {
+        let record = sqlx::query_as::<_, (Uuid, String, DateTime<Utc>, DateTime<Utc>)>(
+            r#"
+            SELECT user_id, username, created_at, updated_at
+            FROM users
+            WHERE user_id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .with_context(|| format!("fetching user '{user_id}'"))?;
+
+        Ok(record.map(|row| UserRecord {
+            user_id: row.0,
+            username: row.1,
+            created_at: row.2,
+            updated_at: row.3,
+        }))
     }
 }
 

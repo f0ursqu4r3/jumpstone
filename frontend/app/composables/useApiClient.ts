@@ -34,9 +34,14 @@ export const useApiClient = () => {
   const client = $fetch.create({
     baseURL,
     retry: 0,
-    onRequest({ options }) {
+    async onRequest({ options }) {
       const headers = normalizeHeaders(options.headers);
       const session = useSessionStore();
+
+      if (session.isAuthenticated) {
+        await session.ensureFreshAccessToken();
+      }
+
       const token = session.accessToken;
 
       if (token && !headers.authorization) {

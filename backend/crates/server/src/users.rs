@@ -1,15 +1,17 @@
 use axum::{
-    extract::State,
-    http::StatusCode,
+    extract::{MatchedPath, State},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use openguild_storage::{CreateUserError, UserRepository};
+use chrono::{DateTime, Utc};
+use openguild_storage::{CreateUserError, UserRecord, UserRepository};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::AppState;
+use crate::{session, AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -127,6 +129,111 @@ pub async fn register(
             (status, Json(ErrorBody::simple("server_error"))).into_response()
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct UserProfileResponse {
+    user_id: Uuid,
+    username: String,
+    display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    avatar_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    server_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_guild_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timezone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    locale: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    created_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    updated_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    roles: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    guilds: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    devices: Vec<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<Value>,
+}
+
+impl UserProfileResponse {
+    fn fallback(user_id: Uuid, server_name: String) -> Self {
+        let username = user_id.to_string();
+        Self {
+            user_id,
+            username: username.clone(),
+            display_name: username,
+            email: None,
+            avatar_url: None,
+            server_name: Some(server_name),
+            default_guild_id: None,
+            timezone: None,
+            locale: None,
+            created_at: None,
+            updated_at: None,
+            roles: Vec::new(),
+            guilds: Vec::new(),
+            devices: Vec::new(),
+            metadata: None,
+        }
+    }
+
+    fn apply_user_record(&mut self, record: &UserRecord) {
+        self.user_id = record.user_id;
+        self.username = record.username.clone();
+        self.display_name = record.username.clone();
+        self.created_at = Some(record.created_at);
+        self.updated_at = Some(record.updated_at);
+    }
+}
+
+pub async fn me(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    let claims = match session::authenticate_bearer(&state, &headers) {
+        Ok(claims) => claims,
+        Err(status) => {
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return status.into_response();
+        }
+    };
+
+    let mut response = UserProfileResponse::fallback(claims.user_id, state.server_name());
+
+    if let Some(pool) = state.storage_pool() {
+        match UserRepository::find_user_by_id(pool.pool(), claims.user_id).await {
+            Ok(Some(record)) => response.apply_user_record(&record),
+            Ok(None) => {
+                tracing::warn!(
+                    user_id = %claims.user_id,
+                    "user record not found while building profile response"
+                );
+            }
+            Err(err) => {
+                tracing::error!(
+                    ?err,
+                    user_id = %claims.user_id,
+                    "failed to fetch user profile record"
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "metrics")]
+    state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    (StatusCode::OK, Json(response)).into_response()
 }
 
 impl<'a> ErrorBody<'a> {

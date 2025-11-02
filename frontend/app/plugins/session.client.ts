@@ -9,10 +9,21 @@ export default defineNuxtPlugin(async () => {
   session.hydrate();
 
   if (session.isAuthenticated) {
-    try {
-      await session.fetchProfile();
-    } catch (err) {
-      console.warn('Failed to hydrate profile', err);
+    const refreshed = await session.ensureFreshAccessToken().catch((err) => {
+      console.warn('Failed to refresh access token during hydration', err);
+      return false;
+    });
+
+    if (!refreshed && !session.isAuthenticated) {
+      return;
+    }
+
+    if (session.isAuthenticated) {
+      try {
+        await session.fetchProfile();
+      } catch (err) {
+        console.warn('Failed to hydrate profile', err);
+      }
     }
   }
 });

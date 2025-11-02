@@ -31,9 +31,17 @@ const accountLabel = computed(() => {
   }
   return sessionStore.identifier || 'Signed out user';
 });
-const accountStatus = computed(() =>
-  isAuthenticated.value ? 'Online' : 'Logged out'
-);
+const accountStatus = computed(() => {
+  if (!isAuthenticated.value) {
+    return 'Logged out';
+  }
+
+  if (profile.value?.serverName) {
+    return `Online · ${profile.value.serverName}`;
+  }
+
+  return 'Online';
+});
 const accountStatusClass = computed(() =>
   isAuthenticated.value ? 'text-emerald-400' : 'text-slate-500'
 );
