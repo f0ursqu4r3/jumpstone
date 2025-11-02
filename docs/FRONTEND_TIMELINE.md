@@ -11,18 +11,18 @@ This companion roadmap focuses on the Nuxt 3 web client. It mirrors the backend 
 
 ## Week 1-2: Client Foundation (Milestone F0)
 
-- [ ] Stabilize developer workflow.
-  - [ ] Document Bun/NPM parity commands (`dev`, `lint`, `test`, `build`) and CI hooks.
-  - [ ] Add `.env.example` with API base URLs, feature flags, and mock toggles.
-  - [ ] Wire Vite aliases to shared TypeScript types generated from the backend OpenAPI schema (placeholder script).
+- [x] Stabilize developer workflow.
+  - [x] Document Bun/NPM parity commands (`dev`, `lint`, `test`, `build`) and CI hooks. `frontend/README.md` now outlines command parity plus CI expectations (`lint`, `test`, `build`, `preview`) and references the generated types alias.
+  - [x] Add `.env.example` with API base URLs, feature flags, and mock toggles. `frontend/.env.example` ships defaults for API base URL, mock toggles, and devtools awareness.
+  - [x] Wire Vite aliases to shared TypeScript types generated from the backend OpenAPI schema (placeholder script). `frontend/nuxt.config.ts`, `frontend/tsconfig.json`, and `frontend/vitest.config.ts` expose `@openguild/backend-types`; `pnpm types:sync` seeds `frontend/types/generated`.
 - [ ] Establish design system + layout shell.
-  - [ ] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette.
-  - [ ] Implement core components (Button, Input, Badge, Avatar, Tooltip) with Storybook stories and Chromatic snapshots.
-  - [ ] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints.
+  - [ ] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette. `frontend/app/app.config.ts` sets Nuxt UI defaults but tokens are otherwise unbranded.
+  - [ ] Implement core components (Button, Input, Badge, Avatar, Tooltip) with Storybook stories and Chromatic snapshots. Component work exists inside `frontend/app/components/app/*` but Storybook and visual regression coverage are still absent.
+  - [x] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints via `frontend/app/layouts/default.vue` and companion shell components.
 - [ ] Scaffold state management and API client.
-  - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy.
-  - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers.
-  - [ ] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling.
+  - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. Nuxt plugin `frontend/app/plugins/api-client.ts` exposes `$api` leveraging `frontend/app/composables/useApiClient.ts` for auth headers and request IDs.
+  - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers. `frontend/app/stores/guilds.ts` + `frontend/app/stores/channels.ts` replace inline mocks and feed `frontend/app/layouts/default.vue`.
+  - [ ] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling. Vitest harness now exercises guild/channel stores (`frontend/tests/*store.test.ts`); API client error cases remain to be covered.
 
 ## Week 3: Authentication & Landing Flows (Milestone F0)
 

@@ -1,6 +1,13 @@
 {
   // https://nuxt.com/docs/guide/concepts/typescript
   "files": [],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@openguild/backend-types": ["./types/generated/index"],
+      "@openguild/backend-types/*": ["./types/generated/*"]
+    }
+  },
   "references": [
     {
       "path": "./.nuxt/tsconfig.app.json"

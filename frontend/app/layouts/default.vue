@@ -1,55 +1,37 @@
 ﻿<script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useSessionStore } from '~/stores/session';
+import { useGuildStore } from '~/stores/guilds';
+import { useChannelStore } from '~/stores/channels';
 
-const guilds = [
-  {
-    id: 'openguild',
-    name: 'OpenGuild Core',
-    initials: 'OG',
-    active: true,
-    notificationCount: 2,
-  },
-  {
-    id: 'design-lab',
-    name: 'Design Lab',
-    initials: 'DL',
-    active: false,
-    notificationCount: 0,
-  },
-  {
-    id: 'infra',
-    name: 'Infra Ops',
-    initials: 'IO',
-    active: false,
-    notificationCount: 5,
-  },
-];
+const guildStore = useGuildStore();
+const channelStore = useChannelStore();
 
-const channels = [
-  {
-    id: 'general',
-    label: 'general',
-    kind: 'text' as const,
-    unread: 3,
-    description: 'Roadmap, weekly sync notes, launch prep',
-  },
-  {
-    id: 'announcements',
-    label: 'announcements',
-    kind: 'text' as const,
-    icon: 'i-heroicons-megaphone',
-    description: 'Ship updates from the core team',
-  },
-  { id: 'frontend-team', label: 'frontend-team', kind: 'text' as const },
-  { id: 'voice-standup', label: 'Daily standup', kind: 'voice' as const },
-  { id: 'voice-warroom', label: 'War room', kind: 'voice' as const },
-];
+guildStore.hydrate();
+channelStore.hydrate();
 
-const activeGuild = computed(
-  () => guilds.find((guild) => guild.active) ?? guilds[0]
+watch(
+  () => guildStore.activeGuildId,
+  (guildId) => {
+    channelStore.setActiveGuild(guildId ?? null);
+  },
+  { immediate: true }
 );
-const activeChannel = computed(() => channels[0]);
+
+const guilds = computed(() =>
+  guildStore.guilds.map((guild) => ({
+    ...guild,
+    active: guild.id === guildStore.activeGuildId,
+  }))
+);
+const channels = computed(() =>
+  channelStore.channelsForGuild.map((channel) => ({
+    ...channel,
+    active: channel.id === channelStore.activeChannelId,
+  }))
+);
+const activeGuild = computed(() => guildStore.activeGuild ?? guildStore.guilds[0]);
+const activeChannel = computed(() => channelStore.activeChannel ?? channels.value[0]);
 const mobileSidebarOpen = ref(false);
 
 const sessionStore = useSessionStore();

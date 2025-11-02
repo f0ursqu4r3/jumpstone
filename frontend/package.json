@@ -7,7 +7,12 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "lint": "eslint --ext .js,.jsx,.ts,.tsx,.vue .",
+    "lint:fix": "eslint --ext .js,.jsx,.ts,.tsx,.vue --fix .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "types:sync": "node ./scripts/sync-backend-types.mjs"
   },
   "dependencies": {
     "@nuxt/eslint": "1.10.0",
@@ -23,6 +28,10 @@
   "devDependencies": {
     "@iconify-json/heroicons": "^1.2.3",
     "@iconify-json/lucide": "^1.2.71",
-    "@types/node": "^24.9.2"
+    "@testing-library/jest-dom": "^6.4.2",
+    "@testing-library/vue": "^9.4.1",
+    "@types/node": "^24.9.2",
+    "jsdom": "^24.0.0",
+    "vitest": "^1.6.0"
   }
 }
