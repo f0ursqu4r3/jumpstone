@@ -87,7 +87,7 @@ const groupedChannels = computed(() => {
 
       <USeparator class="uppercase tracking-wide m-0" />
 
-      <div class="space-y-4 p-0 px-2 overflow-y-auto flex-1 min-h-0">
+      <div class="space-y-4 p-2 overflow-y-auto flex-1 min-h-0">
         <section
           v-for="group in groupedChannels"
           :key="group.label"
