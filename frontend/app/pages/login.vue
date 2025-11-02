@@ -4,16 +4,35 @@ import { useSessionStore } from '~/stores/session';
 
 definePageMeta({
   layout: 'auth',
+  auth: false,
 });
 
 const sessionStore = useSessionStore();
+const route = useRoute();
 
 useHead({
   title: 'Sign in · OpenGuild',
 });
 
+const sanitizeRedirect = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  if (!value.startsWith('/')) {
+    return null;
+  }
+  if (value === '/login') {
+    return '/';
+  }
+  return value;
+};
+
+const redirectTarget = computed(
+  () => sanitizeRedirect(route.query.redirect) ?? '/'
+);
+
 if (import.meta.client && sessionStore.isAuthenticated) {
-  await navigateTo('/');
+  await navigateTo(redirectTarget.value);
 }
 
 type LoginFormField = 'identifier' | 'secret' | 'deviceId' | 'deviceName';
@@ -110,7 +129,7 @@ const handleSubmit = async () => {
     });
 
     form.secret = '';
-    await navigateTo('/');
+    await navigateTo(redirectTarget.value, { replace: true });
   } catch (error) {
     applyBackendErrors();
 
@@ -152,53 +171,57 @@ onMounted(() => {
         :description="generalError"
       />
 
-      <UFormGroup label="Identifier" :error="errors.identifier">
+      <UFormField label="Identifier" :error="errors.identifier" required>
         <UInput
           v-model="form.identifier"
           placeholder="you@example.org"
           autocomplete="username"
+          class="w-full"
         />
-      </UFormGroup>
+      </UFormField>
 
-      <UFormGroup label="Secret" :error="errors.secret">
+      <UFormField
+        label="Secret"
+        :error="errors.secret"
+        description="Minimum eight characters. Matches backend password policy."
+        required
+      >
         <UInput
           v-model="form.secret"
           type="password"
           autocomplete="current-password"
           placeholder="••••••••"
+          class="w-full"
         />
-        <template #description>
-          <p class="text-xs text-slate-500">
-            Minimum eight characters. Matches backend password policy.
-          </p>
-        </template>
-      </UFormGroup>
+      </UFormField>
 
-      <UFormGroup label="Device identifier" :error="errors.deviceId">
+      <UFormField
+        label="Device identifier"
+        :error="errors.deviceId"
+        description="Used to bind your refresh token to this browser."
+        hint="Optional"
+      >
         <UInput
           v-model="form.deviceId"
           autocomplete="off"
           placeholder="browser-dev"
+          class="w-full"
         />
-        <template #description>
-          <p class="text-xs text-slate-500">
-            Used to bind your refresh token to this browser.
-          </p>
-        </template>
-      </UFormGroup>
+      </UFormField>
 
-      <UFormGroup label="Device name" :error="errors.deviceName">
+      <UFormField
+        label="Device name"
+        :error="errors.deviceName"
+        description="Optional label shown in the device management list."
+        hint="Optional"
+      >
         <UInput
           v-model="form.deviceName"
           autocomplete="off"
           placeholder="MacBook Pro"
+          class="w-full"
         />
-        <template #description>
-          <p class="text-xs text-slate-500">
-            Optional label shown in the device management list.
-          </p>
-        </template>
-      </UFormGroup>
+      </UFormField>
 
       <div class="space-y-3 pt-2">
         <UButton

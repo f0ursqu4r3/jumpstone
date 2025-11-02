@@ -27,6 +27,7 @@ interface SessionState extends PersistedSession {
   loading: boolean;
   error: string | null;
   fieldErrors: Record<string, string>;
+  hydrated: boolean;
 }
 
 const isIsoFuture = (iso: string | null | undefined): boolean => {
@@ -117,6 +118,7 @@ const initialState = (): SessionState => {
       loading: false,
       error: null,
       fieldErrors: {},
+      hydrated: false,
     };
   }
 
@@ -134,6 +136,7 @@ const initialState = (): SessionState => {
     loading: false,
     error: null,
     fieldErrors: {},
+    hydrated: true,
   };
 };
 
@@ -257,6 +260,7 @@ export const useSessionStore = defineStore('session', {
 
       const persisted = readFromStorage();
       if (!persisted) {
+        this.hydrated = true;
         return;
       }
 
@@ -269,6 +273,7 @@ export const useSessionStore = defineStore('session', {
       this.deviceId = persisted.deviceId;
       this.deviceName = persisted.deviceName;
       this.tokens = tokens;
+      this.hydrated = true;
     },
 
     async login(params: LoginParameters) {
@@ -309,6 +314,7 @@ export const useSessionStore = defineStore('session', {
           refreshToken: response.refresh_token,
           refreshExpiresAt: response.refresh_expires_at,
         };
+        this.hydrated = true;
 
         this.persist();
       } catch (error) {
@@ -324,6 +330,7 @@ export const useSessionStore = defineStore('session', {
     logout() {
       this.tokens = null;
       this.resetErrors();
+      this.hydrated = true;
       this.persist();
     },
 
@@ -332,6 +339,7 @@ export const useSessionStore = defineStore('session', {
       this.deviceId = '';
       this.deviceName = '';
       this.tokens = null;
+      this.hydrated = true;
       this.persist();
     },
   },

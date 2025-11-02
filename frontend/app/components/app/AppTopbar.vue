@@ -10,13 +10,24 @@ const props = defineProps<{
 const channelName = computed(() => props.channelName);
 const sessionStore = useSessionStore();
 const isAuthenticated = computed(() => sessionStore.isAuthenticated);
+const route = useRoute();
+
+const goToLogin = () => {
+  const redirect =
+    route.path === '/login' ? null : route.fullPath;
+  return navigateTo(
+    redirect
+      ? { path: '/login', query: { redirect } }
+      : '/login'
+  );
+};
 
 const handleAccountAction = async () => {
   if (isAuthenticated.value) {
     sessionStore.logout();
   }
 
-  await navigateTo('/login');
+  await goToLogin();
 };
 </script>
 

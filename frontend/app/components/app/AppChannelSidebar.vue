@@ -37,14 +37,26 @@ const avatarUrl = computed(() => {
   )}`;
 });
 
+const route = useRoute();
+
+const goToLogin = async () => {
+  const redirect =
+    route.path === '/login' ? null : route.fullPath;
+  await navigateTo(
+    redirect
+      ? { path: '/login', query: { redirect } }
+      : '/login'
+  );
+};
+
 const handleSignOut = async () => {
   if (!isAuthenticated.value) {
-    await navigateTo('/login');
+    await goToLogin();
     return;
   }
 
   sessionStore.logout();
-  await navigateTo('/login');
+  await goToLogin();
 };
 
 const groupedChannels = computed(() => {
@@ -170,8 +182,7 @@ const groupedChannels = computed(() => {
           icon="i-heroicons-arrow-left-on-rectangle"
           variant="ghost"
           color="neutral"
-          aria-label="Sign out"
-          :disabled="!isAuthenticated"
+          :aria-label="isAuthenticated ? 'Sign out' : 'Sign in'"
           @click="handleSignOut"
         />
       </div>

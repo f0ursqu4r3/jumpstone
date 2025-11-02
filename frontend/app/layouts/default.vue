@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useSessionStore } from '~/stores/session';
 
 const guilds = [
   {
@@ -50,10 +51,62 @@ const activeGuild = computed(
 );
 const activeChannel = computed(() => channels[0]);
 const mobileSidebarOpen = ref(false);
+
+const sessionStore = useSessionStore();
+const route = useRoute();
+const hydrated = computed(() => sessionStore.hydrated);
+const isAuthenticated = computed(() => sessionStore.isAuthenticated);
+
+const goToLogin = async () => {
+  const redirect =
+    route.path === '/login' ? null : route.fullPath;
+  await navigateTo(
+    redirect
+      ? { path: '/login', query: { redirect } }
+      : '/login'
+  );
+};
 </script>
 
 <template>
-  <div class="relative flex h-screen overflow-hidden bg-slate-950">
+  <div
+    v-if="!hydrated"
+    class="flex h-screen items-center justify-center bg-slate-950"
+  >
+    <div class="space-y-4 text-center">
+      <USkeleton class="mx-auto h-12 w-12 rounded-full" />
+      <div class="space-y-2">
+        <USkeleton class="mx-auto h-4 w-56 rounded" />
+        <USkeleton class="mx-auto h-4 w-40 rounded" />
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-else-if="!isAuthenticated"
+    class="flex h-screen flex-col items-center justify-center bg-slate-950 px-6"
+  >
+    <div class="max-w-md space-y-6 text-center">
+      <UIcon name="i-heroicons-lock-closed" class="mx-auto h-10 w-10 text-slate-500" />
+      <div class="space-y-2">
+        <h1 class="text-xl font-semibold text-white">
+          Sign in to access OpenGuild
+        </h1>
+        <p class="text-sm text-slate-400">
+          Your session expired or you have not signed in yet. Continue to the authentication portal to resume work.
+        </p>
+      </div>
+      <div class="flex flex-col gap-3 sm:flex-row sm:justify-center">
+        <UButton color="info" label="Go to sign in" @click="goToLogin" />
+        <UButton to="/styleguide" variant="ghost" color="neutral" label="View styleguide" />
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-else
+    class="relative flex h-screen overflow-hidden bg-slate-950"
+  >
     <AppGuildRail :guilds="guilds" />
 
     <AppChannelSidebar
