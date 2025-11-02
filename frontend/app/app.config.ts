@@ -3,16 +3,17 @@ export default defineAppConfig({
     primary: 'sky',
     gray: 'slate',
     icons: {
-      dynamic: true
+      dynamic: 'true',
     },
     button: {
-      default: {
-        color: 'gray'
-      }
+      defaultVariants: {
+        color: 'neutral',
+      },
     },
     variables: {
-      'font-family-base': 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      'font-size-base': '14px'
-    }
-  }
-})
+      'font-family-base':
+        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      'font-size-base': '14px',
+    },
+  },
+});

@@ -55,15 +55,15 @@ const groupedChannels = computed(() => {
 
 <template>
   <aside
-    class="flex min-h-full w-72 flex-col justify-between border-r border-white/5 bg-slate-950/60"
+    class="flex flex-col h-full w-72 justify-between border-r border-white/5"
   >
-    <div class="flex flex-col">
-      <div class="flex items-start justify-between gap-4 p-2">
+    <div class="flex flex-col flex-1 min-h-0">
+      <div class="flex items-start justify-between gap-2 p-2">
         <div>
-          <p class="text-sm font-semibold text-white">
+          <p class="text-sm font-semibold">
             {{ guildName }}
           </p>
-          <p class="text-xs text-slate-400">Internal build</p>
+          <p class="text-xs text-dimmed">Internal build</p>
         </div>
         <UButton
           icon="i-heroicons-cog-6-tooth"
@@ -87,10 +87,10 @@ const groupedChannels = computed(() => {
 
       <USeparator
         label="Channels"
-        class="mt-6 uppercase tracking-wide text-xs text-slate-500"
+        class="uppercase tracking-wide text-xs text-balance"
       />
 
-      <div class="space-y-4 p-2">
+      <div class="space-y-4 p-0 px-2 overflow-y-auto flex-1 min-h-0">
         <section
           v-for="group in groupedChannels"
           :key="group.label"
@@ -126,7 +126,7 @@ const groupedChannels = computed(() => {
     </div>
 
     <div>
-      <USeparator class="mt-6 opacity-50" />
+      <USeparator class="opacity-50" />
       <div class="flex items-center gap-3 p-2">
         <UAvatar
           name="Lia Chen"

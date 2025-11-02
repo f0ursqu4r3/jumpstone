@@ -53,7 +53,7 @@ const mobileSidebarOpen = ref(false);
 </script>
 
 <template>
-  <div class="relative flex h-screen bg-slate-950 text-slate-100">
+  <div class="relative flex h-screen overflow-hidden bg-slate-950">
     <AppGuildRail :guilds="guilds" />
 
     <AppChannelSidebar
