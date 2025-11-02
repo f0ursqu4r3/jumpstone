@@ -31,7 +31,7 @@ impl UserRepository {
         username: &str,
         password: &str,
     ) -> Result<Uuid, CreateUserError> {
-        let id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
         let password_hash = argon2
@@ -41,11 +41,11 @@ impl UserRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO users (id, username, password_hash)
+            INSERT INTO users (user_id, username, password_hash)
             VALUES ($1, $2, $3)
             "#,
         )
-        .bind(id)
+        .bind(user_id)
         .bind(username)
         .bind(password_hash)
         .execute(pool)
@@ -59,14 +59,14 @@ impl UserRepository {
             ),
         })?;
 
-        Ok(id)
+        Ok(user_id)
     }
 
     /// Verify credentials and return the user id when successful.
     pub async fn verify_credentials(pool: &PgPool, username: &str, password: &str) -> Result<Uuid> {
         let record = sqlx::query_as::<_, (Uuid, String)>(
             r#"
-            SELECT id, password_hash
+            SELECT user_id, password_hash
             FROM users
             WHERE username = $1
             "#,

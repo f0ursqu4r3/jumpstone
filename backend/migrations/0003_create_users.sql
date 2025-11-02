@@ -1,6 +1,6 @@
 -- Create users table for persistent authentication
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY,
+    user_id UUID PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
