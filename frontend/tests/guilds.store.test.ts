@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+declare const beforeEach: any;
+declare const describe: any;
+declare const expect: any;
+declare const it: any;
+
 import { createPinia, setActivePinia } from 'pinia';
 import { useGuildStore } from '../app/stores/guilds';
 

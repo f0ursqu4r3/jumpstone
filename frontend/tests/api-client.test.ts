@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { useApiClient } from '../app/composables/useApiClient';
 
 const ensureFreshAccessToken = vi.fn();
@@ -23,11 +30,11 @@ describe('useApiClient', () => {
     ensureFreshAccessToken.mockClear();
 
     // Nuxt runtime config shim.
-    (globalThis as any).useRuntimeConfig = () => ({
+    vi.stubGlobal('useRuntimeConfig', () => ({
       public: {
         apiBaseUrl: 'https://api.test.local',
       },
-    });
+    }));
   });
 
   afterEach(() => {
@@ -37,11 +44,11 @@ describe('useApiClient', () => {
     } else {
       delete (globalThis as any).fetch;
     }
-    delete (globalThis as any).useRuntimeConfig;
+    vi.unstubAllGlobals();
   });
 
   it('adds auth headers and ensures fresh tokens for authenticated sessions', async () => {
-    const fetchSpy = vi.fn(async (_input, init) => {
+    const fetchSpy = vi.fn(async (_input: any, _init: any) => {
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -70,7 +77,7 @@ describe('useApiClient', () => {
     sessionState.accessToken = '';
     sessionState.deviceId = null as unknown as string;
 
-    const fetchSpy = vi.fn(async (_input, init) => {
+    const fetchSpy = vi.fn(async (_input: any, _init: any) => {
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -92,7 +99,9 @@ describe('useApiClient', () => {
   });
 
   it('logs response errors when the backend returns a failure', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
 
     const fetchSpy = vi.fn(async () => {
       return new Response(JSON.stringify({ error: 'boom' }), {

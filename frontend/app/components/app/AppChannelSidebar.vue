@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import BaseAvatar from '~/components/ui/BaseAvatar.vue';
+import BaseBadge from '~/components/ui/BaseBadge.vue';
+import BaseButton from '~/components/ui/BaseButton.vue';
+import BaseTooltip from '~/components/ui/BaseTooltip.vue';
 import { useSessionStore } from '~/stores/session';
 
 interface ChannelEntry {
@@ -125,7 +129,7 @@ const groupedChannels = computed(() => {
           </p>
           <p class="text-xs text-dimmed">Internal build</p>
         </div>
-        <UButton
+        <BaseButton
           icon="i-heroicons-cog-6-tooth"
           color="neutral"
           variant="ghost"
@@ -133,17 +137,18 @@ const groupedChannels = computed(() => {
         />
       </div>
 
-      <UTooltip text="Create channel">
+      <BaseTooltip text="Create channel" placement="right">
         <template #trigger>
-          <UButton
-            label="New channel"
+          <BaseButton
             color="info"
             variant="soft"
             class="mt-6 w-full justify-center"
             icon="i-heroicons-plus-circle"
-          />
+          >
+            New channel
+          </BaseButton>
         </template>
-      </UTooltip>
+      </BaseTooltip>
 
       <USeparator class="uppercase tracking-wide m-0" />
 
@@ -169,11 +174,9 @@ const groupedChannels = computed(() => {
                   <span>{{ channel.label }}</span>
                 </div>
                 <div v-if="channel.badge">
-                  <UBadge
-                    :label="channel.badge.label"
-                    :color="channel.badge.color"
-                    size="sm"
-                  />
+                  <BaseBadge :color="channel.badge.color" size="sm">
+                    {{ channel.badge.label }}
+                  </BaseBadge>
                 </div>
               </NuxtLink>
             </li>
@@ -185,7 +188,7 @@ const groupedChannels = computed(() => {
     <div>
       <USeparator class="opacity-50" />
       <div class="flex items-center gap-3 p-2">
-        <UAvatar
+        <BaseAvatar
           :name="accountLabel"
           size="sm"
           :src="avatarUrl"
@@ -201,7 +204,7 @@ const groupedChannels = computed(() => {
             {{ accountStatus }}
           </p>
         </div>
-        <UButton
+        <BaseButton
           icon="i-heroicons-arrow-left-on-rectangle"
           variant="ghost"
           color="neutral"

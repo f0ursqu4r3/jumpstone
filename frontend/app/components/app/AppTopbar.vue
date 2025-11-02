@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useSessionStore } from '~/stores/session';
+import BaseButton from '~/components/ui/BaseButton.vue';
+import BaseInput from '~/components/ui/BaseInput.vue';
 
 const props = defineProps<{
   channelName: string;
@@ -49,40 +51,43 @@ const handleAccountAction = async () => {
       </div>
     </div>
     <div class="flex items-center gap-3">
-      <UInput
+      <BaseInput
         placeholder="Search"
         icon="i-heroicons-magnifying-glass-20-solid"
         color="neutral"
         variant="soft"
-        class="w-64 hidden lg:block"
+        class="hidden w-64 lg:block"
       />
-      <UButton
+      <BaseButton
         icon="i-heroicons-bell-alert"
         color="neutral"
         variant="ghost"
         aria-label="Notifications"
       />
-      <UButton
+      <BaseButton
         icon="i-heroicons-queue-list"
         color="neutral"
         variant="ghost"
         aria-label="Inbox"
       />
-      <UButton
+      <BaseButton
         v-if="!isAuthenticated"
         color="info"
         variant="soft"
-        label="Sign in"
+        icon="i-heroicons-arrow-right-end-on-rectangle"
         @click="handleAccountAction"
-      />
-      <UButton
+      >
+        Sign in
+      </BaseButton>
+      <BaseButton
         v-else
         color="neutral"
         variant="ghost"
         icon="i-heroicons-arrow-left-on-rectangle"
-        label="Sign out"
         @click="handleAccountAction"
-      />
+      >
+        Sign out
+      </BaseButton>
     </div>
   </header>
 </template>

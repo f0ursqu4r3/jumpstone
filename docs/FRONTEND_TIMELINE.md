@@ -16,8 +16,8 @@ This companion roadmap focuses on the Nuxt 3 web client. It mirrors the backend 
   - [x] Add `.env.example` with API base URLs, feature flags, and mock toggles. `frontend/.env.example` ships defaults for API base URL, mock toggles, and devtools awareness.
   - [x] Wire Vite aliases to shared TypeScript types generated from the backend OpenAPI schema (placeholder script). `frontend/nuxt.config.ts`, `frontend/tsconfig.json`, and `frontend/vitest.config.ts` expose `@openguild/backend-types`; `pnpm types:sync` seeds `frontend/types/generated`.
 - [ ] Establish design system + layout shell.
-  - [ ] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette. `frontend/app/app.config.ts` sets Nuxt UI defaults but tokens are otherwise unbranded.
-  - [ ] Implement core components (Button, Input, Badge, Avatar, Tooltip) with Storybook stories and Chromatic snapshots. Component work exists inside `frontend/app/components/app/*` but Storybook and visual regression coverage are still absent.
+  - [x] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette. `frontend/app/assets/css/tokens.css`, `frontend/tailwind.config.ts`, and the updated `frontend/app/app.config.ts` define brand colors, spacing, and UI defaults.
+  - [ ] Implement core components (Button, Input, Badge, Avatar, Tooltip) with Storybook stories and Chromatic snapshots. Base wrappers live in `frontend/app/components/ui/*`, now adopted across the shell, but Storybook scaffolding and visual regression remain TBD.
   - [x] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints via `frontend/app/layouts/default.vue` and companion shell components.
 - [ ] Scaffold state management and API client.
   - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. Nuxt plugin `frontend/app/plugins/api-client.ts` exposes `$api` leveraging `frontend/app/composables/useApiClient.ts` for auth headers and request IDs.

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import BaseButton from '~/components/ui/BaseButton.vue';
+import BaseTooltip from '~/components/ui/BaseTooltip.vue';
 
 interface GuildSummary {
   id: string;
@@ -29,7 +31,7 @@ const hasActiveGuild = computed(() =>
     >
       OG
     </NuxtLink>
-    <UTooltip
+    <BaseTooltip
       v-for="guild in props.guilds"
       :key="guild.id"
       :text="guild.name"
@@ -55,16 +57,16 @@ const hasActiveGuild = computed(() =>
           </span>
         </div>
       </template>
-    </UTooltip>
+    </BaseTooltip>
     <div class="mt-auto flex w-full flex-col gap-3">
-      <UButton
+      <BaseButton
         icon="i-heroicons-plus"
         color="neutral"
         variant="ghost"
         size="md"
         class="justify-center"
       />
-      <UButton
+      <BaseButton
         icon="i-heroicons-ellipsis-horizontal"
         color="neutral"
         variant="ghost"
