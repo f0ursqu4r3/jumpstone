@@ -56,7 +56,7 @@ Outstanding follow-ups:
   * README parity docs, `.env.example`, and the `@openguild/backend-types` alias (`pnpm types:sync`) landed.
   * Guild/channel Pinia stores now back the layout (`frontend/app/stores/guilds.ts`, `frontend/app/stores/channels.ts`); inline mocks removed.
   * Design tokens + component library/Storybook work not started; Nuxt UI defaults in `frontend/app/app.config.ts`.
-  * Vitest + Testing Library harness now exercises the new stores; API client error handling tests remain TODO.
+  * Vitest + Testing Library harness now covers the stores and API client (`frontend/tests/api-client.test.ts` ensures header + error handling).
 - Extend RBAC/rate limiting with configurable per-IP quotas and abuse detection (per-user & per-IP limits now in server).
 - Flesh out audit logging story (middleware placeholder still TODO).
 - CI workflows still missing (see docs/CI_PLAN.md).

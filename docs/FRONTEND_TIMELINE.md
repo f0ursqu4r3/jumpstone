@@ -22,7 +22,7 @@ This companion roadmap focuses on the Nuxt 3 web client. It mirrors the backend 
 - [ ] Scaffold state management and API client.
   - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. Nuxt plugin `frontend/app/plugins/api-client.ts` exposes `$api` leveraging `frontend/app/composables/useApiClient.ts` for auth headers and request IDs.
   - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers. `frontend/app/stores/guilds.ts` + `frontend/app/stores/channels.ts` replace inline mocks and feed `frontend/app/layouts/default.vue`.
-  - [ ] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling. Vitest harness now exercises guild/channel stores (`frontend/tests/*store.test.ts`); API client error cases remain to be covered.
+  - [x] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling. Suites now cover Pinia stores and API client behavior (`frontend/tests/*store.test.ts`, `frontend/tests/api-client.test.ts`).
 
 ## Week 3: Authentication & Landing Flows (Milestone F0)
 
