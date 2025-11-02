@@ -811,11 +811,14 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return {
+    // state
     ...toRefs(state),
     isAuthenticated,
     accessToken,
     displayName,
     profileAvatar,
+
+    // actions
     resetErrors,
     persist,
     hydrate,

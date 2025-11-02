@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { computed, ref } from 'vue';
 
 export type ChannelKind = 'text' | 'voice';
 
@@ -164,6 +165,7 @@ export const useChannelStore = defineStore('channels', () => {
     lastFetchedAt,
     channelsForGuild,
     activeChannel,
+
     // actions
     hydrate,
     setActiveGuild,
