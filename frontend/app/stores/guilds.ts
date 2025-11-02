@@ -7,15 +7,6 @@ export interface GuildSummary {
   notificationCount?: number;
 }
 
-interface GuildState {
-  guilds: GuildSummary[];
-  activeGuildId: string | null;
-  loading: boolean;
-  error: string | null;
-  hydrated: boolean;
-  lastFetchedAt: number | null;
-}
-
 const STUB_GUILDS: GuildSummary[] = [
   {
     id: 'openguild',
@@ -37,63 +28,70 @@ const STUB_GUILDS: GuildSummary[] = [
   },
 ];
 
-export const useGuildStore = defineStore('guilds', {
-  state: (): GuildState => ({
-    guilds: [],
-    activeGuildId: null,
-    loading: false,
-    error: null,
-    hydrated: false,
-    lastFetchedAt: null,
-  }),
+export const useGuildStore = defineStore('guilds', () => {
+  const guilds = ref<GuildSummary[]>([]);
+  const activeGuildId = ref<string | null>(null);
+  const loading = ref(false);
+  const error = ref<string | null>(null);
+  const hydrated = ref(false);
+  const lastFetchedAt = ref<number | null>(null);
 
-  getters: {
-    activeGuild(state): GuildSummary | null {
-      if (!state.activeGuildId) {
-        return null;
-      }
+  const activeGuild = computed(() => {
+    if (!activeGuildId.value) {
+      return null;
+    }
 
-      return (
-        state.guilds.find((guild) => guild.id === state.activeGuildId) ?? null
-      );
-    },
-  },
+    return (
+      guilds.value.find((guild) => guild.id === activeGuildId.value) ?? null
+    );
+  });
 
-  actions: {
-    hydrate(force = false) {
-      if (this.loading) {
-        return;
-      }
+  function hydrate(force = false) {
+    if (loading.value) {
+      return;
+    }
 
-      if (this.hydrated && !force) {
-        return;
-      }
+    if (hydrated.value && !force) {
+      return;
+    }
 
-      this.loading = true;
-      this.error = null;
+    loading.value = true;
+    error.value = null;
 
-      try {
-        this.guilds = STUB_GUILDS;
-        this.activeGuildId =
-          this.activeGuildId ?? STUB_GUILDS[0]?.id ?? null;
-        this.hydrated = true;
-        this.lastFetchedAt = Date.now();
-      } catch (err) {
-        this.error =
-          err instanceof Error ? err.message : 'Failed to hydrate guilds';
-      } finally {
-        this.loading = false;
-      }
-    },
+    try {
+      guilds.value = STUB_GUILDS;
+      activeGuildId.value = activeGuildId.value ?? STUB_GUILDS[0]?.id ?? null;
+      hydrated.value = true;
+      lastFetchedAt.value = Date.now();
+    } catch (err) {
+      error.value =
+        err instanceof Error ? err.message : 'Failed to hydrate guilds';
+    } finally {
+      loading.value = false;
+    }
+  }
 
-    setActiveGuild(guildId: string) {
-      if (!this.guilds.some((guild) => guild.id === guildId)) {
-        this.error = `Unknown guild: ${guildId}`;
-        return;
-      }
+  function setActiveGuild(guildId: string) {
+    if (!guilds.value.some((guild) => guild.id === guildId)) {
+      error.value = `Unknown guild: ${guildId}`;
+      return;
+    }
 
-      this.activeGuildId = guildId;
-      this.error = null;
-    },
-  },
+    activeGuildId.value = guildId;
+    error.value = null;
+  }
+
+  return {
+    // state
+    guilds,
+    activeGuildId,
+    loading,
+    error,
+    hydrated,
+    lastFetchedAt,
+    activeGuild,
+    // actions
+    hydrate,
+    setActiveGuild,
+  };
 });

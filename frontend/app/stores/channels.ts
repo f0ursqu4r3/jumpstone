@@ -11,16 +11,6 @@ export interface ChannelSummary {
   description?: string;
 }
 
-interface ChannelState {
-  channelsByGuild: Record<string, ChannelSummary[]>;
-  activeGuildId: string | null;
-  activeChannelId: string | null;
-  loading: boolean;
-  error: string | null;
-  hydrated: boolean;
-  lastFetchedAt: number | null;
-}
-
 const STUB_CHANNELS: Record<string, ChannelSummary[]> = {
   openguild: [
     {
@@ -61,105 +51,122 @@ const STUB_CHANNELS: Record<string, ChannelSummary[]> = {
   ],
 };
 
-export const useChannelStore = defineStore('channels', {
-  state: (): ChannelState => ({
-    channelsByGuild: {},
-    activeGuildId: null,
-    activeChannelId: null,
-    loading: false,
-    error: null,
-    hydrated: false,
-    lastFetchedAt: null,
-  }),
+export const useChannelStore = defineStore('channels', () => {
+  const channelsByGuild = ref<Record<string, ChannelSummary[]>>({});
+  const activeGuildId = ref<string | null>(null);
+  const activeChannelId = ref<string | null>(null);
+  const loading = ref(false);
+  const error = ref<string | null>(null);
+  const hydrated = ref(false);
+  const lastFetchedAt = ref<number | null>(null);
 
-  getters: {
-    channelsForGuild: (state) => {
-      if (!state.activeGuildId) {
-        return [];
+  const channelsForGuild = computed(() => {
+    if (!activeGuildId.value) {
+      return [];
+    }
+    return channelsByGuild.value[activeGuildId.value] ?? [];
+  });
+
+  const activeChannel = computed(() => {
+    if (!activeGuildId.value || !activeChannelId.value) {
+      return null;
+    }
+
+    const scoped = channelsByGuild.value[activeGuildId.value] ?? [];
+    return (
+      scoped.find((channel) => channel.id === activeChannelId.value) ?? null
+    );
+  });
+
+  function hydrate(force = false) {
+    if (loading.value) {
+      return;
+    }
+
+    if (hydrated.value && !force) {
+      return;
+    }
+
+    loading.value = true;
+    error.value = null;
+
+    try {
+      channelsByGuild.value = STUB_CHANNELS;
+      hydrated.value = true;
+      lastFetchedAt.value = Date.now();
+
+      if (activeGuildId.value) {
+        ensureActiveChannelForGuild(activeGuildId.value);
       }
-      return state.channelsByGuild[state.activeGuildId] ?? [];
-    },
-    activeChannel(state): ChannelSummary | null {
-      if (!state.activeGuildId || !state.activeChannelId) {
-        return null;
+    } catch (err) {
+      error.value =
+        err instanceof Error ? err.message : 'Failed to hydrate channels';
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  function setActiveGuild(guildId: string | null) {
+    if (!guildId) {
+      activeGuildId.value = null;
+      activeChannelId.value = null;
+      return;
+    }
+
+    activeGuildId.value = guildId;
+    ensureActiveChannelForGuild(guildId);
+  }
+
+  function setActiveChannel(channelId: string) {
+    if (!activeGuildId.value) {
+      error.value = 'No active guild selected';
+      return;
+    }
+
+    const scoped = channelsByGuild.value[activeGuildId.value] ?? [];
+    if (!scoped.some((channel) => channel.id === channelId)) {
+      error.value = `Unknown channel: ${channelId}`;
+      return;
+    }
+
+    activeChannelId.value = channelId;
+    error.value = null;
+  }
+
+  function ensureActiveChannelForGuild(guildId: string) {
+    const scoped = channelsByGuild.value[guildId] ?? [];
+    if (!scoped.length) {
+      activeChannelId.value = null;
+      return;
+    }
+
+    if (
+      !activeChannelId.value ||
+      !scoped.some((channel) => channel.id === activeChannelId.value)
+    ) {
+      const first = scoped[0];
+      if (first) {
+        activeChannelId.value = first.id;
+      } else {
+        activeChannelId.value = null;
       }
+    }
+  }
 
-      const scoped = state.channelsByGuild[state.activeGuildId] ?? [];
-      return (
-        scoped.find((channel) => channel.id === state.activeChannelId) ?? null
-      );
-    },
-  },
-
-  actions: {
-    hydrate(force = false) {
-      if (this.loading) {
-        return;
-      }
-
-      if (this.hydrated && !force) {
-        return;
-      }
-
-      this.loading = true;
-      this.error = null;
-
-      try {
-        this.channelsByGuild = STUB_CHANNELS;
-        this.hydrated = true;
-        this.lastFetchedAt = Date.now();
-
-        if (this.activeGuildId) {
-          this.ensureActiveChannelForGuild(this.activeGuildId);
-        }
-      } catch (err) {
-        this.error =
-          err instanceof Error ? err.message : 'Failed to hydrate channels';
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    setActiveGuild(guildId: string | null) {
-      if (!guildId) {
-        this.activeGuildId = null;
-        this.activeChannelId = null;
-        return;
-      }
-
-      this.activeGuildId = guildId;
-      this.ensureActiveChannelForGuild(guildId);
-    },
-
-    setActiveChannel(channelId: string) {
-      if (!this.activeGuildId) {
-        this.error = 'No active guild selected';
-        return;
-      }
-
-      const scoped = this.channelsByGuild[this.activeGuildId] ?? [];
-      if (!scoped.some((channel) => channel.id === channelId)) {
-        this.error = `Unknown channel: ${channelId}`;
-        return;
-      }
-
-      this.activeChannelId = channelId;
-      this.error = null;
-    },
-
-    ensureActiveChannelForGuild(guildId: string) {
-      const scoped = this.channelsByGuild[guildId] ?? [];
-      if (!scoped.length) {
-        this.activeChannelId = null;
-        return;
-      }
-
-      if (
-        !this.activeChannelId ||
-        !scoped.some((channel) => channel.id === this.activeChannelId)
-      ) {
-        this.activeChannelId = scoped[0].id;
-      }
-    },
-  },
+  return {
+    // state
+    channelsByGuild,
+    activeGuildId,
+    activeChannelId,
+    loading,
+    error,
+    hydrated,
+    lastFetchedAt,
+    channelsForGuild,
+    activeChannel,
+    // actions
+    hydrate,
+    setActiveGuild,
+    setActiveChannel,
+  };
 });

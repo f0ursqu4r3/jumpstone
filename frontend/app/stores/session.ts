@@ -1,3 +1,4 @@
+import { computed, reactive, toRefs } from 'vue';
 import { defineStore } from 'pinia';
 import { extractErrorMessage } from '~/utils/errors';
 import type {
@@ -496,316 +497,334 @@ const mapCurrentUser = (payload: CurrentUser): StoredProfile => ({
       : undefined,
 });
 
-export const useSessionStore = defineStore('session', {
-  state: (): SessionState => initialState(),
-  getters: {
-    isAuthenticated: (state): boolean => {
-      if (!state.tokens) {
-        return false;
-      }
-      if (!state.tokens.accessToken) {
-        return false;
-      }
-      return isIsoFuture(state.tokens.accessExpiresAt);
-    },
-    accessToken: (state): string => state.tokens?.accessToken ?? '',
-    displayName: (state): string =>
-      state.profile?.displayName ?? state.identifier,
-    profileAvatar: (state): string | null => state.profile?.avatarUrl ?? null,
-  },
-  actions: {
-    resetErrors() {
-      this.error = null;
-      this.fieldErrors = {};
-    },
+export const useSessionStore = defineStore('session', () => {
+  const state = reactive<SessionState>(initialState());
 
-    persist() {
-      if (import.meta.server) {
-        return;
-      }
-      writeToStorage(
-        toPersistedSession({
-          identifier: this.identifier,
-          deviceId: this.deviceId,
-          deviceName: this.deviceName,
-          tokens: this.tokens,
-          profile: this.profile,
-        })
-      );
-    },
+  const isAuthenticated = computed(() => {
+    if (!state.tokens) {
+      return false;
+    }
+    if (!state.tokens.accessToken) {
+      return false;
+    }
+    return isIsoFuture(state.tokens.accessExpiresAt);
+  });
 
-    hydrate() {
-      if (import.meta.server) {
-        return;
-      }
+  const accessToken = computed(() => state.tokens?.accessToken ?? '');
+  const displayName = computed(
+    () => state.profile?.displayName ?? state.identifier
+  );
+  const profileAvatar = computed(() => state.profile?.avatarUrl ?? null);
 
-      const persisted = readFromStorage();
-      if (!persisted) {
-        this.hydrated = true;
-        return;
-      }
+  function resetErrors() {
+    state.error = null;
+    state.fieldErrors = {};
+  }
 
-      const tokens =
-        persisted.tokens && isIsoFuture(persisted.tokens.accessExpiresAt)
-          ? persisted.tokens
-          : null;
+  function persist() {
+    if (import.meta.server) {
+      return;
+    }
+    writeToStorage(
+      toPersistedSession({
+        identifier: state.identifier,
+        deviceId: state.deviceId,
+        deviceName: state.deviceName,
+        tokens: state.tokens,
+        profile: state.profile,
+      })
+    );
+  }
 
-      this.identifier = persisted.identifier;
-      this.deviceId = persisted.deviceId;
-      this.deviceName = persisted.deviceName;
-      this.tokens = tokens;
-      this.profile = persisted.profile;
-      this.profileError = null;
-      this.profileLoading = false;
-      this.profileFetchedAt = persisted.profile ? Date.now() : null;
-      this.refreshing = false;
-      this.refreshError = null;
-      this.hydrated = true;
-    },
+  function hydrate() {
+    if (import.meta.server) {
+      return;
+    }
 
-    async login(params: LoginParameters) {
-      if (this.loading) {
-        return;
-      }
+    const persisted = readFromStorage();
+    if (!persisted) {
+      state.hydrated = true;
+      return;
+    }
 
-      this.loading = true;
-      this.resetErrors();
-      this.refreshError = null;
+    const tokens =
+      persisted.tokens && isIsoFuture(persisted.tokens.accessExpiresAt)
+        ? persisted.tokens
+        : null;
 
-      const nuxtApp = useNuxtApp();
-      const api = nuxtApp.$api;
+    state.identifier = persisted.identifier;
+    state.deviceId = persisted.deviceId;
+    state.deviceName = persisted.deviceName;
+    state.tokens = tokens;
+    state.profile = persisted.profile;
+    state.profileError = null;
+    state.profileLoading = false;
+    state.profileFetchedAt = persisted.profile ? Date.now() : null;
+    state.refreshing = false;
+    state.refreshError = null;
+    state.hydrated = true;
+  }
 
-      const body: LoginRequestBody = {
-        identifier: params.identifier.trim(),
-        secret: params.secret,
-        device: {
-          device_id: params.deviceId.trim(),
-        },
+  async function login(params: LoginParameters) {
+    if (state.loading) {
+      return;
+    }
+
+    state.loading = true;
+    resetErrors();
+    state.refreshError = null;
+
+    const nuxtApp = useNuxtApp();
+    const api = nuxtApp.$api;
+
+    const body: LoginRequestBody = {
+      identifier: params.identifier.trim(),
+      secret: params.secret,
+      device: {
+        device_id: params.deviceId.trim(),
+      },
+    };
+
+    if (params.deviceName?.trim()) {
+      body.device.device_name = params.deviceName.trim();
+    }
+
+    try {
+      const response = await api<LoginResponse>('/sessions/login', {
+        method: 'POST',
+        body,
+      });
+
+      state.identifier = body.identifier;
+      state.deviceId = body.device.device_id;
+      state.deviceName = body.device.device_name ?? '';
+      state.tokens = {
+        accessToken: response.access_token,
+        accessExpiresAt: response.access_expires_at,
+        refreshToken: response.refresh_token,
+        refreshExpiresAt: response.refresh_expires_at,
       };
+      state.hydrated = true;
 
-      if (params.deviceName?.trim()) {
-        body.device.device_name = params.deviceName.trim();
-      }
+      await fetchProfile(true).catch((err) => {
+        console.error('Failed to load profile after login', err);
+      });
+
+      persist();
+    } catch (error) {
+      const { message, fieldErrors } = formatLoginError(error);
+      state.fieldErrors = fieldErrors;
+      state.error = message;
+      throw new Error(message);
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  function logout() {
+    state.tokens = null;
+    resetErrors();
+    state.hydrated = true;
+    state.profile = null;
+    state.profileError = null;
+    state.profileLoading = false;
+    state.profileFetchedAt = null;
+    state.refreshing = false;
+    state.refreshError = null;
+    persist();
+  }
+
+  function clearAll() {
+    state.identifier = '';
+    state.deviceId = '';
+    state.deviceName = '';
+    state.tokens = null;
+    state.profile = null;
+    state.profileError = null;
+    state.profileLoading = false;
+    state.profileFetchedAt = null;
+    state.refreshing = false;
+    state.refreshError = null;
+    state.hydrated = true;
+    persist();
+  }
+
+  function needsAccessRefresh(
+    thresholdMs = ACCESS_REFRESH_THRESHOLD_MS
+  ): boolean {
+    if (!state.tokens?.accessExpiresAt) {
+      return false;
+    }
+
+    const delta = msUntil(state.tokens.accessExpiresAt);
+    return delta <= thresholdMs;
+  }
+
+  async function ensureFreshAccessToken(): Promise<boolean> {
+    if (!isAuthenticated.value) {
+      return false;
+    }
+
+    if (!needsAccessRefresh()) {
+      return true;
+    }
+
+    return refreshTokens();
+  }
+
+  async function refreshTokens(force = false): Promise<boolean> {
+    if (!state.tokens) {
+      return false;
+    }
+
+    if (!state.tokens.refreshToken) {
+      return false;
+    }
+
+    if (!force && !needsAccessRefresh()) {
+      return true;
+    }
+
+    if (!isIsoFuture(state.tokens.refreshExpiresAt)) {
+      logout();
+      return false;
+    }
+
+    if (refreshPromise) {
+      return refreshPromise;
+    }
+
+    const nuxtApp = useNuxtApp();
+    const api = nuxtApp.$api;
+
+    refreshPromise = (async () => {
+      state.refreshing = true;
+      state.refreshError = null;
 
       try {
-        const response = await api<LoginResponse>('/sessions/login', {
+        const body: RefreshRequestBody = {
+          refresh_token: state.tokens!.refreshToken,
+        };
+
+        const response = await api<LoginResponse>('/sessions/refresh', {
           method: 'POST',
           body,
         });
 
-        this.identifier = body.identifier;
-        this.deviceId = body.device.device_id;
-        this.deviceName = body.device.device_name ?? '';
-        this.tokens = {
+        state.tokens = {
           accessToken: response.access_token,
           accessExpiresAt: response.access_expires_at,
           refreshToken: response.refresh_token,
           refreshExpiresAt: response.refresh_expires_at,
         };
-        this.hydrated = true;
 
-        await this.fetchProfile(true).catch((err) => {
-          console.error('Failed to load profile after login', err);
-        });
-
-        this.persist();
-      } catch (error) {
-        const { message, fieldErrors } = formatLoginError(error);
-        this.fieldErrors = fieldErrors;
-        this.error = message;
-        throw new Error(message);
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    logout() {
-      this.tokens = null;
-      this.resetErrors();
-      this.hydrated = true;
-      this.profile = null;
-      this.profileError = null;
-      this.profileLoading = false;
-      this.profileFetchedAt = null;
-      this.refreshing = false;
-      this.refreshError = null;
-      this.persist();
-    },
-
-    clearAll() {
-      this.identifier = '';
-      this.deviceId = '';
-      this.deviceName = '';
-      this.tokens = null;
-      this.profile = null;
-      this.profileError = null;
-      this.profileLoading = false;
-      this.profileFetchedAt = null;
-      this.refreshing = false;
-      this.refreshError = null;
-      this.hydrated = true;
-      this.persist();
-    },
-
-    needsAccessRefresh(thresholdMs = ACCESS_REFRESH_THRESHOLD_MS): boolean {
-      if (!this.tokens?.accessExpiresAt) {
-        return false;
-      }
-
-      const delta = msUntil(this.tokens.accessExpiresAt);
-      return delta <= thresholdMs;
-    },
-
-    async ensureFreshAccessToken(): Promise<boolean> {
-      if (!this.isAuthenticated) {
-        return false;
-      }
-
-      if (!this.needsAccessRefresh()) {
+        persist();
         return true;
-      }
-
-      return this.refreshTokens();
-    },
-
-    async refreshTokens(force = false): Promise<boolean> {
-      if (!this.tokens) {
-        return false;
-      }
-
-      if (!this.tokens.refreshToken) {
-        return false;
-      }
-
-      if (!force && !this.needsAccessRefresh()) {
-        return true;
-      }
-
-      if (!isIsoFuture(this.tokens.refreshExpiresAt)) {
-        this.logout();
-        return false;
-      }
-
-      if (refreshPromise) {
-        return refreshPromise;
-      }
-
-      const nuxtApp = useNuxtApp();
-      const api = nuxtApp.$api;
-
-      refreshPromise = (async () => {
-        this.refreshing = true;
-        this.refreshError = null;
-
-        try {
-          const body: RefreshRequestBody = {
-            refresh_token: this.tokens!.refreshToken,
-          };
-
-          const response = await api<LoginResponse>('/sessions/refresh', {
-            method: 'POST',
-            body,
-          });
-
-          this.tokens = {
-            accessToken: response.access_token,
-            accessExpiresAt: response.access_expires_at,
-            refreshToken: response.refresh_token,
-            refreshExpiresAt: response.refresh_expires_at,
-          };
-
-          this.persist();
-          return true;
-        } catch (error) {
-          this.refreshError = extractErrorMessage(error);
-          const maybeFetchError = error as { response?: { status?: number } };
-          if (maybeFetchError.response?.status === 401) {
-            this.logout();
-          }
-          return false;
-        } finally {
-          this.refreshing = false;
-          refreshPromise = null;
-        }
-      })();
-
-      return refreshPromise;
-    },
-
-    async fetchProfile(force = false): Promise<StoredProfile | null> {
-      if (!this.isAuthenticated) {
-        this.profile = null;
-        this.profileFetchedAt = null;
-        this.persist();
-        return null;
-      }
-
-      if (this.profileLoading) {
-        return this.profile;
-      }
-
-      if (
-        !force &&
-        this.profile &&
-        this.profileFetchedAt &&
-        Date.now() - this.profileFetchedAt < 60_000
-      ) {
-        return this.profile;
-      }
-
-      const nuxtApp = useNuxtApp();
-      const api = nuxtApp.$api;
-
-      this.profileLoading = true;
-      this.profileError = null;
-
-      try {
-        const endpoints = resolvedProfileEndpoint
-          ? [resolvedProfileEndpoint]
-          : PROFILE_ENDPOINTS;
-
-        let payload: CurrentUser | { user: CurrentUser } | null = null;
-        let lastError: unknown = null;
-
-        for (const endpoint of endpoints) {
-          try {
-            const data = await api<CurrentUser | { user: CurrentUser }>(
-              endpoint
-            );
-            resolvedProfileEndpoint = endpoint;
-            payload = data;
-            break;
-          } catch (err) {
-            lastError = err;
-            const status = (err as { response?: { status?: number } })?.response
-              ?.status;
-            if (status === 404) {
-              continue;
-            }
-            throw err;
-          }
-        }
-
-        if (!payload) {
-          throw lastError ?? new Error('Profile endpoint unavailable');
-        }
-
-        const currentUser = unwrapCurrentUser(payload);
-        const profile = mapCurrentUser(currentUser);
-        this.profile = profile;
-        this.profileFetchedAt = Date.now();
-        this.persist();
-        return profile;
       } catch (error) {
-        this.profileError = extractErrorMessage(error);
+        state.refreshError = extractErrorMessage(error);
         const maybeFetchError = error as { response?: { status?: number } };
         if (maybeFetchError.response?.status === 401) {
-          this.logout();
+          logout();
         }
-        throw error;
+        return false;
       } finally {
-        this.profileLoading = false;
+        state.refreshing = false;
+        refreshPromise = null;
       }
-    },
-  },
+    })();
+
+    return refreshPromise;
+  }
+
+  async function fetchProfile(force = false): Promise<StoredProfile | null> {
+    if (!isAuthenticated.value) {
+      state.profile = null;
+      state.profileFetchedAt = null;
+      persist();
+      return null;
+    }
+
+    if (state.profileLoading) {
+      return state.profile;
+    }
+
+    if (
+      !force &&
+      state.profile &&
+      state.profileFetchedAt &&
+      Date.now() - state.profileFetchedAt < 60_000
+    ) {
+      return state.profile;
+    }
+
+    const nuxtApp = useNuxtApp();
+    const api = nuxtApp.$api;
+
+    state.profileLoading = true;
+    state.profileError = null;
+
+    try {
+      const endpoints = resolvedProfileEndpoint
+        ? [resolvedProfileEndpoint]
+        : PROFILE_ENDPOINTS;
+
+      let payload: CurrentUser | { user: CurrentUser } | null = null;
+      let lastError: unknown = null;
+
+      for (const endpoint of endpoints) {
+        try {
+          const data = await api<CurrentUser | { user: CurrentUser }>(endpoint);
+          resolvedProfileEndpoint = endpoint;
+          payload = data;
+          break;
+        } catch (err) {
+          lastError = err;
+          const status = (err as { response?: { status?: number } })?.response
+            ?.status;
+          if (status === 404) {
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!payload) {
+        throw lastError ?? new Error('Profile endpoint unavailable');
+      }
+
+      const currentUser = unwrapCurrentUser(payload);
+      const profile = mapCurrentUser(currentUser);
+      state.profile = profile;
+      state.profileFetchedAt = Date.now();
+      persist();
+      return profile;
+    } catch (error) {
+      state.profileError = extractErrorMessage(error);
+      const maybeFetchError = error as { response?: { status?: number } };
+      if (maybeFetchError.response?.status === 401) {
+        logout();
+      }
+      throw error;
+    } finally {
+      state.profileLoading = false;
+    }
+  }
+
+  return {
+    ...toRefs(state),
+    isAuthenticated,
+    accessToken,
+    displayName,
+    profileAvatar,
+    resetErrors,
+    persist,
+    hydrate,
+    login,
+    logout,
+    clearAll,
+    needsAccessRefresh,
+    ensureFreshAccessToken,
+    refreshTokens,
+    fetchProfile,
+  };
 });

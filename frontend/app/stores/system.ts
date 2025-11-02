@@ -6,64 +6,70 @@ import type {
 } from '~/types/api';
 import { extractErrorMessage } from '~/utils/errors';
 
-interface SystemState {
-  readiness: ReadinessResponse | null;
-  version: string | null;
-  loading: boolean;
-  error: string | null;
-  lastFetchedAt: number | null;
-}
+export const useSystemStore = defineStore('system', () => {
+  const readiness = ref<ReadinessResponse | null>(null);
+  const version = ref<string | null>(null);
+  const loading = ref(false);
+  const error = ref<string | null>(null);
+  const lastFetchedAt = ref<number | null>(null);
 
-export const useSystemStore = defineStore('system', {
-  state: (): SystemState => ({
-    readiness: null,
-    version: null,
-    loading: false,
-    error: null,
-    lastFetchedAt: null,
-  }),
+  const status = computed(() => readiness.value?.status ?? 'unknown');
+  const components = computed((): ComponentStatus[] => {
+    return readiness.value?.components ?? [];
+  });
+  const uptimeSeconds = computed(() => readiness.value?.uptime_seconds ?? null);
+  const hasError = computed(() => Boolean(error.value));
 
-  getters: {
-    status: (state) => state.readiness?.status ?? 'unknown',
-    components: (state): ComponentStatus[] => state.readiness?.components ?? [],
-    uptimeSeconds: (state) => state.readiness?.uptime_seconds ?? null,
-    hasError: (state) => Boolean(state.error),
-  },
+  async function fetchBackendStatus(force = false) {
+    if (loading.value) {
+      return;
+    }
 
-  actions: {
-    async fetchBackendStatus(force = false) {
-      if (this.loading) {
-        return;
-      }
+    if (
+      !force &&
+      lastFetchedAt.value &&
+      Date.now() - lastFetchedAt.value < 15_000
+    ) {
+      return;
+    }
 
-      if (
-        !force &&
-        this.lastFetchedAt &&
-        Date.now() - this.lastFetchedAt < 15_000
-      ) {
-        return;
-      }
+    const nuxtApp = useNuxtApp();
+    const api = nuxtApp.$api;
 
-      const nuxtApp = useNuxtApp();
-      const api = nuxtApp.$api;
+    loading.value = true;
+    error.value = null;
 
-      this.loading = true;
-      this.error = null;
+    try {
+      const [readinessResponse, versionResponse] = await Promise.all([
+        api<ReadinessResponse>('/ready'),
+        api<VersionResponse>('/version'),
+      ]);
 
-      try {
-        const [readiness, version] = await Promise.all([
-          api<ReadinessResponse>('/ready'),
-          api<VersionResponse>('/version'),
-        ]);
+      readiness.value = readinessResponse;
+      version.value = versionResponse.version;
+      lastFetchedAt.value = Date.now();
+    } catch (err) {
+      error.value = extractErrorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
 
-        this.readiness = readiness;
-        this.version = version.version;
-        this.lastFetchedAt = Date.now();
-      } catch (err) {
-        this.error = extractErrorMessage(err);
-      } finally {
-        this.loading = false;
-      }
-    },
-  },
+  return {
+    // state
+    readiness,
+    version,
+    loading,
+    error,
+    lastFetchedAt,
+
+    // getters
+    status,
+    components,
+    uptimeSeconds,
+    hasError,
+
+    // actions
+    fetchBackendStatus,
+  };
 });
