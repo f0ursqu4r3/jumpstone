@@ -58,12 +58,9 @@ const hydrated = computed(() => sessionStore.hydrated);
 const isAuthenticated = computed(() => sessionStore.isAuthenticated);
 
 const goToLogin = async () => {
-  const redirect =
-    route.path === '/login' ? null : route.fullPath;
+  const redirect = route.path === '/login' ? null : route.fullPath;
   await navigateTo(
-    redirect
-      ? { path: '/login', query: { redirect } }
-      : '/login'
+    redirect ? { path: '/login', query: { redirect } } : '/login'
   );
 };
 </script>
@@ -87,26 +84,32 @@ const goToLogin = async () => {
     class="flex h-screen flex-col items-center justify-center bg-slate-950 px-6"
   >
     <div class="max-w-md space-y-6 text-center">
-      <UIcon name="i-heroicons-lock-closed" class="mx-auto h-10 w-10 text-slate-500" />
+      <UIcon
+        name="i-heroicons-lock-closed"
+        class="mx-auto h-10 w-10 text-slate-500"
+      />
       <div class="space-y-2">
         <h1 class="text-xl font-semibold text-white">
           Sign in to access OpenGuild
         </h1>
         <p class="text-sm text-slate-400">
-          Your session expired or you have not signed in yet. Continue to the authentication portal to resume work.
+          Your session expired or you have not signed in yet. Continue to the
+          authentication portal to resume work.
         </p>
       </div>
       <div class="flex flex-col gap-3 sm:flex-row sm:justify-center">
         <UButton color="info" label="Go to sign in" @click="goToLogin" />
-        <UButton to="/styleguide" variant="ghost" color="neutral" label="View styleguide" />
+        <UButton
+          to="/styleguide"
+          variant="ghost"
+          color="neutral"
+          label="View styleguide"
+        />
       </div>
     </div>
   </div>
 
-  <div
-    v-else
-    class="relative flex h-screen overflow-hidden bg-slate-950"
-  >
+  <div v-else class="relative flex h-screen overflow-hidden bg-slate-950">
     <AppGuildRail :guilds="guilds" />
 
     <AppChannelSidebar
@@ -127,7 +130,7 @@ const goToLogin = async () => {
       </template>
     </USlideover>
 
-    <div class="flex flex-1 flex-col">
+    <div class="h-full flex flex-1 flex-col">
       <AppTopbar
         :channel-name="activeChannel?.label || ''"
         :topic="activeChannel?.description || ''"

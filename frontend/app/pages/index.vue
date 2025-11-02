@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import type { ComponentStatus } from '~/types/api';
 import { useSystemStore } from '~/stores/system';
+import { useSessionStore } from '~/stores/session';
 
 const timelineEntries = [
   {
@@ -76,9 +77,23 @@ const apiBaseHost = computed(() => {
 });
 
 const systemStore = useSystemStore();
+const sessionStore = useSessionStore();
 
 if (!systemStore.readiness) {
   await systemStore.fetchBackendStatus();
+}
+
+if (
+  import.meta.client &&
+  sessionStore.isAuthenticated &&
+  !sessionStore.profile &&
+  !sessionStore.profileLoading
+) {
+  try {
+    await sessionStore.fetchProfile();
+  } catch (err) {
+    console.warn('Failed to preload session profile', err);
+  }
 }
 
 const backendPending = computed(() => systemStore.loading);
@@ -150,6 +165,85 @@ const formatDuration = (totalSeconds: number | null | undefined) => {
 };
 
 const uptime = computed(() => formatDuration(systemStore.uptimeSeconds));
+
+const sessionProfile = computed(() => sessionStore.profile);
+const sessionProfileLoading = computed(() => sessionStore.profileLoading);
+const sessionProfileError = computed(() => sessionStore.profileError);
+const sessionDisplayName = computed(
+  () => sessionStore.displayName || sessionStore.identifier || '—'
+);
+const sessionUsername = computed(
+  () => sessionProfile.value?.username ?? sessionStore.identifier ?? '—'
+);
+const formatDateTime = (iso: string | null | undefined) => {
+  if (!iso) {
+    return '—';
+  }
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
+};
+const profileCreatedAt = computed(() =>
+  formatDateTime(sessionProfile.value?.createdAt)
+);
+const profileUpdatedAt = computed(() =>
+  formatDateTime(sessionProfile.value?.updatedAt)
+);
+const sessionServerName = computed(() => {
+  const serverHint = sessionProfile.value?.serverName;
+  if (serverHint && serverHint.length) {
+    return serverHint;
+  }
+
+  const host = apiBaseHost.value;
+  if (host) {
+    return host;
+  }
+
+  return 'Local server';
+});
+const sessionGuilds = computed(() => sessionProfile.value?.guilds ?? []);
+const sessionDevices = computed(() => sessionProfile.value?.devices ?? []);
+const sessionAvatarUrl = computed(() => {
+  const custom = sessionStore.profileAvatar;
+  if (custom) {
+    return custom;
+  }
+  const seed = sessionDisplayName.value || sessionUsername.value || 'OpenGuild';
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+    seed
+  )}`;
+});
+const sessionMetadata = computed(() => [
+  { label: 'Server', value: sessionServerName.value || '—' },
+  {
+    label: 'Default guild',
+    value: sessionProfile.value?.defaultGuildId ?? '—',
+  },
+  { label: 'Locale', value: sessionProfile.value?.locale ?? '—' },
+  { label: 'Timezone', value: sessionProfile.value?.timezone ?? '—' },
+  { label: 'Created', value: profileCreatedAt.value },
+  { label: 'Updated', value: profileUpdatedAt.value },
+]);
+
+const refreshProfile = async () => {
+  try {
+    await sessionStore.fetchProfile(true);
+  } catch (err) {
+    console.warn('Failed to refresh session profile', err);
+  }
+};
 </script>
 
 <template>
@@ -245,6 +339,149 @@ const uptime = computed(() => formatDuration(systemStore.uptimeSeconds));
       </UCard>
 
       <div class="space-y-6">
+        <UCard class="border border-white/5 bg-slate-950/60">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-lg font-semibold text-white">
+                  Session overview
+                </h2>
+                <p class="text-sm text-slate-400">
+                  Active on {{ sessionServerName }}
+                </p>
+              </div>
+              <UButton
+                icon="i-heroicons-arrow-path"
+                color="neutral"
+                variant="ghost"
+                :loading="sessionProfileLoading"
+                @click="refreshProfile()"
+                aria-label="Refresh profile"
+              />
+            </div>
+          </template>
+
+          <div v-if="sessionProfileLoading" class="space-y-4">
+            <div class="flex items-center gap-3">
+              <USkeleton class="h-12 w-12 rounded-full" />
+              <div class="space-y-2 flex-1">
+                <USkeleton class="h-4 w-32 rounded" />
+                <USkeleton class="h-3 w-24 rounded" />
+              </div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <USkeleton class="h-3 w-24 rounded" />
+              <USkeleton class="h-3 w-28 rounded" />
+              <USkeleton class="h-3 w-20 rounded" />
+              <USkeleton class="h-3 w-32 rounded" />
+            </div>
+          </div>
+
+          <div v-else-if="sessionProfileError" class="space-y-4">
+            <UAlert
+              color="warning"
+              variant="soft"
+              title="Unable to load profile"
+              :description="sessionProfileError"
+            />
+            <p class="text-xs text-slate-500">
+              Check that the `/users/me` endpoint is reachable and that your
+              session token is still valid.
+            </p>
+          </div>
+
+          <div v-else class="space-y-5">
+            <div class="flex items-center gap-4">
+              <UAvatar
+                :name="sessionDisplayName"
+                :src="sessionAvatarUrl"
+                size="lg"
+              />
+              <div class="space-y-1 text-left">
+                <p class="text-sm font-semibold text-white">
+                  {{ sessionDisplayName }}
+                </p>
+                <p class="text-xs text-slate-400">
+                  {{ sessionUsername }}
+                </p>
+              </div>
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div
+                v-for="item in sessionMetadata"
+                :key="item.label"
+                class="space-y-1"
+              >
+                <p class="text-xs uppercase tracking-wide text-slate-500">
+                  {{ item.label }}
+                </p>
+                <p class="text-sm font-medium text-white">
+                  {{ item.value || '—' }}
+                </p>
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <p class="text-xs uppercase tracking-wide text-slate-500">
+                Guild access
+              </p>
+              <div v-if="!sessionGuilds.length" class="text-xs text-slate-500">
+                No guild membership reported yet. Connect to the backend to
+                hydrate this list.
+              </div>
+              <ul v-else class="space-y-2">
+                <li
+                  v-for="guild in sessionGuilds"
+                  :key="guild.guildId"
+                  class="flex items-center justify-between rounded-md bg-slate-900/80 px-3 py-2 text-sm text-slate-200"
+                >
+                  <span>{{ guild.name || guild.guildId }}</span>
+                  <UBadge
+                    v-if="guild.role"
+                    color="info"
+                    variant="soft"
+                    :label="guild.role"
+                  />
+                </li>
+              </ul>
+            </div>
+
+            <div class="space-y-3">
+              <p class="text-xs uppercase tracking-wide text-slate-500">
+                Devices
+              </p>
+              <div v-if="!sessionDevices.length" class="text-xs text-slate-500">
+                Refresh token store not populated yet. This will display device
+                metadata once the backend exposes session inventory.
+              </div>
+              <ul v-else class="space-y-2">
+                <li
+                  v-for="device in sessionDevices"
+                  :key="device.deviceId"
+                  class="rounded-md bg-slate-900/80 px-3 py-2 text-sm text-slate-200"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="font-medium">
+                      {{ device.deviceName || device.deviceId }}
+                    </span>
+                    <UBadge
+                      v-if="device.userAgent"
+                      color="neutral"
+                      variant="soft"
+                      :label="device.userAgent"
+                    />
+                  </div>
+                  <p class="text-xs text-slate-500">
+                    ID: {{ device.deviceId }} · Last seen:
+                    {{ formatDateTime(device.lastSeenAt) }}
+                  </p>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </UCard>
+
         <UCard class="border border-white/5 bg-slate-950/60">
           <template #header>
             <div class="flex items-center justify-between">

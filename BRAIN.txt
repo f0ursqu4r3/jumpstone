@@ -52,6 +52,7 @@ Outstanding follow-ups:
 - Roll Alertmanager into staging/prod and hook rejection metric alerts once the observability stack is deployed beyond local.
 - Share the refreshed request ID guidance with frontend/ops and confirm staging/prod log pipelines retain the field.
 - Document bootstrap workflow in docs/SETUP.md now that `/users/register` and refresh tokens ship; revisit refresh revoke/rotate design once telemetry is in place.
+- Frontend now hydrates `/users/me` via the session store; Nuxt dashboard shows a session overview card and auth middleware handles `/login` redirects + silent refresh. Keep docs/FRONTEND_TIMELINE.md aligned with these milestones.
 - Extend RBAC/rate limiting with configurable per-IP quotas and abuse detection (per-user & per-IP limits now in server).
 - Flesh out audit logging story (middleware placeholder still TODO).
 - CI workflows still missing (see docs/CI_PLAN.md).
@@ -76,7 +77,6 @@ Week 6 current gaps / TODOs:
 - [x] Plan refresh revoke/rotate flows (API + CLI stubs).
 - [x] Enforce messaging authz and baseline rate limiting (validation caps, WS semaphore).
 - [ ] Hook rejection metrics into Alertmanager once observability stack is promoted; evaluate configurable per-IP limits for operators (docs cover rollout; need staging execution).
-
 
 
 

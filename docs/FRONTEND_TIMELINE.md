@@ -20,18 +20,18 @@ This companion roadmap focuses on the Nuxt 3 web client. It mirrors the backend 
   - [ ] Implement core components (Button, Input, Badge, Avatar, Tooltip) with Storybook stories and Chromatic snapshots.
   - [ ] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints.
 - [ ] Scaffold state management and API client.
-  - [ ] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy.
-  - [ ] Introduce Pinia stores for session, guilds, and channels with hydration helpers.
+  - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy.
+  - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers.
   - [ ] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling.
 
 ## Week 3: Authentication & Landing Flows (Milestone F0)
 
 - [ ] Implement session UX.
-  - [ ] Build login/register forms with validation, error toasts, and loading states.
-  - [ ] Persist access/refresh tokens in secure storage (IndexedDB fallback), respecting backend expiry semantics.
-  - [ ] Create device metadata prompts (friendly name) aligned with backend requirements.
+  - [x] Build login/register forms with validation, error toasts, and loading states.
+  - [x] Persist access/refresh tokens in secure storage (IndexedDB fallback), respecting backend expiry semantics.
+  - [x] Create device metadata prompts (friendly name) aligned with backend requirements.
 - [ ] Route guards and onboarding.
-  - [ ] Add global middleware that enforces auth, refreshes tokens, and redirects to `/login` when needed.
+  - [x] Add global middleware that enforces auth, refreshes tokens, and redirects to `/login` when needed.
   - [ ] Deliver onboarding carousel with links to docs and setup guides.
   - [ ] Smoke-test flows against backend `POST /sessions/login` + `/users/register`; record QA steps in `docs/TESTING.md`.
 
@@ -68,7 +68,7 @@ This companion roadmap focuses on the Nuxt 3 web client. It mirrors the backend 
 ## Week 6-7: Security, Reliability & Accessibility (Milestone F1 to F2 bridge)
 
 - [ ] Token lifecycle & device management.
-  - [ ] Implement silent refresh flows using backend `/sessions/refresh`; prompt logout when refresh fails.
+  - [x] Implement silent refresh flows using backend `/sessions/refresh`; prompt logout when refresh fails.
   - [ ] Expose device list UI (read-only) consuming future `/sessions/devices` endpoint (stub in mocks until backend ships).
   - [ ] Add secure storage audit (localStorage vs IndexedDB) with fallback for SSR.
 - [ ] Permission-aware UX.
