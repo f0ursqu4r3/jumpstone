@@ -58,18 +58,17 @@ const avatarUrl = computed(() => {
     profile.value?.username ||
     sessionStore.identifier ||
     'OpenGuild';
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`;
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+    seed
+  )}`;
 });
 
 const route = useRoute();
 
 const goToLogin = async () => {
-  const redirect =
-    route.path === '/login' ? null : route.fullPath;
+  const redirect = route.path === '/login' ? null : route.fullPath;
   await navigateTo(
-    redirect
-      ? { path: '/login', query: { redirect } }
-      : '/login'
+    redirect ? { path: '/login', query: { redirect } } : '/login'
   );
 };
 
@@ -124,7 +123,7 @@ const groupedChannels = computed(() => {
     <div class="flex flex-col flex-1 min-h-0">
       <div class="flex items-start justify-between gap-2 p-2">
         <div>
-          <p class="text-sm font-semibold">
+          <p class="font-semibold">
             {{ guildName }}
           </p>
           <p class="text-xs text-dimmed">Internal build</p>
@@ -188,11 +187,7 @@ const groupedChannels = computed(() => {
     <div>
       <USeparator class="opacity-50" />
       <div class="flex items-center gap-3 p-2">
-        <BaseAvatar
-          :name="accountLabel"
-          size="sm"
-          :src="avatarUrl"
-        />
+        <BaseAvatar :name="accountLabel" size="sm" :src="avatarUrl" />
         <div class="flex-1 text-sm">
           <p class="font-semibold text-white">
             {{ accountLabel }}

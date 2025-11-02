@@ -26,6 +26,7 @@ const attrs = useAttrs();
 <template>
   <UButton
     v-bind="{ ...attrs, ...props }"
+    class="cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
     :class="['font-semibold tracking-tight rounded-lg', attrs.class]"
   >
     <slot />

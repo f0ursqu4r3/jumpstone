@@ -30,14 +30,19 @@ const channels = computed(() =>
     active: channel.id === channelStore.activeChannelId,
   }))
 );
-const activeGuild = computed(() => guildStore.activeGuild ?? guildStore.guilds[0]);
-const activeChannel = computed(() => channelStore.activeChannel ?? channels.value[0]);
+const activeGuild = computed(
+  () => guildStore.activeGuild ?? guildStore.guilds[0]
+);
+const activeChannel = computed(
+  () => channelStore.activeChannel ?? channels.value[0]
+);
 const mobileSidebarOpen = ref(false);
 
 const sessionStore = useSessionStore();
 const route = useRoute();
 const hydrated = computed(() => sessionStore.hydrated);
 const isAuthenticated = computed(() => sessionStore.isAuthenticated);
+const showAppShell = computed(() => hydrated.value && isAuthenticated.value);
 
 const goToLogin = async () => {
   const redirect = route.path === '/login' ? null : route.fullPath;
@@ -45,62 +50,30 @@ const goToLogin = async () => {
     redirect ? { path: '/login', query: { redirect } } : '/login'
   );
 };
+
+watch(
+  showAppShell,
+  (visible) => {
+    if (!visible) {
+      mobileSidebarOpen.value = false;
+    }
+  },
+  { flush: 'post' }
+);
 </script>
 
 <template>
-  <div
-    v-if="!hydrated"
-    class="flex h-screen items-center justify-center bg-slate-950"
-  >
-    <div class="space-y-4 text-center">
-      <USkeleton class="mx-auto h-12 w-12 rounded-full" />
-      <div class="space-y-2">
-        <USkeleton class="mx-auto h-4 w-56 rounded" />
-        <USkeleton class="mx-auto h-4 w-40 rounded" />
-      </div>
-    </div>
-  </div>
-
-  <div
-    v-else-if="!isAuthenticated"
-    class="flex h-screen flex-col items-center justify-center bg-slate-950 px-6"
-  >
-    <div class="max-w-md space-y-6 text-center">
-      <UIcon
-        name="i-heroicons-lock-closed"
-        class="mx-auto h-10 w-10 text-slate-500"
-      />
-      <div class="space-y-2">
-        <h1 class="text-xl font-semibold text-white">
-          Sign in to access OpenGuild
-        </h1>
-        <p class="text-sm text-slate-400">
-          Your session expired or you have not signed in yet. Continue to the
-          authentication portal to resume work.
-        </p>
-      </div>
-      <div class="flex flex-col gap-3 sm:flex-row sm:justify-center">
-        <UButton color="info" label="Go to sign in" @click="goToLogin" />
-        <UButton
-          to="/styleguide"
-          variant="ghost"
-          color="neutral"
-          label="View styleguide"
-        />
-      </div>
-    </div>
-  </div>
-
-  <div v-else class="relative flex h-screen overflow-hidden bg-slate-950">
-    <AppGuildRail :guilds="guilds" />
+  <div class="relative flex h-screen overflow-hidden bg-slate-950">
+    <AppGuildRail v-if="showAppShell" :guilds="guilds" />
 
     <AppChannelSidebar
+      v-if="showAppShell"
       :guild-name="activeGuild?.name || ''"
       :channels="channels"
       class="hidden lg:flex"
     />
 
-    <USlideover v-model="mobileSidebarOpen" side="left">
+    <USlideover v-if="showAppShell" v-model="mobileSidebarOpen" side="left">
       <template #content>
         <div class="flex h-full w-[18rem] flex-col bg-slate-950">
           <AppChannelSidebar
@@ -112,7 +85,7 @@ const goToLogin = async () => {
       </template>
     </USlideover>
 
-    <div class="h-full flex flex-1 flex-col">
+    <div class="h-full flex flex-1 flex-col" v-show="showAppShell">
       <AppTopbar
         :channel-name="activeChannel?.label || ''"
         :topic="activeChannel?.description || ''"
@@ -131,7 +104,10 @@ const goToLogin = async () => {
       </footer>
     </div>
 
-    <div class="fixed left-4 top-4 z-40 flex items-center gap-2 lg:hidden">
+    <div
+      v-if="showAppShell"
+      class="fixed left-4 top-4 z-40 flex items-center gap-2 lg:hidden"
+    >
       <UButton
         icon="i-heroicons-bars-3"
         color="neutral"
@@ -143,6 +119,49 @@ const goToLogin = async () => {
         class="rounded-full bg-slate-900/80 px-3 py-1 text-sm font-semibold text-white shadow-lg shadow-slate-900/40 backdrop-blur"
       >
         #{{ activeChannel?.label || '' }}
+      </div>
+    </div>
+
+    <div
+      v-if="!hydrated"
+      class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950"
+    >
+      <div class="space-y-4 text-center">
+        <USkeleton class="mx-auto h-12 w-12 rounded-full" />
+        <div class="space-y-2">
+          <USkeleton class="mx-auto h-4 w-56 rounded" />
+          <USkeleton class="mx-auto h-4 w-40 rounded" />
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-else-if="!isAuthenticated"
+      class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950 px-6"
+    >
+      <div class="max-w-md space-y-6 text-center">
+        <UIcon
+          name="i-heroicons-lock-closed"
+          class="mx-auto h-10 w-10 text-slate-500"
+        />
+        <div class="space-y-2">
+          <h1 class="text-xl font-semibold text-white">
+            Sign in to access OpenGuild
+          </h1>
+          <p class="text-sm text-slate-400">
+            Your session expired or you have not signed in yet. Continue to the
+            authentication portal to resume work.
+          </p>
+        </div>
+        <div class="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <UButton color="info" label="Go to sign in" @click="goToLogin" />
+          <UButton
+            to="/styleguide"
+            variant="ghost"
+            color="neutral"
+            label="View styleguide"
+          />
+        </div>
       </div>
     </div>
   </div>
