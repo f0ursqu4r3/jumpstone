@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useSessionStore } from '~/stores/session';
 
 interface ChannelEntry {
   id: string;
@@ -18,6 +19,33 @@ const props = defineProps<{
 
 const guildName = computed(() => props.guildName);
 const channels = computed(() => props.channels);
+const sessionStore = useSessionStore();
+const isAuthenticated = computed(() => sessionStore.isAuthenticated);
+const accountLabel = computed(
+  () => sessionStore.identifier || 'Signed out user'
+);
+const accountStatus = computed(() =>
+  isAuthenticated.value ? 'Online' : 'Logged out'
+);
+const accountStatusClass = computed(() =>
+  isAuthenticated.value ? 'text-emerald-400' : 'text-slate-500'
+);
+const avatarUrl = computed(() => {
+  const seed = sessionStore.identifier || 'OpenGuild';
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+    seed
+  )}`;
+});
+
+const handleSignOut = async () => {
+  if (!isAuthenticated.value) {
+    await navigateTo('/login');
+    return;
+  }
+
+  sessionStore.logout();
+  await navigateTo('/login');
+};
 
 const groupedChannels = computed(() => {
   const buckets: Record<
@@ -126,19 +154,25 @@ const groupedChannels = computed(() => {
       <USeparator class="opacity-50" />
       <div class="flex items-center gap-3 p-2">
         <UAvatar
-          name="Lia Chen"
+          :name="accountLabel"
           size="sm"
-          src="https://api.dicebear.com/7.x/initials/svg?seed=Lia%20Chen"
+          :src="avatarUrl"
         />
         <div class="flex-1 text-sm">
-          <p class="font-semibold text-white">Lia Chen</p>
-          <p class="text-xs text-emerald-400">Online</p>
+          <p class="font-semibold text-white">
+            {{ accountLabel }}
+          </p>
+          <p class="text-xs" :class="accountStatusClass">
+            {{ accountStatus }}
+          </p>
         </div>
         <UButton
           icon="i-heroicons-arrow-left-on-rectangle"
           variant="ghost"
           color="neutral"
           aria-label="Sign out"
+          :disabled="!isAuthenticated"
+          @click="handleSignOut"
         />
       </div>
     </div>

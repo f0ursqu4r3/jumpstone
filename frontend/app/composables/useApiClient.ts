@@ -1,3 +1,5 @@
+import { useSessionStore } from '~/stores/session';
+
 const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
   if (!headers) {
     return {};
@@ -34,6 +36,16 @@ export const useApiClient = () => {
     retry: 0,
     onRequest({ options }) {
       const headers = normalizeHeaders(options.headers);
+      const session = useSessionStore();
+      const token = session.accessToken;
+
+      if (token && !headers.authorization) {
+        headers.authorization = `Bearer ${token}`;
+      }
+
+      if (session.deviceId && !headers['x-device-id']) {
+        headers['x-device-id'] = session.deviceId;
+      }
 
       if (!headers['x-request-id']) {
         headers['x-request-id'] = createRequestId();

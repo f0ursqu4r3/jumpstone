@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useSessionStore } from '~/stores/session';
 
 const props = defineProps<{
   channelName: string;
@@ -7,6 +8,16 @@ const props = defineProps<{
 }>();
 
 const channelName = computed(() => props.channelName);
+const sessionStore = useSessionStore();
+const isAuthenticated = computed(() => sessionStore.isAuthenticated);
+
+const handleAccountAction = async () => {
+  if (isAuthenticated.value) {
+    sessionStore.logout();
+  }
+
+  await navigateTo('/login');
+};
 </script>
 
 <template>
@@ -45,6 +56,21 @@ const channelName = computed(() => props.channelName);
         color="neutral"
         variant="ghost"
         aria-label="Inbox"
+      />
+      <UButton
+        v-if="!isAuthenticated"
+        color="info"
+        variant="soft"
+        label="Sign in"
+        @click="handleAccountAction"
+      />
+      <UButton
+        v-else
+        color="neutral"
+        variant="ghost"
+        icon="i-heroicons-arrow-left-on-rectangle"
+        label="Sign out"
+        @click="handleAccountAction"
       />
     </div>
   </header>

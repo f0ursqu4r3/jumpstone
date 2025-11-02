@@ -4,6 +4,7 @@ import type {
   ReadinessResponse,
   VersionResponse,
 } from '~/types/api';
+import { extractErrorMessage } from '~/utils/errors';
 
 interface SystemState {
   readiness: ReadinessResponse | null;
@@ -12,23 +13,6 @@ interface SystemState {
   error: string | null;
   lastFetchedAt: number | null;
 }
-
-const formatError = (err: unknown): string => {
-  if (!err) {
-    return '';
-  }
-  if (err instanceof Error) {
-    return err.message;
-  }
-  if (typeof err === 'string') {
-    return err;
-  }
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return 'Unexpected error';
-  }
-};
 
 export const useSystemStore = defineStore('system', {
   state: (): SystemState => ({
@@ -76,7 +60,7 @@ export const useSystemStore = defineStore('system', {
         this.version = version.version;
         this.lastFetchedAt = Date.now();
       } catch (err) {
-        this.error = formatError(err);
+        this.error = extractErrorMessage(err);
       } finally {
         this.loading = false;
       }
