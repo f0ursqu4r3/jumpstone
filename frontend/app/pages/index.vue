@@ -1,10 +1,7 @@
-﻿<script setup lang="ts">
-import type {
-  BackendStatusPayload,
-  ComponentStatus,
-  ReadinessResponse,
-  VersionResponse,
-} from '~/types/api';
+<script setup lang="ts">
+import { computed } from 'vue';
+import type { ComponentStatus } from '~/types/api';
+import { useSystemStore } from '~/stores/system';
 
 const timelineEntries = [
   {
@@ -78,27 +75,20 @@ const apiBaseHost = computed(() => {
   }
 });
 
-const {
-  data: backendStatus,
-  pending: backendPending,
-  error: backendError,
-  refresh: refreshBackend,
-} = await useAsyncData<BackendStatusPayload>('backend-status', async () => {
-  const api = useApiClient();
+const systemStore = useSystemStore();
 
-  const [ready, version] = await Promise.all([
-    api<ReadinessResponse>('/ready'),
-    api<VersionResponse>('/version'),
-  ]);
+if (!systemStore.readiness) {
+  await systemStore.fetchBackendStatus();
+}
 
-  return {
-    ready,
-    version: version.version,
-  };
-});
+const backendPending = computed(() => systemStore.loading);
+const backendError = computed(() => systemStore.error);
+const backendErrorMessage = computed(() => systemStore.error ?? '');
 
-const readiness = computed(() => backendStatus.value?.ready);
-const readinessStatus = computed(() => readiness.value?.status ?? 'unknown');
+const refreshBackend = () => systemStore.fetchBackendStatus(true);
+
+const readiness = computed(() => systemStore.readiness);
+const readinessStatus = computed(() => systemStore.status);
 const readinessBadgeColor = computed(() => {
   if (readinessStatus.value === 'ready') {
     return 'success';
@@ -114,10 +104,10 @@ const readinessStatusLabel = computed(() => {
   return label.charAt(0).toUpperCase() + label.slice(1);
 });
 
-const backendVersion = computed(() => backendStatus.value?.version ?? '—');
+const backendVersion = computed(() => systemStore.version ?? '—');
 
 const componentStatuses = computed<ComponentStatus[]>(
-  () => readiness.value?.components ?? []
+  () => systemStore.components
 );
 
 const componentBadgeColor = (status: string) => {
@@ -136,8 +126,8 @@ const componentBadgeColor = (status: string) => {
 const componentStatusLabel = (status: string) =>
   status.charAt(0).toUpperCase() + status.slice(1);
 
-const formatDuration = (totalSeconds: number) => {
-  if (!Number.isFinite(totalSeconds)) {
+const formatDuration = (totalSeconds: number | null | undefined) => {
+  if (typeof totalSeconds !== 'number' || !Number.isFinite(totalSeconds)) {
     return '—';
   }
 
@@ -145,7 +135,7 @@ const formatDuration = (totalSeconds: number) => {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = Math.floor(totalSeconds % 60);
 
-  const segments = [];
+  const segments: string[] = [];
   if (hours) {
     segments.push(`${hours}h`);
   }
@@ -159,29 +149,7 @@ const formatDuration = (totalSeconds: number) => {
   return segments.join(' ');
 };
 
-const uptime = computed(() => {
-  const seconds = readiness.value?.uptime_seconds;
-  return typeof seconds === 'number' ? formatDuration(seconds) : '—';
-});
-
-const describeError = (err: unknown) => {
-  if (!err) {
-    return '';
-  }
-  if (err instanceof Error) {
-    return err.message;
-  }
-  if (typeof err === 'string') {
-    return err;
-  }
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return 'Unexpected error';
-  }
-};
-
-const backendErrorMessage = computed(() => describeError(backendError.value));
+const uptime = computed(() => formatDuration(systemStore.uptimeSeconds));
 </script>
 
 <template>
@@ -211,7 +179,7 @@ const backendErrorMessage = computed(() => describeError(backendError.value));
             icon="i-heroicons-academic-cap"
             color="neutral"
             label="Developer setup"
-            to="https://github.com/f0ursqu4r3/jumpstone.git"
+            to="https://github.com/openguild"
             target="_blank"
             variant="ghost"
           />
@@ -310,8 +278,8 @@ const backendErrorMessage = computed(() => describeError(backendError.value));
               :description="backendErrorMessage"
             />
             <p class="text-xs text-slate-500">
-              Check that the Rust server is running locally (port
-              {{ apiBaseHost }}) or update
+              Check that the Rust server is running locally ({{ apiBaseHost }})
+              or update
               <code class="text-slate-200">NUXT_PUBLIC_API_BASE_URL</code>
               in your environment.
             </p>
