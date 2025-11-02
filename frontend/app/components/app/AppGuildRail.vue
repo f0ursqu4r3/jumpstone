@@ -39,7 +39,7 @@ const hasActiveGuild = computed(() =>
         <div class="relative">
           <button
             type="button"
-            class="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-800 text-sm font-semibold uppercase transition hover:rounded-3xl hover:bg-sky-500 hover:text-white"
+            class="flex size-12 items-center justify-center rounded-xl bg-slate-800 text-sm font-semibold uppercase transition hover:rounded-3xl hover:bg-sky-500 hover:text-white"
             :class="{
               'rounded-3xl bg-sky-500 text-white shadow-lg shadow-sky-500/30':
                 guild.active,
