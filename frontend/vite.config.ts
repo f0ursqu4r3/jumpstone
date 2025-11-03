@@ -6,9 +6,11 @@ import ui from '@nuxt/ui/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import tailwindcss from '@tailwindcss/vite'
 
+const isStorybookProcess = process.env.npm_lifecycle_event === 'storybook'
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue(), ui(), vueDevTools(), tailwindcss()],
+  plugins: [vue(), ui(), !isStorybookProcess && vueDevTools(), tailwindcss()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

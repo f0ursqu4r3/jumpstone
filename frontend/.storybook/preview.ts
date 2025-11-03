@@ -1,4 +1,13 @@
 import type { Preview } from '@storybook/vue3-vite'
+import { setup } from '@storybook/vue3'
+
+import ui from '@nuxt/ui/vue-plugin'
+
+import '../src/assets/css/main.css'
+
+setup((app) => {
+  app.use(ui)
+})
 
 const preview: Preview = {
   parameters: {
