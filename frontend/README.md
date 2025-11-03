@@ -1,50 +1,54 @@
-# OpenGuild Nuxt Client
+# frontend-vue
 
-This package contains the Nuxt 3 frontend for OpenGuild. It ships with ESLint, Pinia stores, and a custom API client aligned with the Rust backend.
+This template should help get you started developing with Vue 3 in Vite.
 
-## Prerequisites
+## Recommended IDE Setup
 
-- Node.js 18+ (LTS recommended)
-- Your preferred package manager (we use `pnpm` in CI, but `npm` and `bun` are supported)
-- Copy environment defaults: `cp .env.example .env`
+[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
 
-## Environment
+## Recommended Browser Setup
 
-Runtime configuration is read from `.env`, `.env.development`, or your shell. The defaults in `.env.example` include:
+- Chromium-based browsers (Chrome, Edge, Brave, etc.):
+  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd) 
+  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
+- Firefox:
+  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
+  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
 
-- `NUXT_PUBLIC_API_BASE_URL` – REST API origin (defaults to local backend)
-- `NUXT_PUBLIC_ENABLE_MOCKS` – toggles mock data providers
-- `NUXT_PUBLIC_ENABLE_DEVTOOLS` – allows enabling experimental UI
+## Type Support for `.vue` Imports in TS
 
-## Install dependencies
+TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
 
-```bash
-pnpm install
-# or
-npm install
-# or
+## Customize configuration
+
+See [Vite Configuration Reference](https://vite.dev/config/).
+
+## Project Setup
+
+```sh
 bun install
 ```
 
-## Common commands
+### Compile and Hot-Reload for Development
 
-| Task           | pnpm             | npm                | bun                  |
-| -------------- | ---------------- | ------------------ | -------------------- |
-| Dev server     | `pnpm dev`       | `npm run dev`      | `bun run dev`        |
-| Type-safe lint | `pnpm lint`      | `npm run lint`     | `bun run lint`       |
-| Fix lint       | `pnpm lint:fix`  | `npm run lint -- --fix` | `bun run lint -- --fix` |
-| Unit tests     | `pnpm test`      | `npm run test`     | `bun run test`       |
-| Watch tests    | `pnpm test:watch`| `npm run test -- --watch` | `bun run test -- --watch` |
-| Production build | `pnpm build`   | `npm run build`    | `bun run build`      |
-| Preview build  | `pnpm preview`   | `npm run preview`  | `bun run preview`    |
+```sh
+bun dev
+```
 
-## CI Hooks
+### Type-Check, Compile and Minify for Production
 
-- `pnpm lint` – enforced pre-merge to keep ESLint clean (`--max-warnings=0`)
-- `pnpm test` – Vitest suite (jsdom environment) for stores/composables
-- `pnpm build` – Nuxt production build (SSR + client bundles)
+```sh
+bun run build
+```
 
-## Additional resources
+### Run Unit Tests with [Vitest](https://vitest.dev/)
 
-- [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction)
-- Backend contracts live in `docs/API.md`; generated types sync via the `@openguild/backend-types` alias (see `nuxt.config.ts`)
+```sh
+bun test:unit
+```
+
+### Lint with [ESLint](https://eslint.org/)
+
+```sh
+bun lint
+```

@@ -85,7 +85,7 @@ watch(
       </template>
     </USlideover>
 
-    <div class="h-full flex flex-1 flex-col" v-show="showAppShell">
+    <div class="h-full flex flex-1 flex-col" v-if="showAppShell">
       <AppTopbar
         :channel-name="activeChannel?.label || ''"
         :topic="activeChannel?.description || ''"

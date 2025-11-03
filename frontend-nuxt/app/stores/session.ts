@@ -14,6 +14,16 @@ const STORAGE_KEY = 'openguild.session.v1';
 const ACCESS_REFRESH_THRESHOLD_MS = 60_000;
 const PROFILE_ENDPOINTS = ['/client/v1/users/me', '/users/me'] as const;
 
+declare global {
+  interface Window {
+    __NUXT__?: {
+      payload?: {
+        serverRendered?: boolean;
+      };
+    };
+  }
+}
+
 let resolvedProfileEndpoint: string | null = null;
 let refreshPromise: Promise<boolean> | null = null;
 
@@ -330,47 +340,60 @@ const writeToStorage = (value: PersistedSession) => {
   }
 };
 
+const baseState = (): SessionState => ({
+  identifier: '',
+  deviceId: '',
+  deviceName: '',
+  tokens: null,
+  profile: null,
+  loading: false,
+  error: null,
+  fieldErrors: {},
+  hydrated: false,
+  profileLoading: false,
+  profileError: null,
+  profileFetchedAt: null,
+  refreshing: false,
+  refreshError: null,
+});
+
 const initialState = (): SessionState => {
+  const state = baseState();
+
   if (import.meta.server) {
-    return {
-      identifier: '',
-      deviceId: '',
-      deviceName: '',
-      tokens: null,
-      profile: null,
-      loading: false,
-      error: null,
-      fieldErrors: {},
-      hydrated: false,
-      profileLoading: false,
-      profileError: null,
-      profileFetchedAt: null,
-      refreshing: false,
-      refreshError: null,
-    };
+    return state;
+  }
+
+  const isServerRenderedHydration =
+    typeof window !== 'undefined' &&
+    Boolean(window.__NUXT__?.payload?.serverRendered);
+
+  if (isServerRenderedHydration) {
+    return state;
   }
 
   const persisted = readFromStorage();
+  if (!persisted) {
+    return {
+      ...state,
+      hydrated: true,
+    };
+  }
+
   const tokens =
-    persisted?.tokens && isIsoFuture(persisted.tokens.accessExpiresAt)
+    persisted.tokens && isIsoFuture(persisted.tokens.accessExpiresAt)
       ? persisted.tokens
       : null;
 
   return {
-    identifier: persisted?.identifier ?? '',
-    deviceId: persisted?.deviceId ?? '',
-    deviceName: persisted?.deviceName ?? '',
+    ...state,
+    identifier: persisted.identifier ?? '',
+    deviceId: persisted.deviceId ?? '',
+    deviceName: persisted.deviceName ?? '',
     tokens,
-    profile: persisted?.profile ?? null,
-    loading: false,
-    error: null,
-    fieldErrors: {},
+    profile: persisted.profile ?? null,
     hydrated: true,
-    profileLoading: false,
-    profileError: null,
-    profileFetchedAt: persisted?.profile ? Date.now() : null,
-    refreshing: false,
-    refreshError: null,
+    profileFetchedAt: persisted.profile ? Date.now() : null,
   };
 };
 

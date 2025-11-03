@@ -1,9 +1,13 @@
-import type { Config } from 'tailwindcss'
+import type { Config } from 'tailwindcss';
 
 const config: Config = {
   content: [
-    './index.html',
-    './src/**/*.{vue,js,ts,jsx,tsx}',
+    './app/components/**/*.{vue,js,ts}',
+    './app/layouts/**/*.{vue,js,ts}',
+    './app/pages/**/*.{vue,js,ts}',
+    './app/composables/**/*.{js,ts}',
+    './app/stores/**/*.{js,ts}',
+    './app/plugins/**/*.{js,ts}',
   ],
   theme: {
     extend: {
@@ -54,6 +58,6 @@ const config: Config = {
     },
   },
   plugins: [],
-}
+};
 
-export default config
+export default config;
