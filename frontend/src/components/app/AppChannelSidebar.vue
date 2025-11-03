@@ -3,10 +3,10 @@ import { computed } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
-import BaseAvatar from '~/components/ui/BaseAvatar.vue'
-import BaseBadge from '~/components/ui/BaseBadge.vue'
-import BaseButton from '~/components/ui/BaseButton.vue'
-import BaseTooltip from '~/components/ui/BaseTooltip.vue'
+import Avatar from '@/components/ui/Avatar.vue'
+import Badge from '@/components/ui/Badge.vue'
+import Button from '@/components/ui/Button.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
 import { useSessionStore } from '~/stores/session'
 
 interface ChannelEntry {
@@ -124,7 +124,7 @@ const groupedChannels = computed(() => {
           </p>
           <p class="text-xs text-slate-500">Internal build</p>
         </div>
-        <BaseButton
+        <Button
           icon="i-heroicons-cog-6-tooth"
           color="neutral"
           variant="ghost"
@@ -132,18 +132,18 @@ const groupedChannels = computed(() => {
         />
       </div>
 
-      <BaseTooltip text="Create channel" placement="right">
-        <template #trigger>
-          <BaseButton
+      <Tooltip text="Create channel" placement="right">
+        <template #content>
+          <Button
             color="info"
             variant="soft"
             class="mt-6 w-full justify-center"
             icon="i-heroicons-plus-circle"
           >
             New channel
-          </BaseButton>
+          </Button>
         </template>
-      </BaseTooltip>
+      </Tooltip>
 
       <USeparator class="mt-4 opacity-50" />
 
@@ -163,9 +163,9 @@ const groupedChannels = computed(() => {
                   <span>{{ channel.label }}</span>
                 </div>
                 <div v-if="channel.badge">
-                  <BaseBadge :color="channel.badge.color" size="sm">
+                  <Badge :color="channel.badge.color" size="sm">
                     {{ channel.badge.label }}
-                  </BaseBadge>
+                  </Badge>
                 </div>
               </RouterLink>
             </li>
@@ -177,7 +177,7 @@ const groupedChannels = computed(() => {
     <div>
       <USeparator class="opacity-50" />
       <div class="flex items-center gap-3 p-2">
-        <BaseAvatar :name="accountLabel" size="sm" :src="avatarUrl" />
+        <Avatar :name="accountLabel" size="sm" :src="avatarUrl" />
         <div class="flex-1 text-sm">
           <p class="font-semibold text-white">
             {{ accountLabel }}
@@ -189,7 +189,7 @@ const groupedChannels = computed(() => {
             {{ accountStatus }}
           </p>
         </div>
-        <BaseButton
+        <Button
           icon="i-heroicons-arrow-left-on-rectangle"
           variant="ghost"
           color="neutral"

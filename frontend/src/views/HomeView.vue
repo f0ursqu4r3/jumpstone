@@ -122,7 +122,6 @@ const backendErrorMessage = computed(() => errorRef.value ?? '')
 
 const refreshBackend = () => systemStore.fetchBackendStatus(true)
 
-const readiness = computed(() => readinessRef.value)
 const readinessStatus = computed(() => statusRef.value)
 const readinessBadgeColor = computed(() => {
   if (readinessStatus.value === 'ready') {
@@ -256,7 +255,7 @@ const refreshProfile = async () => {
 <template>
   <div class="space-y-10">
     <section
-      class="relative overflow-hidden rounded-3xl border border-slate-800/50 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-950/60 px-8 py-10 shadow-xl shadow-slate-950/40"
+      class="relative overflow-hidden rounded-3xl border border-slate-800/50 bg-linear-to-br from-slate-900 via-slate-950 to-slate-950/60 px-8 py-10 shadow-xl shadow-slate-950/40"
     >
       <div class="relative z-10 max-w-3xl space-y-4">
         <UBadge variant="soft" color="info" label="Milestone F0" />

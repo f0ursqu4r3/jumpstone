@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
-import BaseButton from '~/components/ui/BaseButton.vue'
-import BaseInput from '~/components/ui/BaseInput.vue'
+import Button from '@/components/ui/Button.vue'
+import Input from '@/components/ui/Input.vue'
 import { useSessionStore } from '~/stores/session'
 
 const props = defineProps<{
@@ -51,26 +51,21 @@ const handleAccountAction = async () => {
       </div>
     </div>
     <div class="flex items-center gap-3">
-      <BaseInput
+      <Input
         placeholder="Search"
         icon="i-heroicons-magnifying-glass-20-solid"
         color="neutral"
         variant="soft"
         class="hidden w-64 lg:block"
       />
-      <BaseButton
+      <Button
         icon="i-heroicons-bell-alert"
         color="neutral"
         variant="ghost"
         aria-label="Notifications"
       />
-      <BaseButton
-        icon="i-heroicons-queue-list"
-        color="neutral"
-        variant="ghost"
-        aria-label="Inbox"
-      />
-      <BaseButton
+      <Button icon="i-heroicons-queue-list" color="neutral" variant="ghost" aria-label="Inbox" />
+      <Button
         v-if="!isAuthenticated"
         color="info"
         variant="soft"
@@ -78,8 +73,8 @@ const handleAccountAction = async () => {
         @click="handleAccountAction"
       >
         Sign in
-      </BaseButton>
-      <BaseButton
+      </Button>
+      <Button
         v-else
         color="neutral"
         variant="ghost"
@@ -87,7 +82,7 @@ const handleAccountAction = async () => {
         @click="handleAccountAction"
       >
         Sign out
-      </BaseButton>
+      </Button>
     </div>
   </header>
 </template>

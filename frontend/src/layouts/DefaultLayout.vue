@@ -6,7 +6,7 @@ import { storeToRefs } from 'pinia'
 import AppChannelSidebar from '~/components/app/AppChannelSidebar.vue'
 import AppGuildRail from '~/components/app/AppGuildRail.vue'
 import AppTopbar from '~/components/app/AppTopbar.vue'
-import BaseButton from '~/components/ui/BaseButton.vue'
+import Button from '@/components/ui/Button.vue'
 import { useChannelStore } from '~/stores/channels'
 import { useGuildStore } from '~/stores/guilds'
 import { useSessionStore } from '~/stores/session'
@@ -105,7 +105,7 @@ watch(
         :topic="activeChannel?.description || ''"
       />
       <main
-        class="flex-1 overflow-y-auto bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950/80"
+        class="flex-1 overflow-y-auto bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
       >
         <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-10">
           <slot />
@@ -117,7 +117,7 @@ watch(
     </div>
 
     <div v-if="showAppShell" class="fixed left-4 top-4 z-40 flex items-center gap-2 lg:hidden">
-      <BaseButton
+      <Button
         icon="i-heroicons-bars-3"
         color="neutral"
         variant="ghost"

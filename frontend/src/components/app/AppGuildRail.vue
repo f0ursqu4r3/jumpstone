@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import BaseButton from '~/components/ui/BaseButton.vue'
-import BaseTooltip from '~/components/ui/BaseTooltip.vue'
+import Button from '@/components/ui/Button.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
 
 interface GuildSummary {
   id: string
@@ -33,12 +33,7 @@ const hasActiveGuild = computed(() => props.guilds.some((guild) => guild.active)
     </RouterLink>
     <div class="flex w-full flex-col gap-2">
       <USeparator class="opacity-50" />
-      <BaseTooltip
-        v-for="guild in props.guilds"
-        :key="guild.id"
-        :text="guild.name"
-        placement="right"
-      >
+      <Tooltip v-for="guild in props.guilds" :key="guild.id" :text="guild.name" placement="right">
         <template #trigger>
           <div class="relative">
             <button
@@ -59,12 +54,12 @@ const hasActiveGuild = computed(() => props.guilds.some((guild) => guild.active)
             </span>
           </div>
         </template>
-      </BaseTooltip>
+      </Tooltip>
 
       <USeparator v-if="props.guilds.length > 0" class="opacity-50" />
 
       <div class="relative flex w-full justify-center">
-        <BaseButton
+        <Button
           icon="i-heroicons-plus"
           color="neutral"
           variant="ghost"
@@ -74,7 +69,7 @@ const hasActiveGuild = computed(() => props.guilds.some((guild) => guild.active)
       </div>
     </div>
     <div class="mt-auto flex w-full flex-col gap-3">
-      <BaseButton
+      <Button
         icon="i-heroicons-ellipsis-horizontal"
         color="neutral"
         variant="ghost"
