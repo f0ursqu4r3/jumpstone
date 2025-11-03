@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import Button from '@/components/ui/Button.vue'
-import Tooltip from '@/components/ui/Tooltip.vue'
+import Badge from '@/components/ui/Badge.vue'
 
 interface GuildSummary {
   id: string
@@ -26,35 +26,39 @@ const hasActiveGuild = computed(() => props.guilds.some((guild) => guild.active)
   >
     <RouterLink
       class="flex size-10 items-center justify-center rounded-xl bg-slate-800 text-lg font-semibold text-slate-200 transition hover:rounded-3xl hover:bg-sky-500 hover:text-white"
-      :class="{ 'rounded-3xl bg-sky-500 text-white': !hasActiveGuild }"
+      :class="{ 'rounded-3xl bg-primary-500 text-white': !hasActiveGuild }"
       to="/"
     >
       OG
     </RouterLink>
     <div class="flex w-full flex-col gap-2">
       <USeparator class="opacity-50" />
-      <Tooltip v-for="guild in props.guilds" :key="guild.id" :text="guild.name" placement="right">
-        <template #trigger>
-          <div class="relative">
-            <button
-              type="button"
-              class="flex size-12 items-center justify-center rounded-xl bg-slate-800 text-sm font-semibold uppercase transition duration-500 hover:bg-brand-500/50 hover:text-white"
-              :class="{
-                'rounded-3xl border-2 border-brand-500 bg-brand-500 shadow-md shadow-brand-500/50':
-                  guild.active,
-              }"
-            >
-              {{ guild.initials }}
-            </button>
-            <span
-              v-if="guild.notificationCount"
-              class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-brand-600 text-[8pt] font-semibold"
-            >
-              {{ guild.notificationCount }}
-            </span>
-          </div>
-        </template>
-      </Tooltip>
+      <UTooltip
+        v-for="guild in props.guilds"
+        :key="guild.id"
+        :text="guild.name"
+        :content="{ side: 'right' }"
+      >
+        <div class="relative">
+          <Button
+            type="button"
+            class="flex size-12 items-center justify-center rounded-xl bg-slate-800 text-sm font-semibold uppercase transition duration-500 hover:bg-brand-500/50 hover:text-white"
+            :class="{
+              'rounded-3xl border-2 border-brand-500 bg-brand-500 shadow-md shadow-brand-500/50':
+                guild.active,
+            }"
+          >
+            {{ guild.initials }}
+          </Button>
+          <Badge
+            v-if="guild.notificationCount"
+            class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full text-[8pt] font-semibold"
+            variant="solid"
+          >
+            {{ guild.notificationCount }}
+          </Badge>
+        </div>
+      </UTooltip>
 
       <USeparator v-if="props.guilds.length > 0" class="opacity-50" />
 

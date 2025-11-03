@@ -6,7 +6,6 @@ import { storeToRefs } from 'pinia'
 import Avatar from '@/components/ui/Avatar.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
-import Tooltip from '@/components/ui/Tooltip.vue'
 import { useSessionStore } from '~/stores/session'
 
 interface ChannelEntry {
@@ -86,7 +85,26 @@ const handleSignOut = async () => {
 }
 
 const groupedChannels = computed(() => {
-  const buckets: Record<'text' | 'voice', { label: string; children: Array<any> }> = {
+  type BucketChild = {
+    label: string
+    icon: string
+    to: string
+    badge?: {
+      label: string
+      color:
+        | 'primary'
+        | 'secondary'
+        | 'info'
+        | 'success'
+        | 'warning'
+        | 'error'
+        | 'neutral'
+        | undefined
+    }
+    description?: string
+  }
+
+  const buckets: Record<'text' | 'voice', { label: string; children: BucketChild[] }> = {
     text: { label: 'Text Channels', children: [] },
     voice: { label: 'Voice Channels', children: [] },
   }
@@ -132,18 +150,16 @@ const groupedChannels = computed(() => {
         />
       </div>
 
-      <Tooltip text="Create channel" placement="right">
-        <template #content>
-          <Button
-            color="info"
-            variant="soft"
-            class="mt-6 w-full justify-center"
-            icon="i-heroicons-plus-circle"
-          >
-            New channel
-          </Button>
-        </template>
-      </Tooltip>
+      <UTooltip text="Create channel" placement="right" :content="{ side: 'right' }">
+        <Button
+          color="info"
+          variant="soft"
+          class="mt-6 w-full justify-center"
+          icon="i-heroicons-plus-circle"
+        >
+          New channel
+        </Button>
+      </UTooltip>
 
       <USeparator class="mt-4 opacity-50" />
 

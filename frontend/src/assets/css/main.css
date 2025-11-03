@@ -6,5 +6,5 @@
 body {
   font-family: var(--font-family-base);
   background-color: var(--color-surface-950);
-  color: #e2e8f0;
+  color: var(--color-surface-900);
 }
