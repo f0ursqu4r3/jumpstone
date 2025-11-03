@@ -39,13 +39,13 @@ const hasActiveGuild = computed(() =>
         :text="guild.name"
         placement="right"
       >
-        <template #trigger>
+        <template #content>
           <div class="relative">
             <button
               type="button"
-              class="flex size-12 items-center justify-center rounded-xl bg-slate-800 text-sm font-semibold uppercase transition hover:rounded-3xl hover:bg-sky-500 hover:text-white"
+              class="flex size-12 items-center justify-center rounded-xl bg-slate-800 text-sm font-semibold uppercase transition duration-500 hover:bg-primary/50 hover:cursor-pointer"
               :class="{
-                'rounded-3xl bg-sky-500 text-white shadow-lg shadow-sky-500/30':
+                'rounded-3xl bg-primary shadow-md shadow-primary/50 border-2 border-primary hover:cursor-none':
                   guild.active,
               }"
             >
@@ -53,7 +53,7 @@ const hasActiveGuild = computed(() =>
             </button>
             <span
               v-if="guild.notificationCount"
-              class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-semibold text-white"
+              class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-primary-800 text-[8pt] font-semibold"
             >
               {{ guild.notificationCount }}
             </span>

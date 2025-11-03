@@ -17,6 +17,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@openguild/backend-types': backendTypesDir,
+      '~': resolve(rootDir, 'app'),
     },
   },
 });

@@ -3,9 +3,16 @@ import { useAttrs } from 'vue';
 
 const props = withDefaults(
   defineProps<{
-    color?: string;
-    variant?: 'solid' | 'soft' | 'ghost' | 'outline' | 'link';
-    size?: 'xs' | 'sm' | 'md' | 'lg';
+    color?:
+      | 'primary'
+      | 'secondary'
+      | 'success'
+      | 'info'
+      | 'warning'
+      | 'error'
+      | 'neutral';
+    variant?: 'solid' | 'soft' | 'ghost' | 'outline' | 'link' | 'subtle';
+    size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
     block?: boolean;
     loading?: boolean;
     icon?: string;

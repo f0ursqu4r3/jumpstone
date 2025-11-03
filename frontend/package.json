@@ -1,5 +1,5 @@
 {
-  "name": "echelon",
+  "name": "openguild",
   "type": "module",
   "private": true,
   "scripts": {
@@ -30,7 +30,8 @@
     "@iconify-json/lucide": "^1.2.71",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/vue": "8.1.0",
-    "@types/node": "^24.9.2",
+    "@types/node": "24.10.0",
+    "@vitejs/plugin-vue": "^6.0.1",
     "jsdom": "27.1.0",
     "vitest": "4.0.6"
   }

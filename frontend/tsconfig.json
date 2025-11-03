@@ -5,7 +5,9 @@
     "baseUrl": ".",
     "paths": {
       "@openguild/backend-types": ["./types/generated/index"],
-      "@openguild/backend-types/*": ["./types/generated/*"]
+      "@openguild/backend-types/*": ["./types/generated/*"],
+      "~/*": ["./app/*"],
+      "@/*": ["./app/*"]
     }
   },
   "references": [

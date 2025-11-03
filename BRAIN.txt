@@ -55,7 +55,7 @@ Outstanding follow-ups:
 - Frontend Week 1 timeline refreshed (`docs/FRONTEND_TIMELINE.md`): layout shell + session store landed, and workflow scaffolding is now in place.
   * README parity docs, `.env.example`, and the `@openguild/backend-types` alias (`pnpm types:sync`) landed.
   * Guild/channel Pinia stores now back the layout (`frontend/app/stores/guilds.ts`, `frontend/app/stores/channels.ts`); inline mocks removed.
-  * Design tokens shipped via `frontend/app/assets/css/tokens.css`, `frontend/tailwind.config.ts`, and refreshed `frontend/app/app.config.ts`; core wrappers live in `frontend/app/components/ui/*` (Storybook/Chromatic still TBD).
+  * Design tokens shipped via `frontend/app/assets/css/tokens.css`, `frontend/tailwind.config.ts`, and refreshed `frontend/app/app.config.ts`; core wrappers live in `frontend/app/components/ui/*` with Storybook scaffolding (`frontend/.storybook`, `pnpm storybook`). Chromatic automation still TBD.
   * Vitest + Testing Library harness now covers the stores and API client (`frontend/tests/api-client.test.ts` ensures header + error handling).
 - Extend RBAC/rate limiting with configurable per-IP quotas and abuse detection (per-user & per-IP limits now in server).
 - Flesh out audit logging story (middleware placeholder still TODO).

@@ -1,12 +1,6 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useApiClient } from '../app/composables/useApiClient';
+import { $fetch as ofetch } from 'ofetch';
 
 const ensureFreshAccessToken = vi.fn();
 const sessionState = {
@@ -21,6 +15,7 @@ vi.mock('~/stores/session', () => ({
 }));
 
 const originalFetch = globalThis.fetch;
+const originalNuxtFetch = (globalThis as any).$fetch;
 
 describe('useApiClient', () => {
   beforeEach(() => {
@@ -28,6 +23,7 @@ describe('useApiClient', () => {
     sessionState.accessToken = 'test-token';
     sessionState.deviceId = 'device-123';
     ensureFreshAccessToken.mockClear();
+    (globalThis as any).$fetch = ofetch;
 
     // Nuxt runtime config shim.
     vi.stubGlobal('useRuntimeConfig', () => ({
@@ -43,6 +39,11 @@ describe('useApiClient', () => {
       globalThis.fetch = originalFetch;
     } else {
       delete (globalThis as any).fetch;
+    }
+    if (originalNuxtFetch) {
+      (globalThis as any).$fetch = originalNuxtFetch;
+    } else {
+      delete (globalThis as any).$fetch;
     }
     vi.unstubAllGlobals();
   });
