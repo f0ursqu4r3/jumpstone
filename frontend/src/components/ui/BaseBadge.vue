@@ -5,7 +5,7 @@ const props = withDefaults(
   defineProps<{
     label?: string
     color?: 'primary' | 'secondary' | 'info' | 'success' | 'warning' | 'error' | 'neutral'
-    variant?: 'solid' | 'soft' | 'outline' | 'subtle' | 'ghost' | 'link'
+    variant?: 'solid' | 'soft' | 'outline' | 'subtle'
     size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   }>(),
   {

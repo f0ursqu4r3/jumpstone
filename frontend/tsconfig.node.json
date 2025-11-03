@@ -15,7 +15,8 @@
     "moduleResolution": "Bundler",
     "types": ["node"],
     "paths": {
-      "#build/ui": ["./node_modules/.nuxt-ui/ui"]
+      "#build/ui": ["./node_modules/@nuxt/ui/.nuxt/ui/index"],
+      "#build/ui/*": ["./node_modules/@nuxt/ui/.nuxt/ui/*"]
     }
   }
 }

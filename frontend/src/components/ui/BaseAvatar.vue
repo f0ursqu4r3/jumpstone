@@ -4,13 +4,12 @@ import { useAttrs } from 'vue'
 const props = withDefaults(
   defineProps<{
     name?: string
-    src?: string | null
-    size?: 'xs' | 'sm' | 'md' | 'lg'
+    src?: string | undefined
+    size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
     alt?: string
   }>(),
   {
     size: 'sm',
-    src: null,
     alt: '',
   },
 )
