@@ -1,84 +1,62 @@
-Context Snapshot (updated 2025-10-25 23:55Z)
------------------------------------
-- Backend focus: openguild-server crate (Rust, Axum).
-- Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
-- Key recent features:
-  * Frontend Week 4: Vue client guild/channel stores hydrate from the Axum APIs (DefaultLayout syncs `?guild=`/`?channel=`), `AppMessageTimeline` renders `/channels/{id}/events`, and vitest coverage lives in `frontend/src/stores/__tests__`.
-  * Structured ServerConfig loader with metrics + log format options.
-  * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (exports `openguild_http_requests_total` + `openguild_db_ready`).
-  * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
-  * CLI overrides via Clap (`--bind-addr`, `--host`, `--port`, `--log-format`, metrics flags, `--database-url`, `--session-signing-key`, `--server-name`).
-  * ServerConfig tracks canonical `server_name` surfaced in event metadata; env/CLI wiring and docs updated.
-  * Storage crate exposes clonable `StoragePool`; SQLx migration smoke test (skips unless `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` set).
-  * Session module provides `/sessions/login` with validation + ed25519-signed tokens; persists to Postgres when available.
-  * Messaging core (Week 4): REST CRUD for guilds/channels, optimistic persistence, WebSocket fan-out with backpressure + replay window; in-memory fallback mirrors semantics when DB absent.
-  * `openguild-core::messaging` adds payload builders + proptests; storage crate wires SQLx repositories.
-  * Event IDs derived from BLAKE3 hash of canonical payload (base58 `$...`); docs/API + PROTOCOL aligned.
-  * Metrics exporter honours `metrics.bind_addr`; `/metrics` stays on main router otherwise.
-  * tower-http request ID middleware runs globally (propagation + logging); metrics use `MatchedPath`.
-  * Week 6/7 security: messaging REST/WS routes require bearer tokens; `sender` must match authenticated user. Integration tests cover missing auth and sender mismatches.
-  * Messaging validation + enforcement: guild/channel names trimmed + capped at 64 chars; message bodies capped at 4,000 chars. Violations log warnings and increment `openguild_messaging_rejections_total` with reason labels (`unauthorized`, `guild_name_empty`, `guild_name_length`, `channel_name_empty`, `channel_name_length`, `message_empty`, `message_length`, `sender_mismatch`, `message_rate_limit`, `ip_rate_limit`, `websocket_limit`).
-  * CLI overrides now expose `--messaging-max-messages-per-user-per-window`, `--messaging-max-messages-per-ip-per-window`, and `--messaging-rate-limit-window-secs`, keeping server binaries in sync with ServerConfig messaging knobs.
-  * Observability guide now outlines request ID usage, staging/stable promotion steps, and rejection metric alert thresholds (docs/OBSERVABILITY.md refresh).
-  * Docker Compose sets `OPENGUILD_SERVER__SERVER_NAME=dev.openguild.local`; operations playbook highlights per-environment overrides and log sink requirements.
-  * Testing matrix captured in `docs/TESTING.md` (commands mapped to Week 1-7 features; use `cargo xtask test` + `cargo xtask ci-metrics-smoke`).
-  * WebSocket concurrency enforced via global semaphore; new integration test asserts HTTP 429 when capacity reached.
-  * Global security headers applied via tower-http set-header layer (CSP `default-src 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`); health test validates defaults.
-  * Threat model expanded with messaging auth, validation, and metrics exposure; operations playbook documents header defaults.
-  * Persistent credential storage includes Argon2-backed `UserRepository`; `/users/register` and `seed-user` shipped.
-  * Storage crate now ships SQLx-backed tests for `MessagingRepository` and `UserRepository` (plus helper cleanup); they skip unless `OPENGUILD_TEST_DATABASE_URL`/`DATABASE_URL` is exported so CI/devs can opt in.
-  * Lightweight crates (`openguild-media`, `openguild-sfu-client`) have direct unit tests to keep coverage complete after the latest pushes.
-  * Developer tooling: `backend/xtask` crate for fmt/lint/test/ci workflows; legacy Makefile wraps xtask.
-  * Refresh-token lifecycle implemented (SigningKeyRing + refresh session store); login responses emit access+refresh tokens.
-  * Federation groundwork (Week 8): new `FederationConfig` trusted server list, `FederationService` signature verification with telemetry, and `POST /federation/transactions` route + tests for enabled/disabled and success/failure flows. Accepted PDUs now persist via `MessagingService::ingest_event`, broadcasting to local clients when the channel UUID exists. Docs (SETUP/API/PROTOCOL) cover trusted peer config, canonical schema fields, and transaction payloads/status codes.
-  * Canonical event schema now carries an explicit `schema_version` (default v1); builder/test coverage ensures hashing inputs change predictably when we bump versions. Docs describe the envelope so downstream services know what to expect.
-  * `GET /channels/{channel_id}/events` provides authenticated timeline pagination with `limit`/`since` filters so clients can sync without WebSockets; responses reuse canonical events and integration tests cover sequencing/limits.
-  * `/federation/channels/{channel_id}/events` mirrors the timeline slice for trusted homeservers (requires `X-OpenGuild-Origin`); signed peers can now page local history after catching up via `/federation/transactions`.
-  * MLS bootstrap: configurable key store generates URL-safe base64 packages for listed identities, available via `/mls/key-packages`; tests cover rotation semantics.
-  * `docs/TIMELINE.md` updated with completed Week 8 federation foundations plus a Week 9+ MLS roadmap; keep it in sync with `docs/TESTING.md` as new coverage lands.
-  * Week 9 MLS persistence: added `mls_key_packages` table + repository, server now hydrates/saves packages from Postgres (falls back to in-memory with a log), persists future rotations, and exposes `POST /mls/key-packages/{identity}/rotate` for operators.
-  * MLS handshake test vectors land via `GET /mls/handshake-test-vectors`; responses include deterministic signatures verified in unit/integration tests so clients can validate their verification flow.
-  * Frontend timeline captured in `docs/FRONTEND_TIMELINE.md`; keep it in lock-step with backend milestones during weekly syncs.
-- Week 5 observability prep:
-  * Request IDs flow through HTTP + WS traces (tests capture propagation).
-  * Added latency histograms, messaging counters, WebSocket queue depth gauges.
-  * MetricsContext scaffolding ready; need alert tuning + dashboards post-Prometheus rollout.
-  * WebSocket fan-out still needs richer event metadata dashboards.
-- Tests: `cargo test -p openguild-core`, `cargo test -p openguild-storage`, `cargo test -p openguild-server` (WS integration requires Tokio).
-- Migrations: `backend/migrations/0001_initial.sql`, `0002_create_sessions.sql`, `0003_messaging.sql`, `0004_create_users.sql`.
-- Docs touched: docs/SETUP.md (session key + DB persistence), docs/TIMELINE.md (Weeks 1-7 milestones), docs/OBSERVABILITY.md (request ID guidance, staging rollout, alert thresholds), docs/OPERATIONS.md (deploy playbook + server_name/log pipeline guidance), docs/API.md (auth requirements and limits), docs/PROTOCOL.md (sender identity now UUID), docs/THREATMODEL.md (messaging auth + observability), docs/CI_PLAN.md (matrix outline).
-- Tooling: prefer `cargo xtask fmt|lint|test|ci`; legacy Makefile targets pass-through.
+# BRAIN Snapshot · Updated 2025-11-03
 
-Outstanding follow-ups:
-- Roll Alertmanager into staging/prod and hook rejection metric alerts once the observability stack is deployed beyond local.
-- Share the refreshed request ID guidance with frontend/ops and confirm staging/prod log pipelines retain the field.
-- Document bootstrap workflow in docs/SETUP.md now that `/users/register` and refresh tokens ship; revisit refresh revoke/rotate design once telemetry is in place.
-- Frontend Week 1 timeline refreshed (`docs/FRONTEND_TIMELINE.md`): layout shell + session store landed, and workflow scaffolding is now in place.
-  * README parity docs, `.env.example`, and the `@openguild/backend-types` alias (`pnpm types:sync`) landed.
-  * Guild/channel Pinia stores now back the layout (`frontend/app/stores/guilds.ts`, `frontend/app/stores/channels.ts`); inline mocks removed.
-  * Design tokens shipped via `frontend/app/assets/css/tokens.css`, `frontend/tailwind.config.ts`, and refreshed `frontend/app/app.config.ts`; core wrappers live in `frontend/app/components/ui/*` with Storybook scaffolding (`frontend/.storybook`, `pnpm storybook`). Chromatic automation still TBD.
-  * Vitest + Testing Library harness now covers the stores and API client (`frontend/tests/api-client.test.ts` ensures header + error handling).
-- Extend RBAC/rate limiting with configurable per-IP quotas and abuse detection (per-user & per-IP limits now in server).
-- Flesh out audit logging story (middleware placeholder still TODO).
-- CI workflows still missing (see docs/CI_PLAN.md).
-- Ensure DB-backed tests keep running in environments with `OPENGUILD_TEST_DATABASE_URL`; add guidance to docs/TESTING.md when documenting the opt-in flag set.
-- Capture CLI/env stories for future federation key rotation tooling, plus admin UX for trusted peer CRUD and recovery when remote PDUs target unknown channels (today they're rejected with delivery errors).
-- Week 10+ federation/MLS next steps: evaluate `openmls` and tackle SFU signalling stretch items (see `docs/TIMELINE.md`); handshake vectors are live.
+## Repository Overview
+- Mono-repo for OpenGuild: Rust (Axum) backend under `backend/`, Vue 3 + Vite web client under `frontend/`, supporting docs in `docs/`.
+- Development workflow standardised around `cargo xtask` for backend chores and `bun` scripts for the frontend (`dev`, `lint`, `test:unit`, `type-check`, `build`).
+- Environment configuration follows “config file → env vars → CLI flags” on the server side; the client targets `VITE_API_BASE_URL`.
 
-Notes for next agent (2025-10-25 23:55Z):
-- Align frontend on sender UUID requirement and rejection reason handling.
-- Ensure reverse proxies/CDNs preserve security headers; update deployment manifests as needed.
-- Coordinate with infra on the documented Alertmanager rollout plan and confirm rejection metric alerts page correctly.
-- Circulate the refreshed OBSERVABILITY/OPERATIONS docs to ops + frontend; capture feedback once staging log pipelines are verified.
-- Preserve readiness behaviour (pooled DB handle retained) during refactors.
-- Keep CI plan progress visible; aim to land workflows soon.
-- Maintain this BRAIN file as the handoff channel.
- - New storage tests rely on live Postgres; before running `cargo test --workspace` in CI or shared dev environments, set `OPENGUILD_TEST_DATABASE_URL` (or fallback `DATABASE_URL`) or expect them to skip with a log message.
- - Federated endpoints now depend on `ServerConfig.federation.trusted_servers` entries (server name + ed25519 key id); CLI/env setup is documented, but consider adding admin tooling for CRUD operations on trusted peers plus key rotation runbooks.
-- Next focus: evaluate `openmls` integration paths and keep SFU signalling stretch goals visible; consider admin tooling for MLS persistence (bulk rotation, identity CRUD).
+## Backend (Rust / Axum)
+- **Authentication & Sessions**
+  - `/users/register`, `/sessions/login`, `/sessions/refresh`, `/sessions/revoke` exposed; sessions emit Ed25519-signed access tokens and refresh tokens bound to `device_id`.
+  - Device metadata persisted when storage is available; refresh rotation with revocation on mismatches.
+- **Messaging Core**
+  - REST: `/guilds`, `/guilds/{guild_id}/channels`, `/channels/{channel_id}/messages`, `/channels/{channel_id}/events`.
+  - WebSocket fan-out at `/channels/{channel_id}/ws` with backpressure, replay window, global connection semaphore, sender validation, and rate limits (per-user & per-IP).
+  - Validation caps: guild/channel names <= 64 chars, message content <= 4,000 chars; rejections instrumented via metrics.
+- **Federation (Week 8 groundwork)**
+  - `FederationService`, trusted server list, `/federation/transactions` ingress, `/federation/channels/{channel_id}/events` for remote pagination.
+  - Canonical event envelope carries `schema_version` and BLAKE3-derived IDs.
+- **Observability & Ops**
+  - Request ID middleware propagates across logs/metrics; optional Prometheus exporter, health (`/ready`, `/health`), version route.
+  - Security headers (CSP, Referrer-Policy, etc.) enforced globally.
+  - SQLx storage layer with migration smoke tests (`cargo xtask ci-metrics-smoke`, `cargo xtask test`).
+  - CLI overrides for bind address, metrics, messaging rate limits, database URL, server name.
+  - Threat model and operations playbooks documented under `docs/`.
 
-Week 6 current gaps / TODOs:
-- [x] Document refreshed login contract (device metadata + refresh tokens) and coordinate with frontend.
-- [x] Plan refresh revoke/rotate flows (API + CLI stubs).
-- [x] Enforce messaging authz and baseline rate limiting (validation caps, WS semaphore).
-- [ ] Hook rejection metrics into Alertmanager once observability stack is promoted; evaluate configurable per-IP limits for operators (docs cover rollout; need staging execution).
+## Frontend (Vue 3 / Vite)
+- **Foundation (Weeks 1–3 complete)**
+  - Vue 3 + Pinia + TypeScript, Tailwind tokens, Nuxt UI component library, Vite aliases (`@/`, `~/`).
+  - Session store handles login/register, token refresh, device metadata, secure persistence.
+  - Auth views include validation, onboarding carousel with links to `docs/SETUP.md`, `docs/FRONTEND_TIMELINE.md`, `docs/TESTING.md`.
+  - Layouts: `DefaultLayout.vue` for authenticated shell, `AuthLayout.vue` for login/register.
+- **Week 4 Progress (current focus)**
+  - Guild rail and channel sidebar hydrate from backend `/guilds` + `/guilds/{id}/channels`; skeleton states during load.
+  - Query-param sync (`?guild=&channel=`) keeps deep links stable; selection handlers propagate through Pinia.
+  - New `useTimelineStore` + `AppMessageTimeline` render `/channels/{id}/events`, group messages by day, and expose manual refresh.
+  - Home dashboard refreshed with live metrics, Week 4 delivery log, and upcoming tasks; timeline CTA drives QA.
+  - Outstanding: guild creation modal, empty-state UX, timeline reactions/virtualisation (tracked in docs).
+- **Additional UI**
+  - Styleguide view for tokens/components, roadmap view, home status cards wired to system store (`/ready`, `/version`).
+
+## Testing & Tooling
+- **Backend**
+  - `cargo xtask test` (workspace), `cargo xtask ci`, `cargo xtask ci-metrics-smoke`.
+  - Targeted suites for config, readiness, messaging, federation documented in `docs/TESTING.md`.
+- **Frontend**
+  - `bun test:unit` (Vitest, jsdom). Projects for Storybook+Playwright remain opt-in via `STORYBOOK_TESTS=true`.
+  - New store coverage: `frontend/src/stores/__tests__/session.spec.ts`, `guilds.spec.ts`, `channels.spec.ts`, `timeline.spec.ts`.
+  - `bun run type-check` (vue-tsc) covers the Vite client.
+- **Docs**
+  - `docs/FRONTEND_TIMELINE.md` tracks week-by-week UI milestones; Week 4 items updated for latest work.
+  - `docs/TESTING.md` links backend/ frontend commands and coverage responsibilities.
+  - `BRIEF.md` describes product framing; `docs/OBSERVABILITY.md`, `docs/THREATMODEL.md`, `docs/OPERATIONS.md` detail ops posture.
+
+## Deployment Notes
+- Backend expects Postgres (`DATABASE_URL`) but can operate in in-memory mode for local dev; metrics optional via feature flag.
+- Frontend served by Vite dev server (`bun dev`), built assets with `bun run build`.
+- Docker Compose sets baseline env (`OPENGUILD_SERVER__SERVER_NAME=dev.openguild.local`) for local federation experiments.
+
+## Current Focus & Next Steps
+- Finish Week 4 UX parity: guild creation modal, invite-only / empty states, reaction placeholders.
+- Begin Week 5 preparations: message composer, optimistic posting, WebSocket integration on the client.
+- Maintain parity between frontend docs/tests and backend milestones; keep `docs/FRONTEND_TIMELINE.md` synced after each push.
