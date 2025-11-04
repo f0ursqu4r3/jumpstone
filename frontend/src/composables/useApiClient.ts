@@ -1,6 +1,7 @@
 import { ofetch } from 'ofetch'
 import { useSessionStore } from '~/stores/session'
 import { getRuntimeConfig } from '@/config/runtime'
+import { recordNetworkBreadcrumb } from '@/utils/telemetry'
 
 const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
   if (!headers) {
@@ -66,11 +67,31 @@ export const createApiClient = (
 
       options.headers = new Headers(headers)
     },
-    onResponseError({ response }) {
+    onResponseError({ response, options }) {
+      const requestHeaders =
+        options.headers instanceof Headers ? options.headers : new Headers(options.headers ?? {})
+      const requestId =
+        requestHeaders.get('x-request-id') ?? response.headers.get('x-request-id') ?? undefined
+      const method = (options.method ?? 'GET').toUpperCase()
+      const url = response.url
+
       console.error('API request failed', {
         status: response.status,
         statusText: response.statusText,
         body: response._data,
+        requestId,
+      })
+
+      recordNetworkBreadcrumb('api', {
+        message: `${method} ${url} failed`,
+        level: 'error',
+        data: {
+          status: response.status,
+          statusText: response.statusText,
+          requestId,
+          method,
+          url,
+        },
       })
     },
   })

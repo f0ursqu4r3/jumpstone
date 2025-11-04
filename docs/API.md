@@ -290,7 +290,7 @@ curl -X POST http://127.0.0.1:8080/channels/$CHANNEL_ID/messages \
 
 ### `GET /channels/{channel_id}/ws`
 
-Upgrades to a WebSocket that streams channel events to connected clients. Clients must supply a valid bearer token using the `Authorization` header. Unauthorized requests receive HTTP 401 before the handshake.
+Upgrades to a WebSocket that streams channel events to connected clients. Clients must supply a valid bearer token using the `Authorization` header. When running in an environment that cannot set custom headers (e.g. browser `WebSocket`), include the token as `?access_token=` — the server accepts this fallback. Unauthorized requests receive HTTP 401 before the handshake.
 
 - On connection the server replays the most recent 50 events (oldest to newest) so clients can warm their timeline.
 - New events are broadcast fan-out style using a bounded queue (capacity 256 per channel). If a client falls behind, the server closes the socket with close code `POLICY` and a short reason.
@@ -482,4 +482,3 @@ Provides deterministic test vectors so clients can validate their signature veri
 - **200** returns one entry per managed identity.
 - **401** when the bearer token is missing or invalid.
 - **501** when MLS is disabled.
-

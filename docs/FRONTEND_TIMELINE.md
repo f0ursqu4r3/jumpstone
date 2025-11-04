@@ -52,18 +52,18 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Week 5: Messaging UX & Realtime (Milestone F1)
 
-- [ ] Message composition + delivery.
-  - [ ] Build rich composer (multi-line, emoji picker stub, upload button disabled until media API lands).
-  - [ ] Emit messages via `POST /channels/{channel_id}/messages`; show optimistic updates with rollback on failure.
-  - [ ] Surface validation feedback from backend rejection reasons (length, sender mismatch, rate limits).
-- [ ] WebSocket integration.
-  - [ ] Implement WS client with exponential backoff, heartbeat, and visibility-based pause/resume.
-  - [ ] Merge incoming events into Pinia stores and append to virtualized timeline without duplicate entries.
-  - [ ] Emit typing indicator previews (placeholder API until backend support arrives).
-- [ ] Offline & error handling.
-  - [ ] Detect network issues, queue unsent messages, and display retry banners.
-  - [ ] Add Sentry breadcrumbs for API/WS failures with correlation IDs.
-  - [ ] Update Lighthouse/Performance budgets after enabling live data.
+- [x] Message composition + delivery.
+  - [x] Build rich composer (multi-line, emoji picker stub, upload button disabled until media API lands). `frontend/src/components/app/AppMessageComposer.vue` now auto-sizes, exposes emoji/upload stubs, and surfaces queue status inline.
+  - [x] Emit messages via `POST /channels/{channel_id}/messages`; show optimistic updates with rollback on failure. `frontend/src/stores/messages.ts` orchestrates optimistic inserts with Pinia, clears state on success, and falls back when the backend rejects the payload.
+  - [x] Surface validation feedback from backend rejection reasons (length, sender mismatch, rate limits). The message composer store bubbles backend messages into the composer alert and caps content to 4k characters.
+- [x] WebSocket integration.
+  - [x] Implement WS client with exponential backoff, heartbeat, and visibility-based pause/resume. `frontend/src/stores/realtime.ts` now handles reconnect backoff, heartbeats, and visibility-driven pauses while updating connectivity state.
+  - [x] Merge incoming events into Pinia stores and append to virtualized timeline without duplicate entries. Real-time envelopes route through `useTimelineStore.insertEvent` so optimistic copies reconcile when the server ACKs.
+  - [x] Emit typing indicator previews (placeholder API until backend support arrives). `useRealtimeStore.sendTypingPreview` pushes throttled previews over the socket (with HTTP fallback) and `HomeView` wires composer typing events into the store.
+- [x] Offline & error handling.
+  - [x] Detect network issues, queue unsent messages, and display retry banners. The message composer store tracks pending/failed messages, sets connectivity degradations, and the composer surfaces queue counts + retry controls.
+  - [x] Add Sentry breadcrumbs for API/WS failures with correlation IDs. API sends now log request IDs from `useMessageComposerStore`, while the realtime store records websocket lifecycle breadcrumbs for Sentry.
+  - [x] Update Lighthouse/Performance budgets after enabling live data. `frontend/lighthouse.budgets.json` captures the new budgets so CI audits account for websocket bootstrap requests.
 
 ## Week 6-7: Security, Reliability & Accessibility (Milestone F1 to F2 bridge)
 

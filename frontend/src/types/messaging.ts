@@ -30,3 +30,14 @@ export interface ChannelEventEnvelope {
   channel_id: string
   event: TimelineEventPayload
 }
+
+export interface MessageComposeRequest {
+  sender: string
+  content: string
+}
+
+export interface MessageCreateResponse {
+  sequence: number
+  event_id: string
+  created_at: string
+}

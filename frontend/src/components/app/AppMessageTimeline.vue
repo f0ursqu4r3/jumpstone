@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { ChannelEventEnvelope } from '@/types/messaging'
+import type { TimelineEntry, TimelineStatus } from '@/stores/timeline'
 
 const props = defineProps<{
   channelName: string
-  events: ChannelEventEnvelope[]
+  events: TimelineEntry[]
   loading?: boolean
   error?: string | null
 }>()
 
 const emit = defineEmits<{
   (event: 'refresh'): void
+  (event: 'retry', localId: string): void
 }>()
 
-const resolveContent = (event: ChannelEventEnvelope) => {
+const resolveContent = (event: TimelineEntry) => {
   const payload = event.event.content
   if (!payload || typeof payload !== 'object') {
     return ''
@@ -40,7 +41,7 @@ const resolveContent = (event: ChannelEventEnvelope) => {
   }
 }
 
-const toDate = (event: ChannelEventEnvelope) => {
+const toDate = (event: TimelineEntry) => {
   const epoch = event.event.origin_ts
   if (typeof epoch === 'number' && Number.isFinite(epoch)) {
     return new Date(epoch)
@@ -68,19 +69,90 @@ const formatTimeLabel = (value: Date) => {
   }
 }
 
+const statusDescriptor = (status?: TimelineStatus | null) => {
+  switch (status) {
+    case 'pending':
+      return {
+        icon: 'i-heroicons-arrow-path',
+        label: 'Sending…',
+        color: 'text-sky-400',
+        spin: true,
+      }
+    case 'queued':
+      return {
+        icon: 'i-heroicons-cloud-arrow-up',
+        label: 'Queued',
+        color: 'text-amber-300',
+        spin: false,
+      }
+    case 'failed':
+      return {
+        icon: 'i-heroicons-exclamation-triangle',
+        label: 'Delivery failed',
+        color: 'text-rose-400',
+        spin: false,
+      }
+    case 'sent':
+      return {
+        icon: 'i-heroicons-check-circle',
+        label: 'Sent',
+        color: 'text-emerald-400',
+        spin: false,
+      }
+    default:
+      return {
+        icon: 'i-heroicons-clock',
+        label: 'Pending',
+        color: 'text-slate-400',
+        spin: false,
+      }
+  }
+}
+
+const baseItemClass =
+  'relative flex gap-4 rounded-2xl border p-4 transition duration-200 ease-out'
+
+const computeItemClasses = (message: { optimistic: boolean; status?: TimelineStatus }) => {
+  if (!message.optimistic) {
+    return [
+      baseItemClass,
+      'border-transparent bg-white/5 hover:border-sky-500/20 hover:bg-sky-500/5',
+    ]
+  }
+
+  if (message.status === 'failed') {
+    return [baseItemClass, 'border-rose-500/40 bg-rose-500/10']
+  }
+
+  if (message.status === 'queued') {
+    return [baseItemClass, 'border-amber-300/40 bg-amber-500/10']
+  }
+
+  if (message.status === 'sent') {
+    return [baseItemClass, 'border-emerald-400/40 bg-emerald-500/10']
+  }
+
+  return [baseItemClass, 'border-sky-500/30 bg-sky-500/10']
+}
+
 const groupedEvents = computed(() => {
   const groups: Array<{
     date: string
     items: Array<{
       id: string
+      localId?: string
       sender: string
       time: string
       content: string
       eventType: string
+      optimistic: boolean
+      status: TimelineStatus | undefined
+      statusMessage: string | null
+      statusMeta: ReturnType<typeof statusDescriptor>
     }>
   }> = []
 
-  const sorted = [...props.events].sort((a, b) => a.sequence - b.sequence)
+  const sorted = [...props.events]
 
   sorted.forEach((entry) => {
     const occurredAt = toDate(entry)
@@ -89,11 +161,16 @@ const groupedEvents = computed(() => {
     const latestGroup = groups[groups.length - 1]
 
     const record = {
-      id: `${entry.channel_id}-${entry.sequence}`,
+      id: entry.localId ?? `${entry.channel_id}-${entry.sequence}`,
+      localId: entry.localId,
       sender: entry.event.sender,
       time: timeLabel,
       content: resolveContent(entry),
       eventType: entry.event.event_type,
+      optimistic: Boolean(entry.optimistic),
+      status: entry.status,
+      statusMessage: entry.statusMessage ?? null,
+      statusMeta: statusDescriptor(entry.status),
     }
 
     if (!latestGroup || latestGroup.date !== dateLabel) {
@@ -177,7 +254,7 @@ const hasEvents = computed(() => groupedEvents.value.length > 0)
           <li
             v-for="message in group.items"
             :key="message.id"
-            class="relative flex gap-4 rounded-2xl border border-transparent bg-white/5 p-4 transition hover:border-sky-500/20 hover:bg-sky-500/5"
+            :class="computeItemClasses(message)"
           >
             <div
               class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold uppercase text-slate-200"
@@ -189,17 +266,58 @@ const hasEvents = computed(() => groupedEvents.value.length > 0)
                 <p class="text-sm font-semibold text-white">
                   {{ message.sender }}
                 </p>
-                <UBadge size="xs" variant="soft" color="neutral" :label="message.eventType" />
+                <UBadge
+                  v-if="message.eventType !== 'message'"
+                  size="xs"
+                  variant="soft"
+                  color="neutral"
+                  :label="message.eventType"
+                />
+                <UBadge
+                  v-else-if="message.optimistic"
+                  size="xs"
+                  variant="soft"
+                  color="info"
+                  label="Optimistic"
+                />
                 <span class="text-xs text-slate-500">{{ message.time }}</span>
               </div>
               <p class="text-sm text-slate-200 whitespace-pre-line break-words">
                 {{ message.content }}
               </p>
+              <div
+                v-if="message.optimistic"
+                class="flex flex-wrap items-center gap-2 text-xs"
+              >
+                <UIcon
+                  :name="message.statusMeta.icon"
+                  :class="[
+                    'h-4 w-4',
+                    message.statusMeta.color,
+                    message.statusMeta.spin ? 'animate-spin' : '',
+                  ]"
+                />
+                <span :class="['font-semibold', message.statusMeta.color]">
+                  {{ message.statusMeta.label }}
+                </span>
+                <span v-if="message.statusMessage" class="text-slate-400">
+                  · {{ message.statusMessage }}
+                </span>
+                <UButton
+                  v-if="message.status === 'failed' && message.localId"
+                  size="xs"
+                  variant="ghost"
+                  color="neutral"
+                  @click="emit('retry', message.localId)"
+                >
+                  Retry
+                </UButton>
+              </div>
               <p
-                v-if="message.eventType !== 'message'"
+                v-else-if="message.eventType !== 'message'"
                 class="text-xs text-slate-500"
               >
-                System event placeholder — richer rendering lands in Week 5.
+                System event placeholder — richer rendering lands in Week 6.
               </p>
               <div class="flex items-center gap-2 text-xs text-slate-500">
                 <UIcon name="i-heroicons-face-smile" class="h-4 w-4" />

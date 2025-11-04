@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
+import AppMessageComposer from '@/components/app/AppMessageComposer.vue'
 import AppMessageTimeline from '@/components/app/AppMessageTimeline.vue'
 import { getRuntimeConfig } from '@/config/runtime'
 import { useChannelStore } from '@/stores/channels'
+import { useConnectivityStore } from '@/stores/connectivity'
 import { useGuildStore } from '@/stores/guilds'
+import { useMessageComposerStore } from '@/stores/messages'
 import { useSessionStore } from '@/stores/session'
 import { useSystemStore } from '@/stores/system'
 import { useTimelineStore } from '@/stores/timeline'
+import { useRealtimeStore } from '@/stores/realtime'
 import type { ComponentStatus } from '@/types/api'
 
 const timelineEntries = [
@@ -65,6 +69,12 @@ const upcomingTasks = [
 const channelStore = useChannelStore()
 const guildStore = useGuildStore()
 const timelineStore = useTimelineStore()
+const realtimeStore = useRealtimeStore()
+const messageComposerStore = useMessageComposerStore()
+const connectivityStore = useConnectivityStore()
+
+const realtimeStatus = realtimeStore.status
+const realtimeAttemptingReconnect = realtimeStore.attemptingReconnect
 
 const {
   activeChannelId: activeChannelIdRef,
@@ -80,6 +90,14 @@ const {
   loadingByChannel: loadingByChannelRef,
   errorByChannel: errorByChannelRef,
 } = storeToRefs(timelineStore)
+
+const { degradedMessage: degradedMessageRef } = storeToRefs(connectivityStore)
+
+const degradedMessage = computed(() => degradedMessageRef.value)
+const activeChannelId = computed(() => activeChannelIdRef.value ?? null)
+
+const typingPreview = ref<string | null>(null)
+let typingPreviewTimer: ReturnType<typeof setTimeout> | null = null
 
 const loadedChannels = new Set<string>()
 
@@ -103,6 +121,22 @@ watch(
   },
   { immediate: true },
 )
+
+watch(
+  () => activeChannelIdRef.value,
+  (channelId) => {
+    realtimeStore.connect(channelId ?? null)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  realtimeStore.disconnect()
+  if (typingPreviewTimer) {
+    clearTimeout(typingPreviewTimer)
+    typingPreviewTimer = null
+  }
+})
 
 const timelineEvents = computed(() => {
   const channelId = activeChannelIdRef.value
@@ -134,6 +168,7 @@ const hasChannels = computed(
   () => (channelsForGuildRef.value ? channelsForGuildRef.value.length > 0 : false),
 )
 const channelListLoading = computed(() => channelStoreLoadingRef.value)
+const composerDisabled = computed(() => !activeChannelId.value || channelListLoading.value)
 
 const latestSequenceLabel = computed(() => {
   const events = timelineEvents.value
@@ -156,6 +191,44 @@ const refreshTimeline = async () => {
   } catch (err) {
     console.warn('Failed to refresh timeline', err)
   }
+}
+
+const handleRetryOptimistic = async (localId: string) => {
+  try {
+    await messageComposerStore.retryOptimistic(localId)
+  } catch (err) {
+    console.warn('Failed to retry optimistic message', err)
+  }
+}
+
+const handleTyping = ({
+  channelId,
+  preview,
+}: {
+  channelId: string | null
+  preview: string
+}) => {
+  if (channelId !== activeChannelId.value) {
+    return
+  }
+
+  if (typingPreviewTimer) {
+    clearTimeout(typingPreviewTimer)
+    typingPreviewTimer = null
+  }
+
+  const trimmed = preview.trim()
+  if (!trimmed.length) {
+    typingPreview.value = null
+    return
+  }
+
+  typingPreview.value = trimmed
+  void realtimeStore.sendTypingPreview(channelId, trimmed)
+  typingPreviewTimer = setTimeout(() => {
+    typingPreview.value = null
+    typingPreviewTimer = null
+  }, 3000)
 }
 
 const quickMetrics = computed(() => [
@@ -409,7 +482,7 @@ const refreshProfile = async () => {
     </section>
 
     <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <div class="space-y-4">
+      <div class="space-y-6">
         <UAlert
           v-if="!hasChannels && !channelListLoading"
           color="neutral"
@@ -422,12 +495,42 @@ const refreshProfile = async () => {
             invite-only.
           </template>
         </UAlert>
+
+        <UAlert
+          v-else-if="degradedMessage"
+          color="warning"
+          variant="soft"
+          icon="i-heroicons-exclamation-triangle"
+          title="Connectivity notice"
+          :description="degradedMessage"
+        />
+
         <AppMessageTimeline
           :channel-name="activeChannelName"
           :events="timelineEvents"
           :loading="timelineLoading"
           :error="timelineError"
           @refresh="refreshTimeline"
+          @retry="handleRetryOptimistic"
+        />
+
+        <div
+          v-if="typingPreview"
+          class="flex flex-wrap items-center gap-2 rounded-2xl border border-sky-500/10 bg-sky-500/5 px-4 py-2 text-xs text-slate-300"
+        >
+          <UIcon name="i-heroicons-pencil-square" class="h-4 w-4 text-sky-300" />
+          <span class="font-semibold text-sky-200">Draft preview</span>
+          <span>·</span>
+          <span class="truncate">{{ typingPreview }}</span>
+        </div>
+
+        <AppMessageComposer
+          :channel-id="activeChannelId"
+          :channel-name="activeChannelName"
+          :realtime-status="realtimeStatus"
+          :attempting-reconnect="realtimeAttemptingReconnect"
+          :disabled="composerDisabled"
+          @typing="handleTyping"
         />
       </div>
 

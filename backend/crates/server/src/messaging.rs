@@ -1125,11 +1125,17 @@ pub async fn list_events(
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ChannelSocketQuery {
+    pub access_token: Option<String>,
+}
+
 pub async fn channel_socket(
     matched_path: MatchedPath,
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(channel_id): Path<Uuid>,
+    Query(query): Query<ChannelSocketQuery>,
     Extension(request_id): Extension<RequestId>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
@@ -1140,7 +1146,41 @@ pub async fn channel_socket(
         return Err(status);
     };
 
-    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+    let mut auth_error: Option<StatusCode> = None;
+    let authorized = match session::authenticate_bearer(&state, &headers) {
+        Ok(_) => true,
+        Err(StatusCode::UNAUTHORIZED) => {
+            if let Some(token) = query
+                .access_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                match state.session().verify_access_token(token) {
+                    Ok(Some(_claims)) => true,
+                    Ok(None) => {
+                        auth_error = Some(StatusCode::UNAUTHORIZED);
+                        false
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, "failed to verify access token from query string");
+                        auth_error = Some(StatusCode::INTERNAL_SERVER_ERROR);
+                        false
+                    }
+                }
+            } else {
+                auth_error = Some(StatusCode::UNAUTHORIZED);
+                false
+            }
+        }
+        Err(status) => {
+            auth_error = Some(status);
+            false
+        }
+    };
+
+    if !authorized {
+        let status = auth_error.unwrap_or(StatusCode::UNAUTHORIZED);
         if status == StatusCode::UNAUTHORIZED {
             state.record_messaging_rejection("unauthorized");
         }
