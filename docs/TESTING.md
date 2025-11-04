@@ -10,6 +10,7 @@ This document maps each shipped backend feature in Weeks 1 through 7 to the auto
 | `cargo xtask ci`                                  | Pre-PR sanity             | Runs fmt + clippy + full test suite with warnings denied.                                                 |
 | `cargo xtask ci-metrics-smoke`                    | Observability regressions | Builds the server with `--features metrics`, boots it on a random port, verifies `/ready` and `/metrics`. |
 | `PROPTEST_CASES=256 cargo test -p openguild-core` | Stress property tests     | Increases proptest iteration count for event ID uniqueness.                                               |
+| `(cd frontend && bun test:unit)`                  | Frontend auth smoke tests | Runs the Vitest suite exercising `/sessions/login` and `/users/register`. Set `STORYBOOK_TESTS=true` to opt into the Storybook Playwright project (requires browser sandbox access). |
 
 > Need to target a specific crate? Use `cargo test -p <crate>` as listed in the sections below. All integration tests live in `openguild-server`, but depend on helper modules in storage and session harnesses.
 
@@ -31,6 +32,7 @@ This document maps each shipped backend feature in Weeks 1 through 7 to the auto
 | Happy-path login + refresh issuance        | `backend/crates/server/src/main.rs::login_route_returns_token_on_success`                                                                                   | `cargo test -p openguild-server login_route_returns_token_on_success`         |
 | Session store lifecycle (access + refresh) | `backend/crates/server/src/session.rs::tests::login_emits_refresh_tokens`, `::refresh_rotates_tokens`, `::revoke_refresh_token_rejects_future_use`          | `cargo test -p openguild-server session::tests`                               |
 | Storage readiness                          | `backend/crates/storage/src/lib.rs::tests::storage_pool_smoke`, `backend/crates/server/src/main.rs::readiness_reports_configured_when_database_url_present` | `cargo test -p openguild-storage`, `cargo test -p openguild-server readiness` |
+| Frontend auth flows                        | `frontend/src/stores/__tests__/session.spec.ts` (covers `/users/register` + `/sessions/login` via Pinia store)                                              | `(cd frontend && bun test:unit)` (set `STORYBOOK_TESTS=true` to include the Playwright Storybook suite)          |
 
 ### Week 4 · Messaging Core
 

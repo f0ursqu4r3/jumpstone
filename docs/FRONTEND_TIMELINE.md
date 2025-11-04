@@ -4,7 +4,7 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Working Assumptions
 
-- [ ] Vue 3 + Pinia + TypeScript remain the primary stack; Tailwind powers the design system.
+- [ ] Vue 3 + Pinia + TypeScript on Vite (post-Nuxt migration) remain the primary stack; Tailwind powers the design system.
 - [ ] API traffic flows through the backend documented in `docs/API.md`; avoid client-side schema drift by importing shared types when feasible.
 - [ ] Treat accessibility and responsive layouts as first-class (WCAG AA target).
 - [ ] Ship instrumentation alongside features (Sentry + LogRocket stubs, Lighthouse budgets, vitest coverage).
@@ -15,24 +15,24 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
   - [x] Document Bun/NPM parity commands (`dev`, `lint`, `test`, `build`) and CI hooks. `frontend/README.md` now outlines command parity plus CI expectations (`lint`, `test`, `build`, `preview`) and references the generated types alias.
   - [x] Add `.env.example` with API base URLs, feature flags, and mock toggles. `frontend/.env.example` ships defaults for API base URL, mock toggles, and devtools awareness.
   - [x] Wire Vite aliases to shared TypeScript types generated from the backend OpenAPI schema (placeholder script). `frontend/vue.config.ts`, `frontend/tsconfig.json`, and `frontend/vitest.config.ts` expose `@openguild/backend-types`; `pnpm types:sync` seeds `frontend/types/generated`.
-- [ ] Establish design system + layout shell.
-  - [x] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette. `frontend/app/assets/css/tokens.css`, `frontend/tailwind.config.ts`, and the updated `frontend/app/app.config.ts` define brand colors, spacing, and UI defaults.
-  - [x] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints via `frontend/app/layouts/default.vue` and companion shell components.
+- [x] Establish design system + layout shell.
+  - [x] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette. `frontend/src/assets/css/tokens.css`, `frontend/src/assets/css/main.css`, and `frontend/tailwind.config.ts` define brand colors, spacing, and UI defaults.
+  - [x] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints via `frontend/src/layouts/DefaultLayout.vue` plus the companion `frontend/src/components/app/AppGuildRail.vue`, `AppChannelSidebar.vue`, and `AppTopbar.vue`.
 - [ ] Scaffold state management and API client.
-  - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. Vue plugin `frontend/app/plugins/api-client.ts` exposes `$api` leveraging `frontend/app/composables/useApiClient.ts` for auth headers and request IDs.
-  - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers. `frontend/app/stores/guilds.ts` + `frontend/app/stores/channels.ts` replace inline mocks and feed `frontend/app/layouts/default.vue`.
+  - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. The Vite plugin surface now lives at `frontend/src/composables/useApiClient.ts` with `frontend/src/config/runtime.ts` feeding env overrides.
+  - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers. `frontend/src/stores/guilds.ts`, `frontend/src/stores/channels.ts`, and `frontend/src/stores/session.ts` replace inline mocks and feed `frontend/src/layouts/DefaultLayout.vue`.
   - [x] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling. Suites now cover Pinia stores and API client behavior (`frontend/tests/*store.test.ts`, `frontend/tests/api-client.test.ts`).
 
 ## Week 3: Authentication & Landing Flows (Milestone F0)
 
 - [ ] Implement session UX.
-  - [x] Build login/register forms with validation, error toasts, and loading states.
+  - [x] Build login/register forms with validation, error toasts, and loading states. `frontend/src/views/LoginView.vue` and the new `frontend/src/views/RegisterView.vue` share the session store while handling device metadata prompts.
   - [x] Persist access/refresh tokens in secure storage (IndexedDB fallback), respecting backend expiry semantics.
   - [x] Create device metadata prompts (friendly name) aligned with backend requirements.
-- [ ] Route guards and onboarding.
+- [x] Route guards and onboarding.
   - [x] Add global middleware that enforces auth, refreshes tokens, and redirects to `/login` when needed.
-  - [ ] Deliver onboarding carousel with links to docs and setup guides.
-  - [ ] Smoke-test flows against backend `POST /sessions/login` + `/users/register`; record QA steps in `docs/TESTING.md`.
+  - [x] Deliver onboarding carousel with links to docs and setup guides. `frontend/src/components/app/AppOnboardingCarousel.vue` powers the login/register hero with CTA links back to `docs/SETUP.md`, `docs/FRONTEND_TIMELINE.md`, and `docs/TESTING.md`.
+  - [x] Smoke-test flows against backend `POST /sessions/login` + `/users/register`; record QA steps in `docs/TESTING.md`. Vitest coverage now lives in `frontend/src/stores/__tests__/session.spec.ts`, and the testing guide documents the `bun test:unit` command (storybook suite remains opt-in via `STORYBOOK_TESTS=true`).
 
 ## Week 4: Guild & Channel Shell (Milestone F1)
 

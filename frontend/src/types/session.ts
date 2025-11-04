@@ -5,6 +5,13 @@ export interface LoginParameters {
   deviceName?: string
 }
 
+export interface RegisterParameters {
+  username: string
+  password: string
+  deviceId: string
+  deviceName?: string
+}
+
 export interface LoginRequestBody {
   identifier: string
   secret: string
@@ -14,11 +21,21 @@ export interface LoginRequestBody {
   }
 }
 
+export interface RegisterRequestBody {
+  username: string
+  password: string
+}
+
 export interface LoginResponse {
   access_token: string
   access_expires_at: string
   refresh_token: string
   refresh_expires_at: string
+}
+
+export interface RegisterResponse {
+  user_id: string
+  username: string
 }
 
 export interface RefreshRequestBody {

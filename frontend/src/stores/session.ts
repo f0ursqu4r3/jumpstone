@@ -10,6 +10,9 @@ import type {
   LoginRequestBody,
   LoginResponse,
   RefreshRequestBody,
+  RegisterParameters,
+  RegisterRequestBody,
+  RegisterResponse,
 } from '~/types/session'
 
 const STORAGE_KEY = 'openguild.session.v1'
@@ -449,6 +452,77 @@ const formatLoginError = (
   }
 }
 
+const formatRegisterError = (
+  err: unknown,
+): { message: string; fieldErrors: Record<string, string> } => {
+  const fieldErrors: Record<string, string> = {}
+  const fallbackMessage =
+    'Unable to create an account right now. Please try again shortly.'
+
+  const maybeFetchError = err as {
+    data?: ApiErrorResponse
+    response?: { status?: number }
+  }
+
+  const { data } = maybeFetchError
+
+  if (data?.details) {
+    data.details.forEach((detail) => {
+      if (!detail || typeof detail.field !== 'string') {
+        return
+      }
+      fieldErrors[detail.field] = detail.message ?? 'Invalid value'
+    })
+  }
+
+  if (data?.error === 'username_taken') {
+    if (!fieldErrors.username) {
+      fieldErrors.username = 'This username is already in use.'
+    }
+    return {
+      message: 'That username is already in use. Choose a different one.',
+      fieldErrors,
+    }
+  }
+
+  if (data?.error === 'database_unavailable') {
+    return {
+      message:
+        'Registration is temporarily unavailable while the database is offline.',
+      fieldErrors,
+    }
+  }
+
+  if (data?.error === 'server_error') {
+    return {
+      message:
+        'Registration failed due to a server error. Please try again soon.',
+      fieldErrors,
+    }
+  }
+
+  if (data?.error === 'validation_error') {
+    return {
+      message:
+        Object.values(fieldErrors)[0] ??
+        'Please fix the highlighted fields and try again.',
+      fieldErrors,
+    }
+  }
+
+  if (data?.message) {
+    return {
+      message: data.message,
+      fieldErrors,
+    }
+  }
+
+  return {
+    message: extractErrorMessage(err) || fallbackMessage,
+    fieldErrors,
+  }
+}
+
 const toPersistedSession = (state: PersistedSession): PersistedSession => ({
   identifier: state.identifier,
   deviceId: state.deviceId,
@@ -707,6 +781,52 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  async function register(params: RegisterParameters) {
+    if (state.loading) {
+      return
+    }
+
+    state.loading = true
+    resetErrors()
+    state.refreshError = null
+
+    const username = params.username.trim()
+    const deviceId = params.deviceId.trim()
+    const deviceName = params.deviceName?.trim()
+    const body: RegisterRequestBody = {
+      username,
+      password: params.password,
+    }
+
+    try {
+      await request<RegisterResponse>(
+        '/users/register',
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+        { skipAuth: true },
+      )
+    } catch (error) {
+      const { message, fieldErrors } = formatRegisterError(error)
+      state.fieldErrors = fieldErrors
+      state.error = message
+      throw new Error(message)
+    } finally {
+      state.loading = false
+    }
+
+    return login({
+      identifier: username,
+      secret: body.password,
+      deviceId,
+      deviceName,
+    })
+  }
+
   function logout() {
     state.tokens = null
     resetErrors()
@@ -911,6 +1031,7 @@ export const useSessionStore = defineStore('session', () => {
     persist,
     hydrate,
     login,
+    register,
     logout,
     clearAll,
     needsAccessRefresh,

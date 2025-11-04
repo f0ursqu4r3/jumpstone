@@ -9,19 +9,19 @@ import { createDefaultDeviceId } from '~/utils/device'
 
 const sessionStore = useSessionStore()
 const {
-  isAuthenticated: isAuthenticatedRef,
-  identifier: identifierRef,
-  deviceId: deviceIdRef,
-  deviceName: deviceNameRef,
   loading: loadingRef,
   fieldErrors: fieldErrorsRef,
   error: errorRef,
+  identifier: identifierRef,
+  deviceId: deviceIdRef,
+  deviceName: deviceNameRef,
 } = storeToRefs(sessionStore)
+
 const route = useRoute()
 const router = useRouter()
 
 onMounted(() => {
-  document.title = 'Sign in · OpenGuild'
+  document.title = 'Create account · OpenGuild'
 })
 
 const sanitizeRedirect = (value: unknown): string | null => {
@@ -31,63 +31,63 @@ const sanitizeRedirect = (value: unknown): string | null => {
   if (!value.startsWith('/')) {
     return null
   }
-  if (value === '/login') {
+  if (value === '/register') {
     return '/'
   }
   return value
 }
 
-const redirectTarget = computed(() => sanitizeRedirect(route.query.redirect) ?? '/')
-
-if (typeof window !== 'undefined' && isAuthenticatedRef.value) {
-  router.replace(redirectTarget.value)
-}
-
-type LoginFormField = 'identifier' | 'secret' | 'deviceId' | 'deviceName'
+const redirectTarget = computed(
+  () => sanitizeRedirect(route.query.redirect) ?? '/',
+)
 
 const onboardingSlides = [
   {
-    id: 'backend-setup',
-    eyebrow: 'Week 1',
-    title: 'Point the client at your OpenGuild backend',
-    description:
-      'Update VITE_API_BASE_URL to the Axum server from docs/SETUP.md. BRAIN.txt captures the config precedence if you need overrides.',
-    ctaLabel: 'Open setup guide',
-    href: 'https://github.com/jumpstone/jumpstone/blob/main/docs/SETUP.md',
-    icon: 'i-heroicons-wrench-screwdriver',
-  },
-  {
-    id: 'timeline-sync',
-    eyebrow: 'Week 2',
-    title: 'Track Vue delivery alongside the backend',
-    description:
-      'Review docs/FRONTEND_TIMELINE.md before each push to keep milestones aligned with the Axum services.',
-    ctaLabel: 'View frontend timeline',
-    to: '/roadmap',
-    icon: 'i-heroicons-map',
-  },
-  {
-    id: 'qa-smoke',
+    id: 'naming',
     eyebrow: 'Week 3',
-    title: 'Run the authentication smoke tests',
+    title: 'Pick a durable username',
     description:
-      'Execute the new Vitest suite after touching auth flows to cover POST /sessions/login and /users/register.',
+      'Usernames must be unique and at least three characters. Backend validation mirrors this form, so trim whitespace before submitting.',
+    ctaLabel: 'Account setup notes',
+    href: 'https://github.com/jumpstone/jumpstone/blob/main/docs/SETUP.md#seed-users',
+    icon: 'i-heroicons-identification',
+  },
+  {
+    id: 'device',
+    eyebrow: 'Session hygiene',
+    title: 'Bind refresh tokens to a device ID',
+    description:
+      'OpenGuild ties refresh tokens to the device identifier you provide. See BRAIN.txt for how the Axum session module enforces this pairing.',
+    ctaLabel: 'Review session design',
+    href: 'https://github.com/jumpstone/jumpstone/blob/main/BRAIN.txt',
+    icon: 'i-heroicons-cpu-chip',
+  },
+  {
+    id: 'qa',
+    eyebrow: 'Quality gate',
+    title: 'Run the auth smoke suite',
+    description:
+      'Vitest covers POST /users/register and /sessions/login so you can validate new flows locally before shipping.',
     ctaLabel: 'Testing checklist',
     href: 'https://github.com/jumpstone/jumpstone/blob/main/docs/TESTING.md',
-    icon: 'i-heroicons-check-badge',
+    icon: 'i-heroicons-clipboard-document-check',
   },
 ] as const
 
-const form = reactive<Record<LoginFormField, string>>({
-  identifier: identifierRef.value ?? '',
-  secret: '',
+type RegisterField = 'username' | 'password' | 'confirm' | 'deviceId' | 'deviceName'
+
+const form = reactive<Record<RegisterField, string>>({
+  username: identifierRef.value ?? '',
+  password: '',
+  confirm: '',
   deviceId: deviceIdRef.value ?? '',
   deviceName: deviceNameRef.value ?? '',
 })
 
-const errors = reactive<Record<LoginFormField, string>>({
-  identifier: '',
-  secret: '',
+const errors = reactive<Record<RegisterField, string>>({
+  username: '',
+  password: '',
+  confirm: '',
   deviceId: '',
   deviceName: '',
 })
@@ -96,7 +96,7 @@ const generalError = ref('')
 const submitting = computed(() => loadingRef.value)
 
 const clearFieldErrors = () => {
-  ;(Object.keys(errors) as LoginFormField[]).forEach((key) => {
+  ;(Object.keys(errors) as RegisterField[]).forEach((key) => {
     errors[key] = ''
   })
 }
@@ -104,7 +104,7 @@ const clearFieldErrors = () => {
 const applyBackendErrors = () => {
   const backendErrors = fieldErrorsRef.value
 
-  ;(Object.keys(errors) as LoginFormField[]).forEach((key) => {
+  ;(Object.keys(errors) as RegisterField[]).forEach((key) => {
     if (backendErrors[key]) {
       errors[key] = backendErrors[key] ?? ''
     }
@@ -115,22 +115,25 @@ const validate = () => {
   clearFieldErrors()
   let valid = true
 
-  if (!form.identifier.trim()) {
-    errors.identifier = 'Identifier is required.'
+  if (form.username.trim().length < 3) {
+    errors.username = 'Username must be at least 3 characters.'
     valid = false
   }
 
-  if (form.secret.length < 8) {
-    errors.secret = 'Secret must be at least 8 characters.'
+  if (form.password.length < 8) {
+    errors.password = 'Password must be at least 8 characters.'
+    valid = false
+  }
+
+  if (form.confirm !== form.password) {
+    errors.confirm = 'Passwords must match.'
     valid = false
   }
 
   if (!form.deviceId.trim()) {
     errors.deviceId = 'Device ID is required.'
     valid = false
-  }
-
-  if (form.deviceId && form.deviceId.trim().length < 3) {
+  } else if (form.deviceId.trim().length < 3) {
     errors.deviceId = 'Device ID must be at least 3 characters.'
     valid = false
   }
@@ -151,21 +154,23 @@ const handleSubmit = async () => {
   }
 
   try {
-    await sessionStore.login({
-      identifier: form.identifier,
-      secret: form.secret,
+    await sessionStore.register({
+      username: form.username,
+      password: form.password,
       deviceId: form.deviceId,
       deviceName: form.deviceName || undefined,
     })
 
-    form.secret = ''
+    form.password = ''
+    form.confirm = ''
     await router.replace(redirectTarget.value)
   } catch (error) {
     applyBackendErrors()
-
     generalError.value =
       errorRef.value ||
-      (error instanceof Error ? error.message : 'Unable to complete sign in right now.')
+      (error instanceof Error
+        ? error.message
+        : 'Unable to complete registration right now.')
   }
 }
 
@@ -180,10 +185,15 @@ onMounted(() => {
   <div class="grid gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
     <section class="space-y-8">
       <div class="space-y-3">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.4em] text-sky-400">OpenGuild</p>
-        <h1 class="text-3xl font-semibold text-white sm:text-4xl">Sign in to continue</h1>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.4em] text-sky-400">
+          OpenGuild
+        </p>
+        <h1 class="text-3xl font-semibold text-white sm:text-4xl">
+          Create your operator account
+        </h1>
         <p class="text-sm text-slate-300">
-          Use your homeserver credentials to unlock the guild control room.
+          Provision credentials that map to the backend session service, then jump straight into the
+          control room.
         </p>
       </div>
 
@@ -199,25 +209,35 @@ onMounted(() => {
           :description="generalError"
         />
 
-        <UFormField label="Identifier" :error="errors.identifier" required>
+        <UFormField label="Username" :error="errors.username" required>
           <UInput
-            v-model="form.identifier"
-            placeholder="you@example.org"
+            v-model="form.username"
+            placeholder="guildmaster"
             autocomplete="username"
             class="w-full"
           />
         </UFormField>
 
         <UFormField
-          label="Secret"
-          :error="errors.secret"
-          description="Minimum eight characters. Matches backend password policy."
+          label="Password"
+          :error="errors.password"
+          description="Minimum eight characters. Matches backend policy."
           required
         >
           <UInput
-            v-model="form.secret"
+            v-model="form.password"
             type="password"
-            autocomplete="current-password"
+            autocomplete="new-password"
+            placeholder="••••••••"
+            class="w-full"
+          />
+        </UFormField>
+
+        <UFormField label="Confirm password" :error="errors.confirm" required>
+          <UInput
+            v-model="form.confirm"
+            type="password"
+            autocomplete="new-password"
             placeholder="••••••••"
             class="w-full"
           />
@@ -226,12 +246,12 @@ onMounted(() => {
         <UFormField
           label="Device identifier"
           :error="errors.deviceId"
-          description="Used to bind your refresh token to this browser."
+          description="Refresh tokens are scoped to this identifier."
         >
           <UInput
             v-model="form.deviceId"
             autocomplete="off"
-            placeholder="browser-dev"
+            placeholder="browser-onboarding"
             class="w-full"
           />
         </UFormField>
@@ -254,27 +274,27 @@ onMounted(() => {
           <UButton
             type="submit"
             color="info"
-            label="Sign in"
+            label="Create account"
             class="w-full justify-center"
             :loading="submitting"
           />
           <UButton
-            to="/styleguide"
+            to="/login"
             color="neutral"
             variant="ghost"
-            label="Preview the styleguide"
+            label="Back to sign in"
             class="w-full justify-center"
           />
         </div>
       </form>
 
       <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span>Need an account?</span>
+        <span>Already have credentials?</span>
         <RouterLink
-          to="/register"
+          to="/login"
           class="font-semibold text-sky-300 transition hover:text-sky-200"
         >
-          Create one
+          Sign in
         </RouterLink>
         <span class="hidden sm:inline">·</span>
         <RouterLink

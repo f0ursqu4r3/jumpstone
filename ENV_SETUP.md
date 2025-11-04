@@ -58,8 +58,8 @@ The backend can work with these optional services:
 
 The frontend needs to know where to reach the backend API:
 
-- `NUXT_PUBLIC_API_BASE_URL`: Backend HTTP API URL
-- `NUXT_PUBLIC_WS_BASE_URL`: Backend WebSocket URL
+- `OPENGUILD_CLIENT__PUBLIC_API_BASE_URL`: Backend HTTP API URL
+- `OPENGUILD_CLIENT__PUBLIC_WS_BASE_URL`: Backend WebSocket URL
 
 ## Running the Services
 

@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 
 import HomeView from '~/views/HomeView.vue'
 import LoginView from '~/views/LoginView.vue'
+import RegisterView from '~/views/RegisterView.vue'
 import RoadmapView from '~/views/RoadmapView.vue'
 import StyleguideView from '~/views/StyleguideView.vue'
 import { useSessionStore } from '~/stores/session'
@@ -22,6 +23,15 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
+      meta: {
+        layout: 'auth',
+        requiresAuth: false,
+      },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: RegisterView,
       meta: {
         layout: 'auth',
         requiresAuth: false,
@@ -55,7 +65,11 @@ const sanitizeRedirect = (value: unknown): string | null => {
     return null
   }
 
-  return value === '/login' ? '/' : value
+  if (value === '/login' || value === '/register') {
+    return '/'
+  }
+
+  return value
 }
 
 router.beforeEach((to, from, next) => {
@@ -81,7 +95,11 @@ router.beforeEach((to, from, next) => {
     )
   }
 
-  if (!requiresAuth && isAuthenticated.value && to.path === '/login') {
+  if (
+    !requiresAuth &&
+    isAuthenticated.value &&
+    (to.path === '/login' || to.path === '/register')
+  ) {
     const candidate = sanitizeRedirect(to.query.redirect)
     return next(candidate ?? '/')
   }
