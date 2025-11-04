@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
+import AppChannelCreateModal from '@/components/app/AppChannelCreateModal.vue'
 import AppChannelSidebar from '@/components/app/AppChannelSidebar.vue'
 import AppGuildCreateModal from '@/components/app/AppGuildCreateModal.vue'
 import AppGuildRail from '@/components/app/AppGuildRail.vue'
@@ -43,6 +44,9 @@ const syncingRoute = ref(false)
 const showCreateGuildModal = ref(false)
 const createGuildLoading = ref(false)
 const createGuildError = ref<string | null>(null)
+const showCreateChannelModal = ref(false)
+const createChannelLoading = ref(false)
+const createChannelError = ref<string | null>(null)
 
 const formatCreatedAt = (iso?: string | null) => {
   if (!iso) {
@@ -243,7 +247,8 @@ const handleChannelSelect = async (channelId: string) => {
 }
 
 const handleCreateChannel = () => {
-  console.info('Channel creation flow not yet implemented')
+  createChannelError.value = null
+  showCreateChannelModal.value = true
 }
 
 const handleOpenGuildMenu = () => {
@@ -281,6 +286,38 @@ const submitCreateGuild = async (name: string) => {
 const resetCreateGuildError = () => {
   createGuildError.value = null
 }
+
+const submitCreateChannel = async (name: string) => {
+  const guildId = activeGuildIdRef.value
+  if (!guildId) {
+    createChannelError.value = 'Select a guild first.'
+    return
+  }
+
+  const trimmed = name.trim()
+  if (!trimmed) {
+    createChannelError.value = 'Channel name is required.'
+    return
+  }
+
+  createChannelLoading.value = true
+  createChannelError.value = null
+
+  try {
+    const record = await channelStore.createChannel(guildId, trimmed)
+    await channelStore.setActiveChannel(record.channel_id)
+    updateRouteQuery(guildId, record.channel_id, true)
+    showCreateChannelModal.value = false
+  } catch (err) {
+    createChannelError.value = extractErrorMessage(err) || 'Unable to create channel.'
+  } finally {
+    createChannelLoading.value = false
+  }
+}
+
+const resetCreateChannelError = () => {
+  createChannelError.value = null
+}
 </script>
 
 <template>
@@ -299,6 +336,7 @@ const resetCreateGuildError = () => {
       :guild-name="activeGuild?.name || ''"
       :channels="channels"
       :loading="channelLoading"
+      :can-create-channel="Boolean(activeGuildIdRef && !createChannelLoading)"
       class="hidden lg:flex"
       @select-channel="handleChannelSelect"
       @create-channel="handleCreateChannel"
@@ -312,6 +350,7 @@ const resetCreateGuildError = () => {
             :guild-name="activeGuild?.name || ''"
             :channels="channels"
             :loading="channelLoading"
+            :can-create-channel="Boolean(activeGuildIdRef && !createChannelLoading)"
             class="flex"
             @select-channel="handleChannelSelect"
             @create-channel="handleCreateChannel"
@@ -423,5 +462,12 @@ const resetCreateGuildError = () => {
     :error="createGuildError"
     @submit="submitCreateGuild"
     @reset-error="resetCreateGuildError"
+  />
+  <AppChannelCreateModal
+    v-model:open="showCreateChannelModal"
+    :loading="createChannelLoading"
+    :error="createChannelError"
+    @submit="submitCreateChannel"
+    @reset-error="resetCreateChannelError"
   />
 </template>

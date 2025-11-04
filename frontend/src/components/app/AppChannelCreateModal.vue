@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import type { RadioGroupItem } from '@nuxt/ui'
 
 withDefaults(
   defineProps<{
@@ -19,12 +20,18 @@ const emit = defineEmits<{
 
 const open = defineModel<boolean>('open', { default: false })
 
-const title: string = 'Create a new guild'
-const description: string = `Guild names should be unique and between 3 and 64 characters. You can configure roles and invites after creation.`
+const title: string = 'Create a new channel'
+const description: string = `Text channels work best for discussions, while voice channels are perfect for huddles and stand-ups.`
 
 const form = reactive({
   name: '',
+  kind: 'text' as 'text' | 'voice',
 })
+
+const items: RadioGroupItem[] = [
+  { value: 'text', label: 'Text channel', description: 'Messages, threads, and updates' },
+  { value: 'voice', label: 'Voice channel', description: 'Stand-ups and huddles' },
+] as const
 
 const touched = ref(false)
 
@@ -35,6 +42,7 @@ watch(
       return
     }
     form.name = ''
+    form.kind = 'text'
     touched.value = false
     emit('reset-error')
   },
@@ -44,14 +52,15 @@ const nameError = computed(() => {
   if (!touched.value) {
     return ''
   }
-  if (!form.name.trim()) {
-    return 'Guild name is required.'
+  const trimmed = form.name.trim()
+  if (!trimmed) {
+    return 'Channel name is required.'
   }
-  if (form.name.trim().length < 3) {
-    return 'Guild name must be at least 3 characters.'
+  if (trimmed.length < 2) {
+    return 'Channel name must be at least 2 characters.'
   }
-  if (form.name.trim().length > 64) {
-    return 'Guild name cannot exceed 64 characters.'
+  if (trimmed.length > 64) {
+    return 'Channel name cannot exceed 64 characters.'
   }
   return ''
 })
@@ -77,16 +86,22 @@ const handleSubmit = () => {
           <h2 class="text-xl font-semibold text-white">{{ title }}</h2>
           <p class="text-sm text-slate-400">{{ description }}</p>
         </div>
+
         <form class="space-y-4" @submit.prevent="handleSubmit">
-          <UFormField label="Guild name" :error="nameError || undefined" required>
+          <UFormField label="Channel name" :error="nameError || undefined" required>
             <UInput
               v-model="form.name"
-              placeholder="Frontend Core"
+              placeholder="frontend-team"
               class="w-full"
-              autofocus
+              icon="i-heroicons-hashtag-20-solid"
+              :autofocus="true"
               :disabled="loading"
               @blur="touched = true"
             />
+          </UFormField>
+
+          <UFormField label="Channel type">
+            <URadioGroup v-model="form.kind" :items="items" :disabled="loading" />
           </UFormField>
 
           <UAlert
@@ -107,7 +122,7 @@ const handleSubmit = () => {
             >
               Cancel
             </UButton>
-            <UButton color="info" type="submit" :loading="loading"> Create guild </UButton>
+            <UButton color="info" type="submit" :loading="loading"> Create channel </UButton>
           </div>
         </form>
       </div>

@@ -15,9 +15,11 @@ const props = withDefaults(
     guildName: string
     channels: ChannelEntry[]
     loading?: boolean
+    canCreateChannel?: boolean
   }>(),
   {
     loading: false,
+    canCreateChannel: true,
   },
 )
 
@@ -166,7 +168,7 @@ const groupedChannels = computed(() => {
             class="mt-2 w-full justify-center"
             icon="i-heroicons-plus-circle"
             :loading="loading"
-            :disabled="loading"
+            :disabled="loading || !props.canCreateChannel"
             @click="emit('create-channel')"
           >
             New channel
@@ -207,7 +209,7 @@ const groupedChannels = computed(() => {
                 @click="emit('select-channel', channel.id)"
               >
                 <div class="flex items-center gap-2 text-left">
-                  <UIcon :name="channel.icon" class="h-5 w-5 shrink-0" />
+                  <UIcon :name="channel.icon" class="size-4 shrink-0" />
                   <div class="flex flex-col text-left">
                     <span>{{ channel.label }}</span>
                     <span v-if="channel.description" class="text-xs text-slate-500">

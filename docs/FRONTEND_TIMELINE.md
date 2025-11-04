@@ -44,6 +44,7 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
   - [x] Display channel tree (text/voice), sort order, and locks based on permissions. `frontend/src/components/app/AppChannelSidebar.vue` now groups text/voice channels, highlights unread counts, and reacts to `useChannelStore` hydration.
   - [x] Surface channel topic/description and breadcrumb within the content header. `frontend/src/layouts/DefaultLayout.vue` wires channel descriptions into `AppTopbar` and sidebar metadata.
   - [x] Support skeleton/loading states using Suspense for SSR hydration. The sidebar shows loading placeholders while `/guilds/{guild_id}/channels` resolves.
+  - [x] Implement channel creation modal. `frontend/src/components/app/AppChannelCreateModal.vue` posts to `/guilds/{id}/channels`, updates the store, and surfaces placeholders for empty/invite-only states.
 - [ ] Timeline scaffold.
   - [x] Render message timeline (virtualized list) with author pill, timestamp, and Markdown parsing. `frontend/src/components/app/AppMessageTimeline.vue` renders grouped events with sender badges and timestamps (virtualization to follow in Week 5).
   - [x] Integrate initial fetch via `GET /channels/{channel_id}/events` (limit/ pagination support).
