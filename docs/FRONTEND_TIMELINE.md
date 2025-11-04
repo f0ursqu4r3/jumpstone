@@ -1,10 +1,10 @@
 # OpenGuild Frontend Delivery Timeline
 
-This companion roadmap focuses on the Nuxt 3 web client. It mirrors the backend cadence so both sides converge on the same milestones. Update statuses, owners, links to design artifacts, and QA notes as work lands. Where backend support is required, call it out inline so dependencies stay visible.
+This companion roadmap focuses on the Vue 3 web client. It mirrors the backend cadence so both sides converge on the same milestones. Update statuses, owners, links to design artifacts, and QA notes as work lands. Where backend support is required, call it out inline so dependencies stay visible.
 
 ## Working Assumptions
 
-- [ ] Nuxt 3 + Pinia + TypeScript remain the primary stack; Tailwind powers the design system.
+- [ ] Vue 3 + Pinia + TypeScript remain the primary stack; Tailwind powers the design system.
 - [ ] API traffic flows through the backend documented in `docs/API.md`; avoid client-side schema drift by importing shared types when feasible.
 - [ ] Treat accessibility and responsive layouts as first-class (WCAG AA target).
 - [ ] Ship instrumentation alongside features (Sentry + LogRocket stubs, Lighthouse budgets, vitest coverage).
@@ -14,12 +14,12 @@ This companion roadmap focuses on the Nuxt 3 web client. It mirrors the backend 
 - [x] Stabilize developer workflow.
   - [x] Document Bun/NPM parity commands (`dev`, `lint`, `test`, `build`) and CI hooks. `frontend/README.md` now outlines command parity plus CI expectations (`lint`, `test`, `build`, `preview`) and references the generated types alias.
   - [x] Add `.env.example` with API base URLs, feature flags, and mock toggles. `frontend/.env.example` ships defaults for API base URL, mock toggles, and devtools awareness.
-  - [x] Wire Vite aliases to shared TypeScript types generated from the backend OpenAPI schema (placeholder script). `frontend/nuxt.config.ts`, `frontend/tsconfig.json`, and `frontend/vitest.config.ts` expose `@openguild/backend-types`; `pnpm types:sync` seeds `frontend/types/generated`.
+  - [x] Wire Vite aliases to shared TypeScript types generated from the backend OpenAPI schema (placeholder script). `frontend/vue.config.ts`, `frontend/tsconfig.json`, and `frontend/vitest.config.ts` expose `@openguild/backend-types`; `pnpm types:sync` seeds `frontend/types/generated`.
 - [ ] Establish design system + layout shell.
   - [x] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette. `frontend/app/assets/css/tokens.css`, `frontend/tailwind.config.ts`, and the updated `frontend/app/app.config.ts` define brand colors, spacing, and UI defaults.
   - [x] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints via `frontend/app/layouts/default.vue` and companion shell components.
 - [ ] Scaffold state management and API client.
-  - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. Nuxt plugin `frontend/app/plugins/api-client.ts` exposes `$api` leveraging `frontend/app/composables/useApiClient.ts` for auth headers and request IDs.
+  - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. Vue plugin `frontend/app/plugins/api-client.ts` exposes `$api` leveraging `frontend/app/composables/useApiClient.ts` for auth headers and request IDs.
   - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers. `frontend/app/stores/guilds.ts` + `frontend/app/stores/channels.ts` replace inline mocks and feed `frontend/app/layouts/default.vue`.
   - [x] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling. Suites now cover Pinia stores and API client behavior (`frontend/tests/*store.test.ts`, `frontend/tests/api-client.test.ts`).
 

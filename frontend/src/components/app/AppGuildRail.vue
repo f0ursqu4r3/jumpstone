@@ -60,8 +60,6 @@ const hasActiveGuild = computed(() => props.guilds.some((guild) => guild.active)
         </div>
       </UTooltip>
 
-      <USeparator v-if="props.guilds.length > 0" class="opacity-50" />
-
       <div class="relative flex w-full justify-center">
         <Button
           icon="i-heroicons-plus"

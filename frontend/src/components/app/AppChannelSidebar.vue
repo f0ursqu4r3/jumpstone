@@ -137,7 +137,7 @@ const groupedChannels = computed(() => {
     <div class="flex min-h-0 flex-1 flex-col">
       <div class="flex items-start justify-between gap-2 p-2">
         <div>
-          <p class="font-semibold">
+          <p class="font-semibold text-slate-50">
             {{ guildName }}
           </p>
           <p class="text-xs text-slate-500">Internal build</p>
@@ -150,16 +150,18 @@ const groupedChannels = computed(() => {
         />
       </div>
 
-      <UTooltip text="Create channel" placement="right" :content="{ side: 'right' }">
-        <Button
-          color="info"
-          variant="soft"
-          class="mt-6 w-full justify-center"
-          icon="i-heroicons-plus-circle"
-        >
-          New channel
-        </Button>
-      </UTooltip>
+      <div class="px-2">
+        <UTooltip text="Create channel" placement="right" :content="{ side: 'right' }">
+          <Button
+            color="info"
+            variant="soft"
+            class="mt-2 w-full justify-center"
+            icon="i-heroicons-plus-circle"
+          >
+            New channel
+          </Button>
+        </UTooltip>
+      </div>
 
       <USeparator class="mt-4 opacity-50" />
 

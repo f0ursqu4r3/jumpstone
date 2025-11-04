@@ -1,7 +1,7 @@
-@import './tokens.css';
-
 @import "tailwindcss";
 @import "@nuxt/ui";
+
+@import './tokens.css';
 
 body {
   font-family: var(--font-family-base);
