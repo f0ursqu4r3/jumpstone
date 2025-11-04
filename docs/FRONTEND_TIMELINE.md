@@ -4,10 +4,10 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Working Assumptions
 
-- [ ] Vue 3 + Pinia + TypeScript on Vite (post-Nuxt migration) remain the primary stack; Tailwind powers the design system.
-- [ ] API traffic flows through the backend documented in `docs/API.md`; avoid client-side schema drift by importing shared types when feasible.
-- [ ] Treat accessibility and responsive layouts as first-class (WCAG AA target).
-- [ ] Ship instrumentation alongside features (Sentry + LogRocket stubs, Lighthouse budgets, vitest coverage).
+- [x] Vue 3 + Pinia + TypeScript on Vite (post-Nuxt migration) remain the primary stack; Tailwind powers the design system.
+- [x] API traffic flows through the backend documented in `docs/API.md`; avoid client-side schema drift by importing shared types when feasible.
+- [x] Treat accessibility and responsive layouts as first-class (WCAG AA target).
+- [x] Ship instrumentation alongside features (Sentry + LogRocket stubs, Lighthouse budgets, vitest coverage).
 
 ## Week 1-2: Client Foundation (Milestone F0)
 
@@ -18,14 +18,14 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 - [x] Establish design system + layout shell.
   - [x] Ship Tailwind tokens (color, spacing, typography) mapped to the brand palette. `frontend/src/assets/css/tokens.css`, `frontend/src/assets/css/main.css`, and `frontend/tailwind.config.ts` define brand colors, spacing, and UI defaults.
   - [x] Build the global app frame (navigation column, content area, status bar) with responsive breakpoints via `frontend/src/layouts/DefaultLayout.vue` plus the companion `frontend/src/components/app/AppGuildRail.vue`, `AppChannelSidebar.vue`, and `AppTopbar.vue`.
-- [ ] Scaffold state management and API client.
+- [x] Scaffold state management and API client.
   - [x] Create an Axios/fetch wrapper with typed responses, request ID propagation, and retry/backoff policy. The Vite plugin surface now lives at `frontend/src/composables/useApiClient.ts` with `frontend/src/config/runtime.ts` feeding env overrides.
   - [x] Introduce Pinia stores for session, guilds, and channels with hydration helpers. `frontend/src/stores/guilds.ts`, `frontend/src/stores/channels.ts`, and `frontend/src/stores/session.ts` replace inline mocks and feed `frontend/src/layouts/DefaultLayout.vue`.
   - [x] Add vitest + Testing Library setup; cover store mutations and HTTP client error handling. Suites now cover Pinia stores and API client behavior (`frontend/tests/*store.test.ts`, `frontend/tests/api-client.test.ts`).
 
 ## Week 3: Authentication & Landing Flows (Milestone F0)
 
-- [ ] Implement session UX.
+- [x] Implement session UX.
   - [x] Build login/register forms with validation, error toasts, and loading states. `frontend/src/views/LoginView.vue` and the new `frontend/src/views/RegisterView.vue` share the session store while handling device metadata prompts.
   - [x] Persist access/refresh tokens in secure storage (IndexedDB fallback), respecting backend expiry semantics.
   - [x] Create device metadata prompts (friendly name) aligned with backend requirements.
@@ -36,16 +36,16 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Week 4: Guild & Channel Shell (Milestone F1)
 
-- [ ] Guild discovery and selection.
+- [x] Guild discovery and selection.
   - [x] Render the guild switcher with avatars, tooltips, and unread indicators (stub data + API integration). `frontend/src/components/app/AppGuildRail.vue` now consumes the hydrated Pinia store and shows skeletons while `/guilds` loads.
   - [x] Implement guild creation modal consuming backend `/guilds` POST. `frontend/src/components/app/AppGuildCreateModal.vue` surfaces a Nuxt UI modal triggered from the rail, wiring straight into `useGuildStore.createGuild` and rehydrating channels on success.
   - [x] Handle empty states (no guilds, invite-only messaging). `frontend/src/layouts/DefaultLayout.vue` shows a card prompting guild creation, while `HomeView` raises an invite-only alert and `AppChannelSidebar.vue` provides empty placeholders.
-- [ ] Channel list + metadata.
+- [x] Channel list + metadata.
   - [x] Display channel tree (text/voice), sort order, and locks based on permissions. `frontend/src/components/app/AppChannelSidebar.vue` now groups text/voice channels, highlights unread counts, and reacts to `useChannelStore` hydration.
   - [x] Surface channel topic/description and breadcrumb within the content header. `frontend/src/layouts/DefaultLayout.vue` wires channel descriptions into `AppTopbar` and sidebar metadata.
   - [x] Support skeleton/loading states using Suspense for SSR hydration. The sidebar shows loading placeholders while `/guilds/{guild_id}/channels` resolves.
   - [x] Implement channel creation modal. `frontend/src/components/app/AppChannelCreateModal.vue` posts to `/guilds/{id}/channels`, updates the store, and surfaces placeholders for empty/invite-only states.
-- [ ] Timeline scaffold.
+- [x] Timeline scaffold.
   - [x] Render message timeline (virtualized list) with author pill, timestamp, and Markdown parsing. `frontend/src/components/app/AppMessageTimeline.vue` renders grouped events with sender badges and timestamps (virtualization to follow in Week 5).
   - [x] Integrate initial fetch via `GET /channels/{channel_id}/events` (limit/ pagination support).
   - [x] Provide placeholder for reactions and system events. `frontend/src/components/app/AppMessageTimeline.vue` now renders badges for non-message events and a reactions stub ahead of Week 5 real-time UX.

@@ -1,63 +1,49 @@
-# BRAIN Snapshot · Updated 2025-11-03
+# BRAIN Snapshot · Updated 2025-11-04
 
 ## Repository Overview
-- Mono-repo for OpenGuild: Rust (Axum) backend under `backend/`, Vue 3 + Vite web client under `frontend/`, supporting docs in `docs/`.
-- Development workflow standardised around `cargo xtask` for backend chores and `bun` scripts for the frontend (`dev`, `lint`, `test:unit`, `type-check`, `build`).
-- Environment configuration follows “config file → env vars → CLI flags” on the server side; the client targets `VITE_API_BASE_URL`.
+- OpenGuild mono-repo: Rust (Axum) backend under `backend/`, Vue 3 + Vite frontend under `frontend/`, shared documentation in `docs/`.
+- Development workflow: `cargo xtask` orchestrates backend chores; frontend uses Bun/NPM parity scripts (`dev`, `lint`, `test:unit`, `type-check`, `build`).
+- Config strategy: backend honours config files → env vars → CLI flags; frontend consumes `VITE_API_BASE_URL` via `frontend/src/config/runtime.ts`.
 
 ## Backend (Rust / Axum)
-- **Authentication & Sessions**
-  - `/users/register`, `/sessions/login`, `/sessions/refresh`, `/sessions/revoke` exposed; sessions emit Ed25519-signed access tokens and refresh tokens bound to `device_id`.
-  - Device metadata persisted when storage is available; refresh rotation with revocation on mismatches.
+- **Auth & Sessions**
+  - REST surface includes `/users/register`, `/sessions/login`, `/sessions/refresh`, `/sessions/revoke`; tokens are Ed25519-signed and bound to `device_id`.
+  - Device metadata persisted when storage is available; refresh rotation handles expiry + revocation.
 - **Messaging Core**
-  - REST: `/guilds`, `/guilds/{guild_id}/channels`, `/channels/{channel_id}/messages`, `/channels/{channel_id}/events`.
-  - WebSocket fan-out at `/channels/{channel_id}/ws` with backpressure, replay window, global connection semaphore, sender validation, and rate limits (per-user & per-IP).
-  - Validation caps: guild/channel names <= 64 chars, message content <= 4,000 chars; rejections instrumented via metrics.
-- **Federation (Week 8 groundwork)**
-  - `FederationService`, trusted server list, `/federation/transactions` ingress, `/federation/channels/{channel_id}/events` for remote pagination.
-  - Canonical event envelope carries `schema_version` and BLAKE3-derived IDs.
+  - REST endpoints: `/guilds`, `/guilds/{guild_id}/channels`, `/channels/{channel_id}/messages`, `/channels/{channel_id}/events` (pagination + limits enforced).
+  - WebSocket fan-out at `/channels/{channel_id}/ws` implements replay window, heartbeats, global connection semaphore, sender validation, and per-IP/user rate limits. Fallback now accepts `?access_token=` when the browser cannot set headers, while still preferring `Authorization`.
+  - Validation thresholds: guild/channel names ≤ 64 chars, message bodies ≤ 4 000 chars; metrics track rejection reasons.
+- **Federation Plumbing**
+  - `FederationService` backs `/federation/transactions` ingress and `/federation/channels/{channel_id}/events`; canonical events include schema version + signatures for future MLS integrations.
 - **Observability & Ops**
-  - Request ID middleware propagates across logs/metrics; optional Prometheus exporter, health (`/ready`, `/health`), version route.
-  - Security headers (CSP, Referrer-Policy, etc.) enforced globally.
-  - SQLx storage layer with migration smoke tests (`cargo xtask ci-metrics-smoke`, `cargo xtask test`).
-  - CLI overrides for bind address, metrics, messaging rate limits, database URL, server name.
-  - Threat model and operations playbooks documented under `docs/`.
+  - Request IDs flow through logs/metrics; optional Prometheus exporter, `/ready` and `/health` probes, `/version` for build info.
+  - Security headers enforced globally; SQLx storage with smoke tests (`cargo xtask ci-metrics-smoke`).
 
 ## Frontend (Vue 3 / Vite)
-- **Foundation (Weeks 1–3 complete)**
-  - Vue 3 + Pinia + TypeScript, Tailwind tokens, Nuxt UI component library, Vite aliases (`@/`, `~/`).
-  - Session store handles login/register, token refresh, device metadata, secure persistence.
-  - Auth views include validation, onboarding carousel with links to `docs/SETUP.md`, `docs/FRONTEND_TIMELINE.md`, `docs/TESTING.md`.
-  - Layouts: `DefaultLayout.vue` for authenticated shell, `AuthLayout.vue` for login/register.
-- **Week 4 Progress (current focus)**
-  - Guild rail and channel sidebar hydrate from backend `/guilds` + `/guilds/{id}/channels`; skeleton states during load.
-  - Guild creation modal (`AppGuildCreateModal.vue`) and channel creation modal (`AppChannelCreateModal.vue`) post to the backend, update Pinia state, and surface empty/invite-only messaging.
-  - Query-param sync (`?guild=&channel=`) keeps deep links stable; selection handlers propagate through Pinia.
-  - `useTimelineStore` + `AppMessageTimeline` render `/channels/{id}/events`, group messages by day, and expose manual refresh alongside reactions/system placeholders.
-  - Home dashboard refreshed with live metrics, Week 4 delivery log, invite-only alerts, and upcoming tasks.
-  - Outstanding: channel permissions, timeline virtualization, reaction interactivity (tracked in docs).
-- **Additional UI**
-  - Styleguide view for tokens/components, roadmap view, home status cards wired to system store (`/ready`, `/version`).
+- **Foundations & Working Assumptions (Weeks 0–2)**
+  - Vue 3 + Pinia + TypeScript in Vite, Tailwind tokens + Nuxt UI components, documented aliases (`@/`, `~/`).
+  - `frontend/src/composables/useApiClient.ts` ensures request IDs, auth propagation, and telemetry breadcrumbs. Vitest + Testing Library suites cover core stores and API client behaviour.
+  - Accessibility, responsive layout, and instrumentation (Sentry stubs, LogRocket hooks, Lighthouse budgets) are treated as baseline requirements.
+- **Auth & Onboarding (Week 3)**
+  - Session store handles login/register, secure persistence, silent refresh, and device metadata prompts. Views live at `LoginView.vue` / `RegisterView.vue`; onboarding carousel links core docs.
+  - Global route guards enforce auth, refresh tokens, and redirect unauthenticated users to `/login`.
+- **Guild & Channel Shell (Week 4)**
+  - Pinia stores hydrate guild rail + channel sidebar from `/guilds` and `/guilds/{id}/channels`, with skeleton and invite-only states.
+  - Creation modals (`AppGuildCreateModal.vue`, `AppChannelCreateModal.vue`) post to the backend and reconcile Pinia state; timeline scaffold via `useTimelineStore` + `AppMessageTimeline.vue` handles grouped events and manual refresh.
+- **Messaging & Realtime (Week 5)**
+  - `AppMessageComposer.vue` delivers multi-line input, optimistic queueing, and connectivity banners; `useMessageComposerStore` manages optimistic events, retry queues, and backend validation (using the authenticated user ID for POSTs).
+  - `useRealtimeStore` adds exponential backoff, heartbeats, visibility-aware pause/resume, typing-preview emission (WebSocket first, HTTP fallback), and Sentry breadcrumbs.
+  - Home dashboard (`HomeView.vue`) wires in realtime status, typing previews, retry hooks, and degraded connectivity alerts. Lighthouse performance budgets live at `frontend/lighthouse.budgets.json`.
 
 ## Testing & Tooling
-- **Backend**
-  - `cargo xtask test` (workspace), `cargo xtask ci`, `cargo xtask ci-metrics-smoke`.
-  - Targeted suites for config, readiness, messaging, federation documented in `docs/TESTING.md`.
-- **Frontend**
-  - `bun test:unit` (Vitest, jsdom). Projects for Storybook+Playwright remain opt-in via `STORYBOOK_TESTS=true`.
-  - New store coverage: `frontend/src/stores/__tests__/session.spec.ts`, `guilds.spec.ts`, `channels.spec.ts`, `timeline.spec.ts`.
-  - `bun run type-check` (vue-tsc) covers the Vite client.
-- **Docs**
-  - `docs/FRONTEND_TIMELINE.md` tracks week-by-week UI milestones; Week 4 items updated for latest work.
-  - `docs/TESTING.md` links backend/ frontend commands and coverage responsibilities.
-  - `BRIEF.md` describes product framing; `docs/OBSERVABILITY.md`, `docs/THREATMODEL.md`, `docs/OPERATIONS.md` detail ops posture.
+- **Backend**: `cargo xtask test`, `cargo xtask ci`, `cargo xtask ci-metrics-smoke`; targeted messaging/federation suites documented in `docs/TESTING.md`.
+- **Frontend**: `bun test:unit` (Vitest, jsdom), `bun run type-check` (vue-tsc). Storybook/Playwright remain optional via `STORYBOOK_TESTS=true`.
+- Docs to watch: `docs/FRONTEND_TIMELINE.md` (timeline synced through Week 5), `docs/TESTING.md`, product brief (`BRIEF.md`), observability/threat model references.
 
 ## Deployment Notes
-- Backend expects Postgres (`DATABASE_URL`) but can operate in in-memory mode for local dev; metrics optional via feature flag.
-- Frontend served by Vite dev server (`bun dev`), built assets with `bun run build`.
-- Docker Compose sets baseline env (`OPENGUILD_SERVER__SERVER_NAME=dev.openguild.local`) for local federation experiments.
+- Backend defaults to Postgres (`DATABASE_URL`) but supports in-memory fallback for local dev; metrics exporter is feature gated.
+- Frontend served via Vite dev server (`bun dev`), production assets with `bun run build`. Docker Compose seeds local env (`OPENGUILD_SERVER__SERVER_NAME`) for federation experiments.
 
 ## Current Focus & Next Steps
-- Finish Week 4 UX parity: guild creation modal, invite-only / empty states, reaction placeholders.
-- Begin Week 5 preparations: message composer, optimistic posting, WebSocket integration on the client.
-- Maintain parity between frontend docs/tests and backend milestones; keep `docs/FRONTEND_TIMELINE.md` synced after each push.
+- Weeks 1–5 are done; upcoming work targets Week 6–7 deliverables: device list UX, permission-aware UI states, secure storage audit, and accessibility QA (axe-core, keyboard navigation).
+- Maintain parity between backend capabilities and frontend docs/tests, and continue logging realtime/messaging telemetry for observability.
