@@ -31,10 +31,11 @@
   - Layouts: `DefaultLayout.vue` for authenticated shell, `AuthLayout.vue` for login/register.
 - **Week 4 Progress (current focus)**
   - Guild rail and channel sidebar hydrate from backend `/guilds` + `/guilds/{id}/channels`; skeleton states during load.
+  - Guild creation modal (`AppGuildCreateModal.vue`) posts to `/guilds`, updates Pinia state, and guides the user through empty states.
   - Query-param sync (`?guild=&channel=`) keeps deep links stable; selection handlers propagate through Pinia.
-  - New `useTimelineStore` + `AppMessageTimeline` render `/channels/{id}/events`, group messages by day, and expose manual refresh.
-  - Home dashboard refreshed with live metrics, Week 4 delivery log, and upcoming tasks; timeline CTA drives QA.
-  - Outstanding: guild creation modal, empty-state UX, timeline reactions/virtualisation (tracked in docs).
+  - New `useTimelineStore` + `AppMessageTimeline` render `/channels/{id}/events`, group messages by day, and expose manual refresh alongside reactions/system placeholders.
+  - Home dashboard refreshed with live metrics, Week 4 delivery log, invite-only alerts, and upcoming tasks.
+  - Outstanding: channel creation modal, deeper empty-state flows, timeline virtualization and reaction interactivity (tracked in docs).
 - **Additional UI**
   - Styleguide view for tokens/components, roadmap view, home status cards wired to system store (`/ready`, `/version`).
 

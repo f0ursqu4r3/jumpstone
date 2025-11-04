@@ -224,6 +224,25 @@ const groupedChannels = computed(() => {
             </li>
           </ul>
         </section>
+        <div
+          v-if="!loading && groupedChannels.length === 0"
+          class="rounded-xl border border-dashed border-white/10 bg-slate-950/30 px-4 py-6 text-center text-sm text-slate-400"
+        >
+          <UIcon name="i-heroicons-sparkles" class="mb-3 inline-flex h-6 w-6 text-slate-500" />
+          <p class="font-semibold text-white">No channels yet</p>
+          <p class="mt-1 text-xs text-slate-500">
+            Create a channel to start conversations. You can add text or voice rooms as needed.
+          </p>
+          <Button
+            class="mt-3"
+            color="info"
+            variant="ghost"
+            icon="i-heroicons-plus-circle"
+            @click="emit('create-channel')"
+          >
+            Create channel
+          </Button>
+        </div>
       </div>
     </div>
 

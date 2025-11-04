@@ -5,9 +5,11 @@ import type { LocationQueryRaw } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
 import AppChannelSidebar from '@/components/app/AppChannelSidebar.vue'
+import AppGuildCreateModal from '@/components/app/AppGuildCreateModal.vue'
 import AppGuildRail from '@/components/app/AppGuildRail.vue'
 import AppTopbar from '@/components/app/AppTopbar.vue'
 import Button from '@/components/ui/Button.vue'
+import { extractErrorMessage } from '@/utils/errors'
 import { useChannelStore } from '@/stores/channels'
 import { useGuildStore } from '@/stores/guilds'
 import { useSessionStore } from '@/stores/session'
@@ -38,6 +40,9 @@ const { hydrated: hydratedRef, isAuthenticated: isAuthenticatedRef } = storeToRe
 const mobileSidebarOpen = ref(false)
 const ready = ref(false)
 const syncingRoute = ref(false)
+const showCreateGuildModal = ref(false)
+const createGuildLoading = ref(false)
+const createGuildError = ref<string | null>(null)
 
 const formatCreatedAt = (iso?: string | null) => {
   if (!iso) {
@@ -77,6 +82,9 @@ const channels = computed(() =>
 
 const activeGuild = computed(() => activeGuildRef.value ?? guildsRef.value[0])
 const activeChannel = computed(() => activeChannelRef.value ?? channels.value[0])
+const hasGuilds = computed(() => guilds.value.length > 0)
+const guildLoading = computed(() => guildLoadingRef.value)
+const channelLoading = computed(() => channelLoadingRef.value)
 
 const hydrated = computed(() => hydratedRef.value)
 const isAuthenticated = computed(() => isAuthenticatedRef.value)
@@ -243,7 +251,35 @@ const handleOpenGuildMenu = () => {
 }
 
 const handleCreateGuild = () => {
-  console.info('Guild creation flow not yet implemented')
+  createGuildError.value = null
+  showCreateGuildModal.value = true
+}
+
+const submitCreateGuild = async (name: string) => {
+  const trimmed = name.trim()
+  if (!trimmed) {
+    createGuildError.value = 'Guild name is required.'
+    return
+  }
+
+  createGuildLoading.value = true
+  createGuildError.value = null
+
+  try {
+    const record = await guildStore.createGuild(trimmed)
+    await guildStore.setActiveGuild(record.guild_id)
+    await channelStore.setActiveGuild(record.guild_id)
+    updateRouteQuery(record.guild_id, activeChannelIdRef.value ?? null, true)
+    showCreateGuildModal.value = false
+  } catch (err) {
+    createGuildError.value = extractErrorMessage(err) || 'Unable to create guild.'
+  } finally {
+    createGuildLoading.value = false
+  }
+}
+
+const resetCreateGuildError = () => {
+  createGuildError.value = null
 }
 </script>
 
@@ -252,30 +288,30 @@ const handleCreateGuild = () => {
     <AppGuildRail
       v-if="showAppShell"
       :guilds="guilds"
-      :loading="guildLoadingRef"
+      :loading="guildLoading"
       @select="handleGuildSelect"
       @create="handleCreateGuild"
       @open-menu="handleOpenGuildMenu"
     />
 
     <AppChannelSidebar
-      v-if="showAppShell"
+      v-if="showAppShell && hasGuilds"
       :guild-name="activeGuild?.name || ''"
       :channels="channels"
-      :loading="channelLoadingRef"
+      :loading="channelLoading"
       class="hidden lg:flex"
       @select-channel="handleChannelSelect"
       @create-channel="handleCreateChannel"
       @open-guild-settings="handleOpenGuildMenu"
     />
 
-    <USlideover v-if="showAppShell" v-model="mobileSidebarOpen" side="left">
+    <USlideover v-if="showAppShell && hasGuilds" v-model="mobileSidebarOpen" side="left">
       <template #content>
         <div class="flex h-full w-[18rem] flex-col bg-slate-950">
           <AppChannelSidebar
             :guild-name="activeGuild?.name || ''"
             :channels="channels"
-            :loading="channelLoadingRef"
+            :loading="channelLoading"
             class="flex"
             @select-channel="handleChannelSelect"
             @create-channel="handleCreateChannel"
@@ -286,23 +322,53 @@ const handleCreateGuild = () => {
     </USlideover>
 
     <div class="flex h-full flex-1 flex-col" v-if="showAppShell">
-      <AppTopbar
-        :channel-name="activeChannel?.label || ''"
-        :topic="activeChannel?.description || ''"
-      />
-      <main
-        class="flex-1 overflow-y-auto bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
-      >
-        <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-10">
-          <slot />
-        </div>
-      </main>
+      <template v-if="hasGuilds">
+        <AppTopbar
+          :channel-name="activeChannel?.label || ''"
+          :topic="activeChannel?.description || ''"
+        />
+        <main
+          class="flex-1 overflow-y-auto bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
+        >
+          <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-10">
+            <slot />
+          </div>
+        </main>
+      </template>
+      <template v-else>
+        <main
+          class="flex flex-1 items-center justify-center bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80 px-4"
+        >
+          <UCard class="w-full max-w-lg border border-white/5 bg-slate-950/70">
+            <template #header>
+              <div class="space-y-1">
+                <h2 class="text-lg font-semibold text-white">No guilds yet</h2>
+                <p class="text-sm text-slate-400">
+                  Create your first guild to unlock channels, timelines, and collaboration spaces.
+                </p>
+              </div>
+            </template>
+            <div class="space-y-4 text-sm text-slate-300">
+              <p>
+                Use the button on the left rail to add a guild. Once created, you will be able to
+                add channels and invite teammates.
+              </p>
+              <UButton color="info" @click="handleCreateGuild" icon="i-heroicons-plus">
+                Create guild
+              </UButton>
+            </div>
+          </UCard>
+        </main>
+      </template>
       <footer class="border-t border-white/5 bg-slate-950/80 px-6 py-3 text-xs text-slate-500">
         Prototype UI - Federation awareness not yet connected
       </footer>
     </div>
 
-    <div v-if="showAppShell" class="fixed left-4 top-4 z-40 flex items-center gap-2 lg:hidden">
+    <div
+      v-if="showAppShell && hasGuilds"
+      class="fixed left-4 top-4 z-40 flex items-center gap-2 lg:hidden"
+    >
       <Button
         icon="i-heroicons-bars-3"
         color="neutral"
@@ -350,4 +416,12 @@ const handleCreateGuild = () => {
       </div>
     </div>
   </div>
+
+  <AppGuildCreateModal
+    v-model:open="showCreateGuildModal"
+    :loading="createGuildLoading"
+    :error="createGuildError"
+    @submit="submitCreateGuild"
+    @reset-error="resetCreateGuildError"
+  />
 </template>

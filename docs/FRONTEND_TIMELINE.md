@@ -38,8 +38,8 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 - [ ] Guild discovery and selection.
   - [x] Render the guild switcher with avatars, tooltips, and unread indicators (stub data + API integration). `frontend/src/components/app/AppGuildRail.vue` now consumes the hydrated Pinia store and shows skeletons while `/guilds` loads.
-  - [ ] Implement guild creation modal consuming backend `/guilds` POST.
-  - [ ] Handle empty states (no guilds, invite-only messaging).
+  - [x] Implement guild creation modal consuming backend `/guilds` POST. `frontend/src/components/app/AppGuildCreateModal.vue` surfaces a Nuxt UI modal triggered from the rail, wiring straight into `useGuildStore.createGuild` and rehydrating channels on success.
+  - [x] Handle empty states (no guilds, invite-only messaging). `frontend/src/layouts/DefaultLayout.vue` shows a card prompting guild creation, while `HomeView` raises an invite-only alert and `AppChannelSidebar.vue` provides empty placeholders.
 - [ ] Channel list + metadata.
   - [x] Display channel tree (text/voice), sort order, and locks based on permissions. `frontend/src/components/app/AppChannelSidebar.vue` now groups text/voice channels, highlights unread counts, and reacts to `useChannelStore` hydration.
   - [x] Surface channel topic/description and breadcrumb within the content header. `frontend/src/layouts/DefaultLayout.vue` wires channel descriptions into `AppTopbar` and sidebar metadata.
@@ -47,7 +47,7 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 - [ ] Timeline scaffold.
   - [x] Render message timeline (virtualized list) with author pill, timestamp, and Markdown parsing. `frontend/src/components/app/AppMessageTimeline.vue` renders grouped events with sender badges and timestamps (virtualization to follow in Week 5).
   - [x] Integrate initial fetch via `GET /channels/{channel_id}/events` (limit/ pagination support).
-  - [ ] Provide placeholder for reactions and system events.
+  - [x] Provide placeholder for reactions and system events. `frontend/src/components/app/AppMessageTimeline.vue` now renders badges for non-message events and a reactions stub ahead of Week 5 real-time UX.
 
 ## Week 5: Messaging UX & Realtime (Milestone F1)
 

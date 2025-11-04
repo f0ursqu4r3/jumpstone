@@ -184,7 +184,7 @@ const hasEvents = computed(() => groupedEvents.value.length > 0)
             >
               {{ message.sender.slice(0, 2) }}
             </div>
-            <div class="flex-1 space-y-1">
+            <div class="flex-1 space-y-2">
               <div class="flex flex-wrap items-center gap-2">
                 <p class="text-sm font-semibold text-white">
                   {{ message.sender }}
@@ -195,6 +195,16 @@ const hasEvents = computed(() => groupedEvents.value.length > 0)
               <p class="text-sm text-slate-200 whitespace-pre-line break-words">
                 {{ message.content }}
               </p>
+              <p
+                v-if="message.eventType !== 'message'"
+                class="text-xs text-slate-500"
+              >
+                System event placeholder — richer rendering lands in Week 5.
+              </p>
+              <div class="flex items-center gap-2 text-xs text-slate-500">
+                <UIcon name="i-heroicons-face-smile" class="h-4 w-4" />
+                <span>Reactions placeholder · emoji + counts coming soon</span>
+              </div>
             </div>
           </li>
         </ul>

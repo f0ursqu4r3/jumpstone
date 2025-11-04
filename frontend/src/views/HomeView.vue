@@ -69,6 +69,8 @@ const timelineStore = useTimelineStore()
 const {
   activeChannelId: activeChannelIdRef,
   activeChannel: activeChannelRef,
+  channelsForGuild: channelsForGuildRef,
+  loading: channelStoreLoadingRef,
 } = storeToRefs(channelStore)
 
 const { activeGuild: activeGuildRef } = storeToRefs(guildStore)
@@ -128,6 +130,10 @@ const timelineError = computed(() => {
 
 const activeChannelName = computed(() => activeChannelRef.value?.label ?? '')
 const activeGuildName = computed(() => activeGuildRef.value?.name ?? '—')
+const hasChannels = computed(
+  () => (channelsForGuildRef.value ? channelsForGuildRef.value.length > 0 : false),
+)
+const channelListLoading = computed(() => channelStoreLoadingRef.value)
 
 const latestSequenceLabel = computed(() => {
   const events = timelineEvents.value
@@ -403,13 +409,27 @@ const refreshProfile = async () => {
     </section>
 
     <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <AppMessageTimeline
-        :channel-name="activeChannelName"
-        :events="timelineEvents"
-        :loading="timelineLoading"
-        :error="timelineError"
-        @refresh="refreshTimeline"
-      />
+      <div class="space-y-4">
+        <UAlert
+          v-if="!hasChannels && !channelListLoading"
+          color="neutral"
+          variant="soft"
+          icon="i-heroicons-lock-closed"
+          title="Invite-only"
+        >
+          <template #description>
+            No channels are visible yet. Create a channel or request access if this guild is
+            invite-only.
+          </template>
+        </UAlert>
+        <AppMessageTimeline
+          :channel-name="activeChannelName"
+          :events="timelineEvents"
+          :loading="timelineLoading"
+          :error="timelineError"
+          @refresh="refreshTimeline"
+        />
+      </div>
 
       <div class="space-y-6">
         <UCard class="border border-white/5 bg-slate-950/60">
