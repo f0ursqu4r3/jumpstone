@@ -1,40 +1,62 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { LocationQueryRaw } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
-import AppChannelSidebar from '~/components/app/AppChannelSidebar.vue'
-import AppGuildRail from '~/components/app/AppGuildRail.vue'
-import AppTopbar from '~/components/app/AppTopbar.vue'
+import AppChannelSidebar from '@/components/app/AppChannelSidebar.vue'
+import AppGuildRail from '@/components/app/AppGuildRail.vue'
+import AppTopbar from '@/components/app/AppTopbar.vue'
 import Button from '@/components/ui/Button.vue'
-import { useChannelStore } from '~/stores/channels'
-import { useGuildStore } from '~/stores/guilds'
-import { useSessionStore } from '~/stores/session'
+import { useChannelStore } from '@/stores/channels'
+import { useGuildStore } from '@/stores/guilds'
+import { useSessionStore } from '@/stores/session'
+
+const route = useRoute()
+const router = useRouter()
 
 const guildStore = useGuildStore()
+const channelStore = useChannelStore()
+const sessionStore = useSessionStore()
+
 const {
   guilds: guildsRef,
   activeGuildId: activeGuildIdRef,
   activeGuild: activeGuildRef,
+  loading: guildLoadingRef,
 } = storeToRefs(guildStore)
 
-const channelStore = useChannelStore()
 const {
   channelsForGuild: channelsForGuildRef,
   activeChannel: activeChannelRef,
   activeChannelId: activeChannelIdRef,
+  loading: channelLoadingRef,
 } = storeToRefs(channelStore)
 
-guildStore.hydrate()
-channelStore.hydrate()
+const { hydrated: hydratedRef, isAuthenticated: isAuthenticatedRef } = storeToRefs(sessionStore)
 
-watch(
-  () => activeGuildIdRef.value,
-  (guildId) => {
-    channelStore.setActiveGuild(guildId ?? null)
-  },
-  { immediate: true },
-)
+const mobileSidebarOpen = ref(false)
+const ready = ref(false)
+const syncingRoute = ref(false)
+
+const formatCreatedAt = (iso?: string | null) => {
+  if (!iso) {
+    return null
+  }
+
+  const parsed = new Date(iso)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+    }).format(parsed)
+  } catch {
+    return parsed.toLocaleDateString()
+  }
+}
 
 const guilds = computed(() =>
   guildsRef.value.map((guild) => ({
@@ -42,23 +64,143 @@ const guilds = computed(() =>
     active: guild.id === activeGuildIdRef.value,
   })),
 )
+
 const channels = computed(() =>
   (channelsForGuildRef.value ?? []).map((channel) => ({
     ...channel,
     active: channel.id === activeChannelIdRef.value,
+    description: channel.description ?? formatCreatedAt(channel.createdAt) ?? undefined,
+    icon:
+      channel.icon ?? (channel.kind === 'voice' ? 'i-heroicons-speaker-wave' : 'i-heroicons-hashtag'),
   })),
 )
+
 const activeGuild = computed(() => activeGuildRef.value ?? guildsRef.value[0])
 const activeChannel = computed(() => activeChannelRef.value ?? channels.value[0])
-const mobileSidebarOpen = ref(false)
 
-const sessionStore = useSessionStore()
-const { hydrated: hydratedRef, isAuthenticated: isAuthenticatedRef } = storeToRefs(sessionStore)
-const route = useRoute()
-const router = useRouter()
 const hydrated = computed(() => hydratedRef.value)
 const isAuthenticated = computed(() => isAuthenticatedRef.value)
 const showAppShell = computed(() => hydrated.value && isAuthenticated.value)
+
+const updateRouteQuery = (
+  guildId?: string | null,
+  channelId?: string | null,
+  replace = false,
+) => {
+  if (syncingRoute.value) {
+    return
+  }
+
+  const nextQuery: LocationQueryRaw = {}
+
+  Object.entries(route.query).forEach(([key, value]) => {
+    if (key === 'guild' || key === 'channel') {
+      return
+    }
+    nextQuery[key] = value as string | string[] | null | undefined
+  })
+
+  if (guildId) {
+    nextQuery.guild = guildId
+  }
+
+  if (channelId) {
+    nextQuery.channel = channelId
+  }
+
+  const method = replace ? router.replace : router.push
+  method({ path: route.path, query: nextQuery }).catch(() => {})
+}
+
+const syncFromRoute = async (options: { updateRoute: boolean }) => {
+  syncingRoute.value = true
+  try {
+    if (!ready.value) {
+      await guildStore.hydrate()
+    }
+
+    let targetGuildId =
+      typeof route.query.guild === 'string' && route.query.guild.length
+        ? route.query.guild
+        : null
+
+    if (targetGuildId) {
+      await guildStore.setActiveGuild(targetGuildId).catch(() => undefined)
+    } else if (!activeGuildIdRef.value) {
+      const firstGuild = guildsRef.value[0]
+      if (firstGuild) {
+        await guildStore.setActiveGuild(firstGuild.id)
+        targetGuildId = firstGuild.id
+      } else {
+        targetGuildId = null
+      }
+    } else {
+      targetGuildId = activeGuildIdRef.value
+    }
+
+    await channelStore.setActiveGuild(targetGuildId ?? null)
+
+    let targetChannelId =
+      typeof route.query.channel === 'string' && route.query.channel.length
+        ? route.query.channel
+        : null
+
+    if (targetChannelId) {
+      await channelStore.setActiveChannel(targetChannelId).catch(() => undefined)
+    } else {
+      targetChannelId = activeChannelIdRef.value ?? null
+    }
+
+    if (options.updateRoute) {
+      updateRouteQuery(targetGuildId, targetChannelId, true)
+    }
+  } finally {
+    syncingRoute.value = false
+  }
+}
+
+const initialize = async () => {
+  await syncFromRoute({ updateRoute: true })
+  ready.value = true
+}
+
+initialize().catch((err) => {
+  console.warn('Failed to initialise layout routing', err)
+})
+
+watch(
+  () => route.query,
+  async () => {
+    if (!ready.value || syncingRoute.value) {
+      return
+    }
+
+    await syncFromRoute({ updateRoute: false })
+  },
+  { deep: true },
+)
+
+watch(
+  () => [activeGuildIdRef.value, activeChannelIdRef.value] as const,
+  ([guildId, channelId]) => {
+    if (!ready.value) {
+      return
+    }
+
+    updateRouteQuery(guildId ?? null, channelId ?? null, true)
+  },
+)
+
+watch(
+  () => activeGuildIdRef.value,
+  async (guildId) => {
+    if (syncingRoute.value) {
+      return
+    }
+
+    await channelStore.setActiveGuild(guildId ?? null)
+  },
+)
 
 const goToLogin = async () => {
   const redirect = route.path === '/login' ? null : route.fullPath
@@ -74,17 +216,57 @@ watch(
   },
   { flush: 'post' },
 )
+
+const handleGuildSelect = async (guildId: string) => {
+  const targetGuildId = guildId || guildsRef.value[0]?.id || null
+  if (!targetGuildId) {
+    return
+  }
+
+  await guildStore.setActiveGuild(targetGuildId)
+  await channelStore.setActiveGuild(targetGuildId)
+  updateRouteQuery(targetGuildId, activeChannelIdRef.value ?? null, true)
+}
+
+const handleChannelSelect = async (channelId: string) => {
+  await channelStore.setActiveChannel(channelId)
+  updateRouteQuery(activeGuildIdRef.value ?? null, activeChannelIdRef.value ?? null, true)
+  mobileSidebarOpen.value = false
+}
+
+const handleCreateChannel = () => {
+  console.info('Channel creation flow not yet implemented')
+}
+
+const handleOpenGuildMenu = () => {
+  console.info('Guild settings menu not yet implemented')
+}
+
+const handleCreateGuild = () => {
+  console.info('Guild creation flow not yet implemented')
+}
 </script>
 
 <template>
   <div class="relative flex h-screen overflow-hidden bg-slate-950">
-    <AppGuildRail v-if="showAppShell" :guilds="guilds" />
+    <AppGuildRail
+      v-if="showAppShell"
+      :guilds="guilds"
+      :loading="guildLoadingRef"
+      @select="handleGuildSelect"
+      @create="handleCreateGuild"
+      @open-menu="handleOpenGuildMenu"
+    />
 
     <AppChannelSidebar
       v-if="showAppShell"
       :guild-name="activeGuild?.name || ''"
       :channels="channels"
+      :loading="channelLoadingRef"
       class="hidden lg:flex"
+      @select-channel="handleChannelSelect"
+      @create-channel="handleCreateChannel"
+      @open-guild-settings="handleOpenGuildMenu"
     />
 
     <USlideover v-if="showAppShell" v-model="mobileSidebarOpen" side="left">
@@ -93,7 +275,11 @@ watch(
           <AppChannelSidebar
             :guild-name="activeGuild?.name || ''"
             :channels="channels"
+            :loading="channelLoadingRef"
             class="flex"
+            @select-channel="handleChannelSelect"
+            @create-channel="handleCreateChannel"
+            @open-guild-settings="handleOpenGuildMenu"
           />
         </div>
       </template>

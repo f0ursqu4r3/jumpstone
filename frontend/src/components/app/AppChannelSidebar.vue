@@ -1,30 +1,35 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
+
+import { useSessionStore } from '@/stores/session'
+import type { ChannelEntry } from '@/types/ui'
 
 import Avatar from '@/components/ui/Avatar.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
-import { useSessionStore } from '~/stores/session'
 
-interface ChannelEntry {
-  id: string
-  label: string
-  kind: 'text' | 'voice'
-  icon?: string
-  to?: string
-  unread?: number
-  description?: string
-}
+const props = withDefaults(
+  defineProps<{
+    guildName: string
+    channels: ChannelEntry[]
+    loading?: boolean
+  }>(),
+  {
+    loading: false,
+  },
+)
 
-const props = defineProps<{
-  guildName: string
-  channels: ChannelEntry[]
+const emit = defineEmits<{
+  (event: 'select-channel', channelId: string): void
+  (event: 'create-channel'): void
+  (event: 'open-guild-settings'): void
 }>()
 
 const guildName = computed(() => props.guildName)
 const channels = computed(() => props.channels)
+const loading = computed(() => props.loading)
 const sessionStore = useSessionStore()
 const {
   isAuthenticated: isAuthenticatedRef,
@@ -86,9 +91,9 @@ const handleSignOut = async () => {
 
 const groupedChannels = computed(() => {
   type BucketChild = {
+    id: string
     label: string
     icon: string
-    to: string
     badge?: {
       label: string
       color:
@@ -102,6 +107,7 @@ const groupedChannels = computed(() => {
         | undefined
     }
     description?: string
+    active: boolean
   }
 
   const buckets: Record<'text' | 'voice', { label: string; children: BucketChild[] }> = {
@@ -115,9 +121,9 @@ const groupedChannels = computed(() => {
       (channel.kind === 'voice' ? 'i-heroicons-speaker-wave' : 'i-heroicons-hashtag')
 
     buckets[channel.kind].children.push({
+      id: channel.id,
       label: `${channel.kind === 'text' ? '#' : ''}${channel.label}`,
       icon,
-      to: channel.to ?? '#',
       badge: channel.unread
         ? {
             label: channel.unread > 9 ? '9+' : channel.unread.toString(),
@@ -125,6 +131,7 @@ const groupedChannels = computed(() => {
           }
         : undefined,
       description: channel.description,
+      active: Boolean(channel.active),
     })
   })
 
@@ -147,6 +154,7 @@ const groupedChannels = computed(() => {
           color="neutral"
           variant="ghost"
           aria-label="Guild settings"
+          @click="emit('open-guild-settings')"
         />
       </div>
 
@@ -157,6 +165,9 @@ const groupedChannels = computed(() => {
             variant="soft"
             class="mt-2 w-full justify-center"
             icon="i-heroicons-plus-circle"
+            :loading="loading"
+            :disabled="loading"
+            @click="emit('create-channel')"
           >
             New channel
           </Button>
@@ -166,26 +177,50 @@ const groupedChannels = computed(() => {
       <USeparator class="mt-4 opacity-50" />
 
       <div class="flex-1 space-y-4 overflow-y-auto p-2">
-        <section v-for="group in groupedChannels" :key="group.label" class="space-y-3">
+        <div v-if="loading" class="space-y-3">
+          <div
+            v-for="index in 6"
+            :key="`loading-${index}`"
+            class="flex items-center gap-3 rounded-lg px-2 py-2"
+          >
+            <USkeleton class="h-5 w-5 rounded" />
+            <div class="flex-1 space-y-2">
+              <USkeleton class="h-3 w-24 rounded" />
+              <USkeleton class="h-3 w-32 rounded" />
+            </div>
+          </div>
+        </div>
+        <section v-else v-for="group in groupedChannels" :key="group.label" class="space-y-3">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
             {{ group.label }}
           </p>
           <ul>
-            <li v-for="channel in group.children" :key="channel.label">
-              <RouterLink
-                :to="channel.to"
-                class="flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            <li v-for="channel in group.children" :key="channel.id">
+              <button
+                type="button"
+                class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                :class="[
+                  channel.active
+                    ? 'bg-slate-800 text-white shadow-inner shadow-sky-500/10'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                ]"
+                @click="emit('select-channel', channel.id)"
               >
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 text-left">
                   <UIcon :name="channel.icon" class="h-5 w-5 shrink-0" />
-                  <span>{{ channel.label }}</span>
+                  <div class="flex flex-col text-left">
+                    <span>{{ channel.label }}</span>
+                    <span v-if="channel.description" class="text-xs text-slate-500">
+                      {{ channel.description }}
+                    </span>
+                  </div>
                 </div>
                 <div v-if="channel.badge">
                   <Badge :color="channel.badge.color" size="sm">
                     {{ channel.badge.label }}
                   </Badge>
                 </div>
-              </RouterLink>
+              </button>
             </li>
           </ul>
         </section>

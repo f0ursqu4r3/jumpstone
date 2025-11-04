@@ -901,23 +901,12 @@ fn build_app(state: AppState) -> Router {
     #[cfg(feature = "metrics")]
     let metrics_ctx = state.metrics_context();
 
-    #[cfg_attr(not(feature = "metrics"), allow(unused_mut))]
-    let mut router = Router::new()
-        .route("/health", get(health))
-        .route("/ready", get(readiness))
-        .route("/version", get(version))
+    let client_v1_routes = Router::new()
         .route("/users/register", post(users::register))
         .route("/users/me", get(users::me))
         .route("/sessions/login", post(session::login))
         .route("/sessions/refresh", post(session::refresh))
         .route("/sessions/revoke", post(session::revoke))
-        .route("/federation/transactions", post(federation_transactions))
-        .route("/mls/key-packages", get(list_key_packages))
-        .route("/mls/handshake-test-vectors", get(handshake_test_vectors))
-        .route(
-            "/mls/key-packages/{identity}/rotate",
-            post(rotate_key_package),
-        )
         .route(
             "/guilds",
             get(messaging::list_guilds).post(messaging::create_guild),
@@ -931,11 +920,24 @@ fn build_app(state: AppState) -> Router {
             post(messaging::post_message),
         )
         .route("/channels/{channel_id}/events", get(messaging::list_events))
+        .route("/channels/{channel_id}/ws", get(messaging::channel_socket));
+
+    #[cfg_attr(not(feature = "metrics"), allow(unused_mut))]
+    let mut router = Router::new()
+        .route("/health", get(health))
+        .route("/ready", get(readiness))
+        .route("/version", get(version))
+        .route("/federation/transactions", post(federation_transactions))
+        .route("/mls/key-packages", get(list_key_packages))
+        .route("/mls/handshake-test-vectors", get(handshake_test_vectors))
+        .route(
+            "/mls/key-packages/{identity}/rotate",
+            post(rotate_key_package),
+        )
         .route(
             "/federation/channels/{channel_id}/events",
             get(federation_events),
-        )
-        .route("/channels/{channel_id}/ws", get(messaging::channel_socket));
+        );
 
     #[cfg(feature = "metrics")]
     {
@@ -943,6 +945,10 @@ fn build_app(state: AppState) -> Router {
             router = router.route("/metrics", get(metrics_handler));
         }
     }
+
+    // Keep legacy paths while exposing the same handlers under a versioned prefix.
+    router = router.merge(client_v1_routes.clone());
+    router = router.nest("/client/v1", client_v1_routes);
 
     let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
 
@@ -1754,6 +1760,34 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/sessions/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"identifier":"","secret":" ","device":{"device_id":"cli"}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "validation_error");
+        let details = payload["details"].as_array().unwrap();
+        assert_eq!(details.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn client_v1_login_route_rejects_blank_inputs() {
+        let state = app_state_with_default_session(test_config(), storage_unconfigured());
+        let app = build_app(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/client/v1/sessions/login")
                     .header("content-type", "application/json")
                     .body(Body::from(
                         r#"{"identifier":"","secret":" ","device":{"device_id":"cli"}}"#,

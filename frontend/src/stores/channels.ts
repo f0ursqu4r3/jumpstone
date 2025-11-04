@@ -1,55 +1,40 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+import { useApiClient } from '@/composables/useApiClient'
+import { extractErrorMessage } from '@/utils/errors'
+import type { ChannelRecord } from '~/types/messaging'
+
 export type ChannelKind = 'text' | 'voice'
 
 export interface ChannelSummary {
   id: string
+  guildId: string
   label: string
   kind: ChannelKind
   icon?: string
   unread?: number
-  description?: string
+  description?: string | null
+  createdAt?: string
 }
 
-const STUB_CHANNELS: Record<string, ChannelSummary[]> = {
-  openguild: [
-    {
-      id: 'general',
-      label: 'general',
-      kind: 'text',
-      unread: 3,
-      description: 'Roadmap, weekly sync notes, launch prep',
-    },
-    {
-      id: 'announcements',
-      label: 'announcements',
-      kind: 'text',
-      icon: 'i-heroicons-megaphone',
-      description: 'Ship updates from the core team',
-    },
-    { id: 'frontend-team', label: 'frontend-team', kind: 'text' },
-    { id: 'voice-standup', label: 'Daily standup', kind: 'voice' },
-    { id: 'voice-warroom', label: 'War room', kind: 'voice' },
-  ],
-  'design-lab': [
-    {
-      id: 'design-changelog',
-      label: 'design-changelog',
-      kind: 'text',
-      description: 'Figma updates and feedback threads',
-    },
-    { id: 'design-crit', label: 'design-crit', kind: 'voice' },
-  ],
-  infra: [
-    {
-      id: 'ops-announcements',
-      label: 'ops-announcements',
-      kind: 'text',
-      description: 'Rollout notices and rotation changes',
-    },
-    { id: 'pager', label: 'pager-duty', kind: 'voice' },
-  ],
+const FETCH_TTL_MS = 30_000
+
+const inferChannelKind = (name: string): ChannelKind =>
+  /^voice-|^call-|^meeting-|^standup-/.test(name) ? 'voice' : 'text'
+
+const mapChannelRecord = (record: ChannelRecord): ChannelSummary => {
+  const label = record.name.trim()
+  const kind = inferChannelKind(label.toLowerCase())
+  return {
+    id: record.channel_id,
+    guildId: record.guild_id,
+    label,
+    kind,
+    icon: kind === 'voice' ? 'i-heroicons-speaker-wave' : undefined,
+    description: null,
+    createdAt: record.created_at,
+  }
 }
 
 export const useChannelStore = defineStore('channels', () => {
@@ -60,6 +45,8 @@ export const useChannelStore = defineStore('channels', () => {
   const error = ref<string | null>(null)
   const hydrated = ref(false)
   const lastFetchedAt = ref<number | null>(null)
+  const inFlightFetches = new Map<string, Promise<void>>()
+  const guildFetchTimestamps = ref<Record<string, number>>({})
 
   const channelsForGuild = computed(() => {
     if (!activeGuildId.value) {
@@ -77,35 +64,76 @@ export const useChannelStore = defineStore('channels', () => {
     return scoped.find((channel) => channel.id === activeChannelId.value) ?? null
   })
 
-  function hydrate(force = false) {
-    if (loading.value) {
+  const shouldSkipFetch = (guildId: string, force: boolean) => {
+    if (force) {
+      return false
+    }
+
+    const lastFetched = guildFetchTimestamps.value[guildId]
+    if (!lastFetched) {
+      return false
+    }
+
+    return Date.now() - lastFetched < FETCH_TTL_MS
+  }
+
+  async function fetchChannelsForGuild(guildId: string, force = false) {
+    if (!guildId) {
       return
     }
 
-    if (hydrated.value && !force) {
+    if (shouldSkipFetch(guildId, force)) {
       return
     }
 
+    if (inFlightFetches.has(guildId)) {
+      return inFlightFetches.get(guildId)
+    }
+
+    const api = useApiClient()
     loading.value = true
     error.value = null
 
-    try {
-      channelsByGuild.value = STUB_CHANNELS
-      hydrated.value = true
-      lastFetchedAt.value = Date.now()
+    const request = (async () => {
+      try {
+        const payload = await api<ChannelRecord[]>(
+          `/guilds/${guildId}/channels`,
+        )
+        const mapped = payload.map(mapChannelRecord)
+        channelsByGuild.value = {
+          ...channelsByGuild.value,
+          [guildId]: mapped,
+        }
+        guildFetchTimestamps.value[guildId] = Date.now()
+        hydrated.value = true
+        lastFetchedAt.value = Date.now()
 
-      if (activeGuildId.value) {
-        ensureActiveChannelForGuild(activeGuildId.value)
+        if (activeGuildId.value === guildId) {
+          ensureActiveChannelForGuild(guildId)
+        }
+      } catch (err) {
+        error.value = extractErrorMessage(err) || 'Failed to load channels'
+        throw err
+      } finally {
+        loading.value = false
+        inFlightFetches.delete(guildId)
       }
-    } catch (err) {
-      error.value =
-        err instanceof Error ? err.message : 'Failed to hydrate channels'
-    } finally {
-      loading.value = false
-    }
+    })()
+
+    inFlightFetches.set(guildId, request)
+    return request
   }
 
-  function setActiveGuild(guildId: string | null) {
+  async function hydrate(force = false) {
+    if (!activeGuildId.value) {
+      hydrated.value = true
+      return
+    }
+
+    await fetchChannelsForGuild(activeGuildId.value, force)
+  }
+
+  async function setActiveGuild(guildId: string | null) {
     if (!guildId) {
       activeGuildId.value = null
       activeChannelId.value = null
@@ -113,14 +141,18 @@ export const useChannelStore = defineStore('channels', () => {
     }
 
     activeGuildId.value = guildId
+
+    await fetchChannelsForGuild(guildId).catch(() => undefined)
     ensureActiveChannelForGuild(guildId)
   }
 
-  function setActiveChannel(channelId: string) {
+  async function setActiveChannel(channelId: string) {
     if (!activeGuildId.value) {
       error.value = 'No active guild selected'
       return
     }
+
+    await fetchChannelsForGuild(activeGuildId.value).catch(() => undefined)
 
     const scoped = channelsByGuild.value[activeGuildId.value] ?? []
     if (!scoped.some((channel) => channel.id === channelId)) {
@@ -135,7 +167,8 @@ export const useChannelStore = defineStore('channels', () => {
   function ensureActiveChannelForGuild(guildId: string) {
     const scoped = channelsByGuild.value[guildId] ?? []
     if (!scoped.length) {
-      activeChannelId.value = null
+      activeChannelId.value =
+        activeGuildId.value === guildId ? null : activeChannelId.value
       return
     }
 
@@ -148,6 +181,63 @@ export const useChannelStore = defineStore('channels', () => {
     }
   }
 
+  function addOrUpdateChannel(record: ChannelRecord) {
+    const summary = mapChannelRecord(record)
+    const guildChannels = channelsByGuild.value[summary.guildId] ?? []
+    const index = guildChannels.findIndex(
+      (channel) => channel.id === summary.id,
+    )
+
+    if (index >= 0) {
+      guildChannels.splice(index, 1, summary)
+    } else {
+      guildChannels.push(summary)
+    }
+
+    channelsByGuild.value = {
+      ...channelsByGuild.value,
+      [summary.guildId]: guildChannels,
+    }
+
+    if (summary.guildId === activeGuildId.value) {
+      ensureActiveChannelForGuild(summary.guildId)
+    }
+  }
+
+  async function createChannel(guildId: string, name: string) {
+    const api = useApiClient()
+    try {
+      const payload = await api<ChannelRecord>(
+        `/guilds/${guildId}/channels`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ name }),
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      )
+
+      addOrUpdateChannel(payload)
+      guildFetchTimestamps.value[guildId] = Date.now()
+
+      return payload
+    } catch (err) {
+      error.value = extractErrorMessage(err) || 'Unable to create channel'
+      throw err
+    }
+  }
+
+  function channelById(channelId: string) {
+    for (const channels of Object.values(channelsByGuild.value)) {
+      const match = channels.find((channel) => channel.id === channelId)
+      if (match) {
+        return match
+      }
+    }
+    return null
+  }
+
   return {
     channelsByGuild,
     activeGuildId,
@@ -156,10 +246,15 @@ export const useChannelStore = defineStore('channels', () => {
     error,
     hydrated,
     lastFetchedAt,
+    guildFetchTimestamps,
     channelsForGuild,
     activeChannel,
     hydrate,
     setActiveGuild,
     setActiveChannel,
+    fetchChannelsForGuild,
+    createChannel,
+    addOrUpdateChannel,
+    channelById,
   }
 })

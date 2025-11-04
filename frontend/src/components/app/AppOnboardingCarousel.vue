@@ -1,19 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { RouteLocationRaw } from 'vue-router'
+
+import type { OnboardingSlide } from '@/types/ui'
 
 import Button from '@/components/ui/Button.vue'
-
-interface OnboardingSlide {
-  id: string
-  title: string
-  description: string
-  ctaLabel: string
-  href?: string
-  to?: RouteLocationRaw
-  eyebrow?: string
-  icon?: string
-}
 
 const props = withDefaults(
   defineProps<{
@@ -32,14 +22,10 @@ const isHovering = ref(false)
 const timerId = ref<number | null>(null)
 
 const totalSlides = computed(() => props.slides.length)
-const autoPlayEnabled = computed(
-  () => props.autoPlay && totalSlides.value > 1,
-)
+const autoPlayEnabled = computed(() => props.autoPlay && totalSlides.value > 1)
 
 const currentSlide = computed(() => props.slides[activeIndex.value] ?? null)
-const hasCta = computed(
-  () => Boolean(currentSlide.value?.href || currentSlide.value?.to),
-)
+const hasCta = computed(() => Boolean(currentSlide.value?.href || currentSlide.value?.to))
 const buttonAttrs = computed<Record<string, unknown>>(() => {
   const slide = currentSlide.value
   if (!slide) {
@@ -193,11 +179,7 @@ watch(
         v-if="currentSlide.eyebrow || currentSlide.icon"
         class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-400"
       >
-        <UIcon
-          v-if="currentSlide.icon"
-          :name="currentSlide.icon"
-          class="h-4 w-4 text-sky-400"
-        />
+        <UIcon v-if="currentSlide.icon" :name="currentSlide.icon" class="h-4 w-4 text-sky-400" />
         <span>{{ currentSlide.eyebrow }}</span>
       </div>
       <h2 class="text-2xl font-semibold leading-tight text-white lg:text-3xl">

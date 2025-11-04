@@ -3,8 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { useSessionStore } from '../session'
 
-const futureIso = (offsetMs: number) =>
-  new Date(Date.now() + offsetMs).toISOString()
+const futureIso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString()
 
 const createJsonResponse = (body: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
@@ -130,10 +129,7 @@ describe('session store auth flows', () => {
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.endsWith('/sessions/login')) {
-        return createJsonResponse(
-          { error: 'invalid_credentials' },
-          { status: 401 },
-        )
+        return createJsonResponse({ error: 'invalid_credentials' }, { status: 401 })
       }
 
       return new Response(null, { status: 404 })
@@ -149,9 +145,7 @@ describe('session store auth flows', () => {
         secret: 'bad-pass',
         deviceId: 'browser-abc',
       }),
-    ).rejects.toThrow(
-      'Invalid credentials. Check your identifier and secret, then try again.',
-    )
+    ).rejects.toThrow('Invalid credentials. Check your identifier and secret, then try again.')
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(store.error).toBe(

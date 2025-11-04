@@ -17,7 +17,7 @@ import type {
 
 const STORAGE_KEY = 'openguild.session.v1'
 const ACCESS_REFRESH_THRESHOLD_MS = 60_000
-const PROFILE_ENDPOINTS = ['/client/v1/users/me', '/users/me'] as const
+const PROFILE_ENDPOINTS = ['/client/v1/users/me'] as const
 
 let resolvedProfileEndpoint: string | null = null
 let refreshPromise: Promise<boolean> | null = null
@@ -111,12 +111,9 @@ const sanitizeTokens = (value: unknown): SessionTokens | null => {
   }
 
   const tokens = value as Partial<Record<keyof SessionTokens, unknown>>
-  const accessToken =
-    typeof tokens.accessToken === 'string' ? tokens.accessToken : ''
-  const refreshToken =
-    typeof tokens.refreshToken === 'string' ? tokens.refreshToken : ''
-  const accessExpiresAt =
-    typeof tokens.accessExpiresAt === 'string' ? tokens.accessExpiresAt : ''
+  const accessToken = typeof tokens.accessToken === 'string' ? tokens.accessToken : ''
+  const refreshToken = typeof tokens.refreshToken === 'string' ? tokens.refreshToken : ''
+  const accessExpiresAt = typeof tokens.accessExpiresAt === 'string' ? tokens.accessExpiresAt : ''
   const refreshExpiresAt =
     typeof tokens.refreshExpiresAt === 'string' ? tokens.refreshExpiresAt : ''
 
@@ -155,8 +152,8 @@ const sanitizeDevices = (value: unknown): StoredDevice[] | undefined => {
         typeof base.deviceId === 'string'
           ? base.deviceId
           : typeof base.device_id === 'string'
-          ? base.device_id
-          : null
+            ? base.device_id
+            : null
 
       if (!deviceId) {
         return null
@@ -168,26 +165,26 @@ const sanitizeDevices = (value: unknown): StoredDevice[] | undefined => {
           typeof base.deviceName === 'string'
             ? base.deviceName
             : typeof base.device_name === 'string'
-            ? base.device_name
-            : null,
+              ? base.device_name
+              : null,
         lastSeenAt:
           typeof base.lastSeenAt === 'string'
             ? base.lastSeenAt
             : typeof base.last_seen_at === 'string'
-            ? base.last_seen_at
-            : null,
+              ? base.last_seen_at
+              : null,
         ipAddress:
           typeof base.ipAddress === 'string'
             ? base.ipAddress
             : typeof base.ip_address === 'string'
-            ? base.ip_address
-            : null,
+              ? base.ip_address
+              : null,
         userAgent:
           typeof base.userAgent === 'string'
             ? base.userAgent
             : typeof base.user_agent === 'string'
-            ? base.user_agent
-            : null,
+              ? base.user_agent
+              : null,
       }
     })
     .filter(Boolean) as StoredDevice[]
@@ -215,8 +212,8 @@ const sanitizeGuilds = (value: unknown): StoredGuild[] | undefined => {
         typeof base.guildId === 'string'
           ? base.guildId
           : typeof base.guild_id === 'string'
-          ? base.guild_id
-          : null
+            ? base.guild_id
+            : null
 
       if (!guildId) {
         return null
@@ -228,8 +225,8 @@ const sanitizeGuilds = (value: unknown): StoredGuild[] | undefined => {
           typeof base.name === 'string'
             ? base.name
             : typeof base.display_name === 'string'
-            ? base.display_name
-            : null,
+              ? base.display_name
+              : null,
         role: typeof base.role === 'string' ? base.role : null,
       }
     })
@@ -255,43 +252,24 @@ const sanitizeProfile = (value: unknown): StoredProfile | null => {
       : raw.username
 
   const profile: StoredProfile = {
-    userId:
-      typeof raw.userId === 'string' && raw.userId.length
-        ? raw.userId
-        : raw.username,
+    userId: typeof raw.userId === 'string' && raw.userId.length ? raw.userId : raw.username,
     username: raw.username,
     displayName,
-    avatarUrl:
-      typeof raw.avatarUrl === 'string'
-        ? raw.avatarUrl || null
-        : raw.avatarUrl ?? null,
+    avatarUrl: typeof raw.avatarUrl === 'string' ? raw.avatarUrl || null : (raw.avatarUrl ?? null),
     email: typeof raw.email === 'string' ? raw.email : null,
-    serverName:
-      typeof raw.serverName === 'string'
-        ? raw.serverName
-        : raw.serverName ?? null,
+    serverName: typeof raw.serverName === 'string' ? raw.serverName : (raw.serverName ?? null),
     defaultGuildId:
-      typeof raw.defaultGuildId === 'string'
-        ? raw.defaultGuildId
-        : raw.defaultGuildId ?? null,
-    timezone:
-      typeof raw.timezone === 'string' ? raw.timezone : raw.timezone ?? null,
-    locale: typeof raw.locale === 'string' ? raw.locale : raw.locale ?? null,
-    createdAt:
-      typeof raw.createdAt === 'string' ? raw.createdAt : raw.createdAt ?? null,
-    updatedAt:
-      typeof raw.updatedAt === 'string' ? raw.updatedAt : raw.updatedAt ?? null,
+      typeof raw.defaultGuildId === 'string' ? raw.defaultGuildId : (raw.defaultGuildId ?? null),
+    timezone: typeof raw.timezone === 'string' ? raw.timezone : (raw.timezone ?? null),
+    locale: typeof raw.locale === 'string' ? raw.locale : (raw.locale ?? null),
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : (raw.createdAt ?? null),
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : (raw.updatedAt ?? null),
     roles: Array.isArray(raw.roles)
-      ? raw.roles.filter(
-          (role): role is string => typeof role === 'string' && role.length > 0,
-        )
+      ? raw.roles.filter((role): role is string => typeof role === 'string' && role.length > 0)
       : undefined,
     guilds: sanitizeGuilds(raw.guilds),
     devices: sanitizeDevices(raw.devices),
-    metadata:
-      raw.metadata && typeof raw.metadata === 'object'
-        ? raw.metadata
-        : undefined,
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : undefined,
   }
 
   return profile
@@ -310,11 +288,9 @@ const readFromStorage = (): PersistedSession | null => {
 
     const parsed = JSON.parse(raw) as Partial<PersistedSession>
     return {
-      identifier:
-        typeof parsed.identifier === 'string' ? parsed.identifier : '',
+      identifier: typeof parsed.identifier === 'string' ? parsed.identifier : '',
       deviceId: typeof parsed.deviceId === 'string' ? parsed.deviceId : '',
-      deviceName:
-        typeof parsed.deviceName === 'string' ? parsed.deviceName : '',
+      deviceName: typeof parsed.deviceName === 'string' ? parsed.deviceName : '',
       tokens: sanitizeTokens(parsed.tokens),
       profile: sanitizeProfile(parsed.profile),
     }
@@ -364,9 +340,7 @@ const initialState = (): SessionState => {
   }
 
   const tokens =
-    persisted.tokens && isIsoFuture(persisted.tokens.accessExpiresAt)
-      ? persisted.tokens
-      : null
+    persisted.tokens && isIsoFuture(persisted.tokens.accessExpiresAt) ? persisted.tokens : null
 
   return {
     ...state,
@@ -394,8 +368,7 @@ const formatLoginError = (
   err: unknown,
 ): { message: string; fieldErrors: Record<string, string> } => {
   const fieldErrors: Record<string, string> = {}
-  const fallbackMessage =
-    'Unable to sign in right now. Please try again in a moment.'
+  const fallbackMessage = 'Unable to sign in right now. Please try again in a moment.'
 
   const maybeFetchError = err as {
     data?: ApiErrorResponse
@@ -416,17 +389,14 @@ const formatLoginError = (
 
   if (data?.error === 'invalid_credentials') {
     return {
-      message:
-        'Invalid credentials. Check your identifier and secret, then try again.',
+      message: 'Invalid credentials. Check your identifier and secret, then try again.',
       fieldErrors,
     }
   }
 
   if (data?.error === 'validation_error') {
     return {
-      message:
-        Object.values(fieldErrors)[0] ??
-        'Please fix the highlighted fields and try again.',
+      message: Object.values(fieldErrors)[0] ?? 'Please fix the highlighted fields and try again.',
       fieldErrors,
     }
   }
@@ -440,8 +410,7 @@ const formatLoginError = (
 
   if (maybeFetchError.response?.status === 401) {
     return {
-      message:
-        'Invalid credentials. Check your identifier and secret, then try again.',
+      message: 'Invalid credentials. Check your identifier and secret, then try again.',
       fieldErrors,
     }
   }
@@ -456,8 +425,7 @@ const formatRegisterError = (
   err: unknown,
 ): { message: string; fieldErrors: Record<string, string> } => {
   const fieldErrors: Record<string, string> = {}
-  const fallbackMessage =
-    'Unable to create an account right now. Please try again shortly.'
+  const fallbackMessage = 'Unable to create an account right now. Please try again shortly.'
 
   const maybeFetchError = err as {
     data?: ApiErrorResponse
@@ -487,25 +455,21 @@ const formatRegisterError = (
 
   if (data?.error === 'database_unavailable') {
     return {
-      message:
-        'Registration is temporarily unavailable while the database is offline.',
+      message: 'Registration is temporarily unavailable while the database is offline.',
       fieldErrors,
     }
   }
 
   if (data?.error === 'server_error') {
     return {
-      message:
-        'Registration failed due to a server error. Please try again soon.',
+      message: 'Registration failed due to a server error. Please try again soon.',
       fieldErrors,
     }
   }
 
   if (data?.error === 'validation_error') {
     return {
-      message:
-        Object.values(fieldErrors)[0] ??
-        'Please fix the highlighted fields and try again.',
+      message: Object.values(fieldErrors)[0] ?? 'Please fix the highlighted fields and try again.',
       fieldErrors,
     }
   }
@@ -531,15 +495,8 @@ const toPersistedSession = (state: PersistedSession): PersistedSession => ({
   profile: state.profile,
 })
 
-const unwrapCurrentUser = (
-  payload: CurrentUser | { user: CurrentUser },
-): CurrentUser => {
-  if (
-    payload &&
-    typeof payload === 'object' &&
-    'user' in payload &&
-    payload.user
-  ) {
+const unwrapCurrentUser = (payload: CurrentUser | { user: CurrentUser }): CurrentUser => {
+  if (payload && typeof payload === 'object' && 'user' in payload && payload.user) {
     return payload.user
   }
 
@@ -562,16 +519,11 @@ const mapCurrentUser = (payload: CurrentUser): StoredProfile => ({
   createdAt: payload.created_at ?? null,
   updatedAt: payload.updated_at ?? null,
   roles: Array.isArray(payload.roles)
-    ? payload.roles.filter(
-        (role): role is string => typeof role === 'string' && role.length > 0,
-      )
+    ? payload.roles.filter((role): role is string => typeof role === 'string' && role.length > 0)
     : undefined,
   guilds: sanitizeGuilds(payload.guilds),
   devices: sanitizeDevices(payload.devices),
-  metadata:
-    payload.metadata && typeof payload.metadata === 'object'
-      ? payload.metadata
-      : undefined,
+  metadata: payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : undefined,
 })
 
 const createRequestId = () => {
@@ -639,9 +591,7 @@ export const useSessionStore = defineStore('session', () => {
   })
 
   const accessToken = computed(() => state.tokens?.accessToken ?? '')
-  const displayName = computed(
-    () => state.profile?.displayName ?? state.identifier,
-  )
+  const displayName = computed(() => state.profile?.displayName ?? state.identifier)
   const profileAvatar = computed(() => state.profile?.avatarUrl ?? null)
 
   function resetErrors() {
@@ -669,9 +619,7 @@ export const useSessionStore = defineStore('session', () => {
     }
 
     const tokens =
-      persisted.tokens && isIsoFuture(persisted.tokens.accessExpiresAt)
-        ? persisted.tokens
-        : null
+      persisted.tokens && isIsoFuture(persisted.tokens.accessExpiresAt) ? persisted.tokens : null
 
     state.identifier = persisted.identifier
     state.deviceId = persisted.deviceId
@@ -855,9 +803,7 @@ export const useSessionStore = defineStore('session', () => {
     persist()
   }
 
-  function needsAccessRefresh(
-    thresholdMs = ACCESS_REFRESH_THRESHOLD_MS,
-  ): boolean {
+  function needsAccessRefresh(thresholdMs = ACCESS_REFRESH_THRESHOLD_MS): boolean {
     if (!state.tokens?.accessExpiresAt) {
       return false
     }
@@ -971,25 +917,20 @@ export const useSessionStore = defineStore('session', () => {
     state.profileError = null
 
     try {
-      const endpoints = resolvedProfileEndpoint
-        ? [resolvedProfileEndpoint]
-        : PROFILE_ENDPOINTS
+      const endpoints = resolvedProfileEndpoint ? [resolvedProfileEndpoint] : PROFILE_ENDPOINTS
 
       let payload: CurrentUser | { user: CurrentUser } | null = null
       let lastError: unknown = null
 
       for (const endpoint of endpoints) {
         try {
-          const data = await request<CurrentUser | { user: CurrentUser }>(
-            endpoint,
-          )
+          const data = await request<CurrentUser | { user: CurrentUser }>(endpoint)
           resolvedProfileEndpoint = endpoint
           payload = data
           break
         } catch (err) {
           lastError = err
-          const status = (err as { response?: { status?: number } })?.response
-            ?.status
+          const status = (err as { response?: { status?: number } })?.response?.status
           if (status === 404) {
             continue
           }

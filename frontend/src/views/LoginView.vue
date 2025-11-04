@@ -3,9 +3,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
-import AppOnboardingCarousel from '~/components/app/AppOnboardingCarousel.vue'
-import { useSessionStore } from '~/stores/session'
-import { createDefaultDeviceId } from '~/utils/device'
+import { useSessionStore } from '@/stores/session'
+import { createDefaultDeviceId } from '@/utils/device'
+import type { OnboardingSlide } from '@/types/ui'
+
+import AppOnboardingCarousel from '@/components/app/AppOnboardingCarousel.vue'
 
 const sessionStore = useSessionStore()
 const {
@@ -45,7 +47,7 @@ if (typeof window !== 'undefined' && isAuthenticatedRef.value) {
 
 type LoginFormField = 'identifier' | 'secret' | 'deviceId' | 'deviceName'
 
-const onboardingSlides = [
+const onboardingSlides: OnboardingSlide[] = [
   {
     id: 'backend-setup',
     eyebrow: 'Week 1',
@@ -270,17 +272,11 @@ onMounted(() => {
 
       <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <span>Need an account?</span>
-        <RouterLink
-          to="/register"
-          class="font-semibold text-sky-300 transition hover:text-sky-200"
-        >
+        <RouterLink to="/register" class="font-semibold text-sky-300 transition hover:text-sky-200">
           Create one
         </RouterLink>
         <span class="hidden sm:inline">·</span>
-        <RouterLink
-          to="/roadmap"
-          class="text-slate-400 transition hover:text-slate-200"
-        >
+        <RouterLink to="/roadmap" class="text-slate-400 transition hover:text-slate-200">
           View the roadmap
         </RouterLink>
       </div>

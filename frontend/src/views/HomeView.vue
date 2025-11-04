@@ -1,68 +1,174 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import { getRuntimeConfig } from '~/config/runtime'
-import { useSessionStore } from '~/stores/session'
-import { useSystemStore } from '~/stores/system'
-import type { ComponentStatus } from '~/types/api'
+import AppMessageTimeline from '@/components/app/AppMessageTimeline.vue'
+import { getRuntimeConfig } from '@/config/runtime'
+import { useChannelStore } from '@/stores/channels'
+import { useGuildStore } from '@/stores/guilds'
+import { useSessionStore } from '@/stores/session'
+import { useSystemStore } from '@/stores/system'
+import { useTimelineStore } from '@/stores/timeline'
+import type { ComponentStatus } from '@/types/api'
 
 const timelineEntries = [
   {
-    id: 'kickoff',
-    title: 'Frontend kickoff',
+    id: 'guild-sync',
+    title: 'Guild roster hydrates from /guilds',
     author: 'Lia Chen',
-    time: 'Today - 10:21 AM',
+    time: 'Today · 09:15',
     summary:
-      'Scaffolded Nuxt UI shell, navigation rails, and responsive layout baseline. Connected to roadmap tasks in docs/FRONTEND_TIMELINE.md.',
-    tag: 'Milestone F0',
+      'Pinia guild store now sources data from the backend and updates the rail instantly. The Vue layout syncs query params so deep links land on the right workspace.',
+    tag: 'Week 4',
   },
   {
-    id: 'design-sync',
-    title: 'Design tokens imported',
-    author: 'Ben Flores',
-    time: 'Yesterday - 5:08 PM',
-    summary:
-      'Brand palette and typography landed in Tailwind config export. Dark mode defaults match app frame preview in Figma.',
-    tag: 'Design',
-  },
-  {
-    id: 'api-handshake',
-    title: 'Session API handshake',
+    id: 'channel-sidebar',
+    title: 'Channel sidebar switches via store wiring',
     author: 'Maya Singh',
-    time: 'Yesterday - 11:32 AM',
+    time: 'Today · 08:42',
     summary:
-      'Login and refresh endpoints connected in sandbox. Captured QA steps in docs/TESTING.md for replay.',
-    tag: 'Platform',
+      'Channel store fetches `/guilds/{guild_id}/channels` on selection, highlights unread stubs, and disables CTA buttons while loading.',
+    tag: 'UI Shell',
+  },
+  {
+    id: 'timeline-fetch',
+    title: 'Timeline reads from /channels/{id}/events',
+    author: 'Kai Patel',
+    time: 'Yesterday · 17:05',
+    summary:
+      'The new AppMessageTimeline component renders canonical events, groups by day, and surfaces refresh actions for manual QA runs.',
+    tag: 'Messaging',
   },
 ] as const
 
 const upcomingTasks = [
   {
-    id: 'storybook',
-    label: 'Wire Storybook with Nuxt UI tokens',
+    id: 'guild-create-modal',
+    label: 'Guild creation modal (POST /guilds)',
     owner: 'lia',
-    status: 'In review',
+    status: 'Planned',
   },
   {
-    id: 'pinia-stores',
-    label: 'Scaffold session and guild stores',
+    id: 'channel-empty-states',
+    label: 'Channel empty and invite-only states',
     owner: 'maya',
-    status: 'Unstarted',
+    status: 'In progress',
   },
   {
-    id: 'api-client',
-    label: 'HTTP client with retries and telemetry',
+    id: 'timeline-virtualize',
+    label: 'Virtualize timeline for >200 events',
     owner: 'kai',
-    status: 'Blocked',
+    status: 'Backlog',
   },
 ] as const
 
-const quickMetrics = [
-  { label: 'Open guilds', value: '6', trend: '+2 this week' },
-  { label: 'Active channels', value: '28', trend: 'Guild sync focus' },
-  { label: 'Pending invites', value: '14', trend: 'Awaiting approval' },
-] as const
+const channelStore = useChannelStore()
+const guildStore = useGuildStore()
+const timelineStore = useTimelineStore()
+
+const {
+  activeChannelId: activeChannelIdRef,
+  activeChannel: activeChannelRef,
+} = storeToRefs(channelStore)
+
+const { activeGuild: activeGuildRef } = storeToRefs(guildStore)
+
+const {
+  eventsByChannel: eventsByChannelRef,
+  loadingByChannel: loadingByChannelRef,
+  errorByChannel: errorByChannelRef,
+} = storeToRefs(timelineStore)
+
+const loadedChannels = new Set<string>()
+
+watch(
+  () => activeChannelIdRef.value,
+  async (channelId) => {
+    if (!channelId) {
+      return
+    }
+
+    const options = loadedChannels.has(channelId)
+      ? { refresh: true }
+      : { force: true }
+
+    try {
+      await timelineStore.loadChannel(channelId, options)
+      loadedChannels.add(channelId)
+    } catch (err) {
+      console.warn('Failed to load channel timeline', err)
+    }
+  },
+  { immediate: true },
+)
+
+const timelineEvents = computed(() => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return []
+  }
+  return eventsByChannelRef.value[channelId] ?? []
+})
+
+const timelineLoading = computed(() => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return false
+  }
+  return Boolean(loadingByChannelRef.value[channelId])
+})
+
+const timelineError = computed(() => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return null
+  }
+  return errorByChannelRef.value[channelId] ?? null
+})
+
+const activeChannelName = computed(() => activeChannelRef.value?.label ?? '')
+const activeGuildName = computed(() => activeGuildRef.value?.name ?? '—')
+
+const latestSequenceLabel = computed(() => {
+  const events = timelineEvents.value
+  const lastEvent = events[events.length - 1]
+  if (!lastEvent) {
+    return 'No events yet'
+  }
+  return `Seq ${lastEvent.sequence}`
+})
+
+const refreshTimeline = async () => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return
+  }
+
+  try {
+    await timelineStore.loadChannel(channelId, { refresh: true, force: true })
+    loadedChannels.add(channelId)
+  } catch (err) {
+    console.warn('Failed to refresh timeline', err)
+  }
+}
+
+const quickMetrics = computed(() => [
+  {
+    label: 'Active guild',
+    value: activeGuildName.value,
+    trend: 'Synced via /guilds',
+  },
+  {
+    label: 'Active channel',
+    value: activeChannelName.value ? `#${activeChannelName.value}` : '—',
+    trend: 'Channel store hydrated',
+  },
+  {
+    label: 'Events loaded',
+    value: String(timelineEvents.value.length),
+    trend: latestSequenceLabel.value,
+  },
+])
 
 const runtimeConfig = getRuntimeConfig()
 
@@ -258,13 +364,13 @@ const refreshProfile = async () => {
       class="relative overflow-hidden rounded-3xl border border-slate-800/50 bg-linear-to-br from-slate-900 via-slate-950 to-slate-950/60 px-8 py-10 shadow-xl shadow-slate-950/40"
     >
       <div class="relative z-10 max-w-3xl space-y-4">
-        <UBadge variant="soft" color="info" label="Milestone F0" />
+        <UBadge variant="soft" color="info" label="Milestone F0 · Week 4" />
         <h1 class="text-3xl font-semibold text-white sm:text-4xl">
-          Welcome to the OpenGuild frontend workspace
+          Guild and channel shell syncing from the backend
         </h1>
         <p class="text-base text-slate-300 sm:text-lg">
-          The navigation shell is ready. Next up: component stories, Pinia stores, and API wiring.
-          Use this dashboard to track progress and jump into the developer docs.
+          Pinia stores now hydrate from the Axum APIs. Pick a channel to stream recent events,
+          verify the payloads, and update the docs as Week&nbsp;4 work lands.
         </p>
         <div class="flex flex-wrap gap-3 pt-2">
           <UButton
@@ -297,27 +403,75 @@ const refreshProfile = async () => {
     </section>
 
     <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
+      <AppMessageTimeline
+        :channel-name="activeChannelName"
+        :events="timelineEvents"
+        :loading="timelineLoading"
+        :error="timelineError"
+        @refresh="refreshTimeline"
+      />
+
+      <div class="space-y-6">
+        <UCard class="border border-white/5 bg-slate-950/60">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-semibold text-white">Week-in-progress</h2>
+              <UButton icon="i-heroicons-sparkles" color="neutral" variant="ghost" />
+            </div>
+          </template>
+          <div class="space-y-4">
+            <div
+              v-for="metric in quickMetrics"
+              :key="metric.label"
+              class="rounded-xl border border-white/5 bg-slate-900/60 p-3"
+            >
+              <p class="text-xs uppercase tracking-wide text-slate-500">{{ metric.label }}</p>
+              <p class="text-lg font-semibold text-white">
+                {{ metric.value }}
+              </p>
+              <p class="text-xs text-slate-400">{{ metric.trend }}</p>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard class="border border-white/5 bg-slate-950/60">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-semibold text-white">Upcoming tasks</h2>
+              <UButton icon="i-heroicons-clipboard-document-check" color="neutral" variant="ghost" />
+            </div>
+          </template>
+          <div class="space-y-4">
+            <div
+              v-for="item in upcomingTasks"
+              :key="item.id"
+              class="flex items-center justify-between rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2"
+            >
+              <div>
+                <p class="text-sm font-semibold text-white">{{ item.label }}</p>
+                <p class="text-xs text-slate-500">Owner: {{ item.owner }}</p>
+              </div>
+              <UBadge variant="soft" color="neutral" :label="item.status" />
+            </div>
+          </div>
+        </UCard>
+      </div>
+    </section>
+
+    <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <UCard class="border border-white/5 bg-slate-950/60">
         <template #header>
           <div class="flex items-center justify-between">
             <div>
-              <h2 class="text-lg font-semibold text-white">Release timeline</h2>
-              <p class="text-sm text-slate-400">Snapshot of the workstreams landing this week.</p>
+              <h2 class="text-lg font-semibold text-white">Week 4 delivery log</h2>
+              <p class="text-sm text-slate-400">Highlights from the guild and channel rollout.</p>
             </div>
-            <UButton
-              icon="i-heroicons-arrow-path"
-              color="neutral"
-              variant="ghost"
-              aria-label="Refresh feed"
-            />
+            <UButton icon="i-heroicons-arrow-path" color="neutral" variant="ghost" aria-label="Refresh feed" />
           </div>
         </template>
-
         <div class="space-y-8">
           <div v-for="item in timelineEntries" :key="item.id" class="relative pl-8">
-            <span
-              class="absolute left-0 top-1 h-2.5 w-2.5 rounded-full bg-sky-400 ring-4 ring-sky-500/20"
-            />
+            <span class="absolute left-0 top-1 h-2.5 w-2.5 rounded-full bg-sky-400 ring-4 ring-sky-500/20" />
             <div class="flex flex-wrap items-center gap-3">
               <p class="text-sm font-semibold text-white">
                 {{ item.title }}
@@ -335,253 +489,120 @@ const refreshProfile = async () => {
         </div>
       </UCard>
 
-      <div class="space-y-6">
-        <UCard class="border border-white/5 bg-slate-950/60">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <div>
-                <h2 class="text-lg font-semibold text-white">Session overview</h2>
-                <p class="text-sm text-slate-400">Active on {{ sessionServerName }}</p>
-              </div>
-              <UButton
-                icon="i-heroicons-arrow-path"
-                color="neutral"
-                variant="ghost"
-                :loading="sessionProfileLoading"
-                @click="refreshProfile()"
-                aria-label="Refresh profile"
-              />
+      <UCard class="border border-white/5 bg-slate-950/60">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Session overview</h2>
+              <p class="text-sm text-slate-400">Active on {{ sessionServerName }}</p>
             </div>
-          </template>
+            <UButton
+              icon="i-heroicons-arrow-path"
+              color="neutral"
+              variant="ghost"
+              :loading="sessionProfileLoading"
+              @click="refreshProfile()"
+              aria-label="Refresh profile"
+            />
+          </div>
+        </template>
 
-          <div v-if="sessionProfileLoading" class="space-y-4">
-            <div class="flex items-center gap-3">
-              <USkeleton class="h-12 w-12 rounded-full" />
-              <div class="flex-1 space-y-2">
-                <USkeleton class="h-4 w-32 rounded" />
-                <USkeleton class="h-3 w-24 rounded" />
-              </div>
-            </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+        <div v-if="sessionProfileLoading" class="space-y-4">
+          <div class="flex items-center gap-3">
+            <USkeleton class="h-12 w-12 rounded-full" />
+            <div class="flex-1 space-y-2">
+              <USkeleton class="h-4 w-32 rounded" />
               <USkeleton class="h-3 w-24 rounded" />
-              <USkeleton class="h-3 w-28 rounded" />
-              <USkeleton class="h-3 w-20 rounded" />
-              <USkeleton class="h-3 w-32 rounded" />
             </div>
           </div>
-
-          <div v-else-if="sessionProfileError" class="space-y-4">
-            <UAlert
-              color="warning"
-              variant="soft"
-              title="Unable to load profile"
-              :description="sessionProfileError"
-            />
-            <p class="text-xs text-slate-500">
-              Check that the `/users/me` endpoint is reachable and that your session token is still
-              valid.
-            </p>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <USkeleton class="h-3 w-24 rounded" />
+            <USkeleton class="h-3 w-28 rounded" />
+            <USkeleton class="h-3 w-20 rounded" />
+            <USkeleton class="h-3 w-32 rounded" />
           </div>
+        </div>
 
-          <div v-else class="space-y-5">
-            <div class="flex items-center gap-4">
-              <UAvatar :name="sessionDisplayName" :src="sessionAvatarUrl" size="lg" />
-              <div class="space-y-1 text-left">
-                <p class="text-sm font-semibold text-white">
-                  {{ sessionDisplayName }}
-                </p>
-                <p class="text-xs text-slate-400">
-                  {{ sessionUsername }}
-                </p>
-              </div>
-            </div>
+        <div v-else-if="sessionProfileError" class="space-y-4">
+          <UAlert
+            color="warning"
+            variant="soft"
+            title="Unable to load profile"
+            :description="sessionProfileError"
+          />
+          <p class="text-xs text-slate-500">
+            Check that the `/users/me` endpoint is reachable and that your session token is still
+            valid.
+          </p>
+        </div>
 
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div v-for="item in sessionMetadata" :key="item.label" class="space-y-1">
-                <p class="text-xs uppercase tracking-wide text-slate-500">
-                  {{ item.label }}
-                </p>
-                <p class="text-sm font-medium text-white">
-                  {{ item.value || '—' }}
-                </p>
-              </div>
-            </div>
-
-            <div class="space-y-3">
-              <p class="text-xs uppercase tracking-wide text-slate-500">Guild access</p>
-              <div v-if="!sessionGuilds.length" class="text-xs text-slate-500">
-                No guild membership reported yet. Connect to the backend to hydrate this list.
-              </div>
-              <ul v-else class="space-y-2">
-                <li
-                  v-for="guild in sessionGuilds"
-                  :key="guild.guildId"
-                  class="flex items-center justify-between rounded-md bg-slate-900/80 px-3 py-2 text-sm text-slate-200"
-                >
-                  <span>{{ guild.name || guild.guildId }}</span>
-                  <UBadge v-if="guild.role" color="info" variant="soft" :label="guild.role" />
-                </li>
-              </ul>
-            </div>
-
-            <div class="space-y-3">
-              <p class="text-xs uppercase tracking-wide text-slate-500">Devices</p>
-              <div v-if="!sessionDevices.length" class="text-xs text-slate-500">
-                Refresh token store not populated yet. This will display device metadata once the
-                backend exposes session inventory.
-              </div>
-              <ul v-else class="space-y-2">
-                <li
-                  v-for="device in sessionDevices"
-                  :key="device.deviceId"
-                  class="rounded-md bg-slate-900/80 px-3 py-2 text-sm text-slate-200"
-                >
-                  <div class="flex items-center justify-between">
-                    <span class="font-medium">
-                      {{ device.deviceName || device.deviceId }}
-                    </span>
-                    <UBadge
-                      v-if="device.userAgent"
-                      color="neutral"
-                      variant="soft"
-                      :label="device.userAgent"
-                    />
-                  </div>
-                  <p class="text-xs text-slate-500">
-                    ID: {{ device.deviceId }} · Last seen:
-                    {{ formatDateTime(device.lastSeenAt) }}
-                  </p>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </UCard>
-
-        <UCard class="border border-white/5 bg-slate-950/60">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <h2 class="text-lg font-semibold text-white">Backend status</h2>
-              <UButton
-                icon="i-heroicons-arrow-path"
-                color="neutral"
-                variant="ghost"
-                :loading="backendPending"
-                @click="refreshBackend()"
-                aria-label="Refresh backend status"
-              />
-            </div>
-          </template>
-
-          <div v-if="backendPending" class="space-y-4">
-            <div class="h-4 w-32 animate-pulse rounded bg-slate-800" />
-            <div class="space-y-3 rounded-2xl bg-slate-900/60 p-4">
-              <div class="h-4 w-full animate-pulse rounded bg-slate-800" />
-              <div class="h-4 w-4/5 animate-pulse rounded bg-slate-800" />
-              <div class="h-4 w-3/5 animate-pulse rounded bg-slate-800" />
-            </div>
-            <div class="h-4 w-40 animate-pulse rounded bg-slate-800" />
-          </div>
-
-          <div v-else-if="backendError" class="space-y-4">
-            <UAlert
-              color="warning"
-              variant="soft"
-              title="Unable to reach backend"
-              :description="backendErrorMessage"
-            />
-            <p class="text-xs text-slate-500">
-              Check that the Rust server is running locally ({{ apiBaseHost }}) or update
-              <code class="text-slate-200">VITE_API_BASE_URL</code>
-              in your environment.
-            </p>
-          </div>
-
-          <div v-else class="space-y-4">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-xs uppercase tracking-wide text-slate-400">Overall</p>
-                <UBadge :label="readinessStatusLabel" :color="readinessBadgeColor" variant="soft" />
-              </div>
-              <div class="text-right">
-                <p class="text-xs uppercase tracking-wide text-slate-400">Version</p>
-                <p class="text-sm font-semibold text-white">
-                  {{ backendVersion }}
-                </p>
-              </div>
-            </div>
-
-            <div class="rounded-2xl border border-white/5 bg-slate-900/60 p-4">
-              <p class="text-xs uppercase tracking-wide text-slate-400">Components</p>
-              <ul class="mt-3 space-y-3">
-                <li
-                  v-for="component in componentStatuses"
-                  :key="component.name"
-                  class="flex items-start justify-between gap-4"
-                >
-                  <div>
-                    <p class="text-sm font-medium text-white">
-                      {{ component.name }}
-                    </p>
-                    <p v-if="component.details" class="text-xs text-slate-500">
-                      {{ component.details }}
-                    </p>
-                  </div>
-                  <UBadge
-                    :label="componentStatusLabel(component.status)"
-                    :color="componentBadgeColor(component.status)"
-                    variant="subtle"
-                  />
-                </li>
-                <li v-if="!componentStatuses.length" class="text-xs text-slate-500">
-                  No service components reported. Verify the backend readiness endpoint.
-                </li>
-              </ul>
-            </div>
-
-            <p class="text-xs text-slate-500">Uptime: {{ uptime }}</p>
-          </div>
-        </UCard>
-
-        <UCard class="border border-white/5 bg-slate-950/60">
-          <template #header>
-            <h2 class="text-lg font-semibold text-white">Quick metrics</h2>
-          </template>
-          <dl class="space-y-4">
-            <div v-for="metric in quickMetrics" :key="metric.label">
-              <dt class="text-xs uppercase tracking-wide text-slate-400">
-                {{ metric.label }}
-              </dt>
-              <dd class="mt-1 text-2xl font-semibold text-white">
-                {{ metric.value }}
-              </dd>
-              <p class="text-xs text-slate-500">
-                {{ metric.trend }}
+        <div v-else class="space-y-5">
+          <div class="flex items-center gap-4">
+            <UAvatar :name="sessionDisplayName" :src="sessionAvatarUrl" size="lg" />
+            <div class="space-y-1 text-left">
+              <p class="text-sm font-semibold text-white">
+                {{ sessionDisplayName }}
+              </p>
+              <p class="text-xs text-slate-400">
+                {{ sessionUsername }}
               </p>
             </div>
-          </dl>
-        </UCard>
+          </div>
 
-        <UCard class="border border-white/5 bg-slate-950/60">
-          <template #header>
-            <h2 class="text-lg font-semibold text-white">Upcoming tasks</h2>
-          </template>
-          <div class="space-y-4">
-            <div
-              v-for="task in upcomingTasks"
-              :key="task.id"
-              class="flex items-start justify-between gap-4"
-            >
-              <div>
-                <p class="text-sm font-medium text-white">
-                  {{ task.label }}
-                </p>
-                <p class="text-xs text-slate-500">Owner - {{ task.owner }}</p>
-              </div>
-              <UBadge color="info" variant="soft" :label="task.status" />
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div v-for="item in sessionMetadata" :key="item.label" class="space-y-1">
+              <p class="text-xs uppercase tracking-wide text-slate-500">
+                {{ item.label }}
+              </p>
+              <p class="text-sm font-medium text-white">
+                {{ item.value || '—' }}
+              </p>
             </div>
           </div>
-        </UCard>
-      </div>
+
+          <div class="space-y-3">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Guild access</p>
+            <div v-if="!sessionGuilds.length" class="text-xs text-slate-500">
+              No guild membership reported yet. Connect to the backend to hydrate this list.
+            </div>
+            <ul v-else class="space-y-2">
+              <li
+                v-for="guild in sessionGuilds"
+                :key="guild.guildId"
+                class="flex items-center justify-between rounded-md bg-slate-900/80 px-3 py-2 text-sm text-slate-200"
+              >
+                <span>{{ guild.name || guild.guildId }}</span>
+                <UBadge v-if="guild.role" color="info" variant="soft" :label="guild.role" />
+              </li>
+            </ul>
+          </div>
+
+          <div class="space-y-3">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Devices</p>
+            <div v-if="!sessionDevices.length" class="text-xs text-slate-500">
+              Refresh token store not populated yet. This will display device metadata once the
+              backend exposes session inventory.
+            </div>
+            <ul v-else class="space-y-2">
+              <li
+                v-for="device in sessionDevices"
+                :key="device.deviceId"
+                class="rounded-md bg-slate-900/80 px-3 py-2 text-xs text-slate-300"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span class="font-medium">{{ device.deviceName || device.deviceId }}</span>
+                  <span v-if="device.lastSeenAt" class="text-[10px] text-slate-500">
+                    Last seen {{ formatDateTime(device.lastSeenAt) }}
+                  </span>
+                </div>
+                <p v-if="device.ipAddress" class="text-[10px] text-slate-500">
+                  IP: {{ device.ipAddress }}
+                </p>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </UCard>
     </section>
   </div>
 </template>

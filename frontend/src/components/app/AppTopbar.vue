@@ -3,9 +3,10 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
+import { useSessionStore } from '@/stores/session'
+
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
-import { useSessionStore } from '~/stores/session'
 
 const props = defineProps<{
   channelName: string

@@ -3,9 +3,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
-import AppOnboardingCarousel from '~/components/app/AppOnboardingCarousel.vue'
-import { useSessionStore } from '~/stores/session'
-import { createDefaultDeviceId } from '~/utils/device'
+import { useSessionStore } from '@/stores/session'
+import { createDefaultDeviceId } from '@/utils/device'
+import type { OnboardingSlide } from '@/types/ui'
+
+import AppOnboardingCarousel from '@/components/app/AppOnboardingCarousel.vue'
 
 const sessionStore = useSessionStore()
 const {
@@ -37,11 +39,9 @@ const sanitizeRedirect = (value: unknown): string | null => {
   return value
 }
 
-const redirectTarget = computed(
-  () => sanitizeRedirect(route.query.redirect) ?? '/',
-)
+const redirectTarget = computed(() => sanitizeRedirect(route.query.redirect) ?? '/')
 
-const onboardingSlides = [
+const onboardingSlides: OnboardingSlide[] = [
   {
     id: 'naming',
     eyebrow: 'Week 3',
@@ -168,9 +168,7 @@ const handleSubmit = async () => {
     applyBackendErrors()
     generalError.value =
       errorRef.value ||
-      (error instanceof Error
-        ? error.message
-        : 'Unable to complete registration right now.')
+      (error instanceof Error ? error.message : 'Unable to complete registration right now.')
   }
 }
 
@@ -185,12 +183,8 @@ onMounted(() => {
   <div class="grid gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
     <section class="space-y-8">
       <div class="space-y-3">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.4em] text-sky-400">
-          OpenGuild
-        </p>
-        <h1 class="text-3xl font-semibold text-white sm:text-4xl">
-          Create your operator account
-        </h1>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.4em] text-sky-400">OpenGuild</p>
+        <h1 class="text-3xl font-semibold text-white sm:text-4xl">Create your operator account</h1>
         <p class="text-sm text-slate-300">
           Provision credentials that map to the backend session service, then jump straight into the
           control room.
@@ -290,17 +284,11 @@ onMounted(() => {
 
       <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <span>Already have credentials?</span>
-        <RouterLink
-          to="/login"
-          class="font-semibold text-sky-300 transition hover:text-sky-200"
-        >
+        <RouterLink to="/login" class="font-semibold text-sky-300 transition hover:text-sky-200">
           Sign in
         </RouterLink>
         <span class="hidden sm:inline">·</span>
-        <RouterLink
-          to="/roadmap"
-          class="text-slate-400 transition hover:text-slate-200"
-        >
+        <RouterLink to="/roadmap" class="text-slate-400 transition hover:text-slate-200">
           View the roadmap
         </RouterLink>
       </div>

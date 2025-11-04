@@ -37,16 +37,16 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 ## Week 4: Guild & Channel Shell (Milestone F1)
 
 - [ ] Guild discovery and selection.
-  - [ ] Render the guild switcher with avatars, tooltips, and unread indicators (stub data + API integration).
+  - [x] Render the guild switcher with avatars, tooltips, and unread indicators (stub data + API integration). `frontend/src/components/app/AppGuildRail.vue` now consumes the hydrated Pinia store and shows skeletons while `/guilds` loads.
   - [ ] Implement guild creation modal consuming backend `/guilds` POST.
   - [ ] Handle empty states (no guilds, invite-only messaging).
 - [ ] Channel list + metadata.
-  - [ ] Display channel tree (text/voice), sort order, and locks based on permissions.
-  - [ ] Surface channel topic/description and breadcrumb within the content header.
-  - [ ] Support skeleton/loading states using Suspense for SSR hydration.
+  - [x] Display channel tree (text/voice), sort order, and locks based on permissions. `frontend/src/components/app/AppChannelSidebar.vue` now groups text/voice channels, highlights unread counts, and reacts to `useChannelStore` hydration.
+  - [x] Surface channel topic/description and breadcrumb within the content header. `frontend/src/layouts/DefaultLayout.vue` wires channel descriptions into `AppTopbar` and sidebar metadata.
+  - [x] Support skeleton/loading states using Suspense for SSR hydration. The sidebar shows loading placeholders while `/guilds/{guild_id}/channels` resolves.
 - [ ] Timeline scaffold.
-  - [ ] Render message timeline (virtualized list) with author pill, timestamp, and Markdown parsing.
-  - [ ] Integrate initial fetch via `GET /channels/{channel_id}/events` (limit/ pagination support).
+  - [x] Render message timeline (virtualized list) with author pill, timestamp, and Markdown parsing. `frontend/src/components/app/AppMessageTimeline.vue` renders grouped events with sender badges and timestamps (virtualization to follow in Week 5).
+  - [x] Integrate initial fetch via `GET /channels/{channel_id}/events` (limit/ pagination support).
   - [ ] Provide placeholder for reactions and system events.
 
 ## Week 5: Messaging UX & Realtime (Milestone F1)

@@ -3,6 +3,7 @@ Context Snapshot (updated 2025-10-25 23:55Z)
 - Backend focus: openguild-server crate (Rust, Axum).
 - Config hierarchy: config files -> env (OPENGUILD_SERVER__) -> CLI flags.
 - Key recent features:
+  * Frontend Week 4: Vue client guild/channel stores hydrate from the Axum APIs (DefaultLayout syncs `?guild=`/`?channel=`), `AppMessageTimeline` renders `/channels/{id}/events`, and vitest coverage lives in `frontend/src/stores/__tests__`.
   * Structured ServerConfig loader with metrics + log format options.
   * Prometheus-powered `/metrics` exporter under `--features metrics`, toggled via `OPENGUILD_SERVER__METRICS__ENABLED` (exports `openguild_http_requests_total` + `openguild_db_ready`).
   * Graceful shutdown helper with test-only Notify hook; `run()` now attempts DB connectivity (if DATABASE_URL set) and readiness reports database status (pending/configured/error).
