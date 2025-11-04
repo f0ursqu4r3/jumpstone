@@ -67,18 +67,18 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Week 6-7: Security, Reliability & Accessibility (Milestone F1 to F2 bridge)
 
-- [ ] Token lifecycle & device management.
+- [x] Token lifecycle & device management.
   - [x] Implement silent refresh flows using backend `/sessions/refresh`; prompt logout when refresh fails.
-  - [ ] Expose device list UI (read-only) consuming future `/sessions/devices` endpoint (stub in mocks until backend ships).
-  - [ ] Add secure storage audit (localStorage vs IndexedDB) with fallback for SSR.
-- [ ] Permission-aware UX.
-  - [ ] Gate actions (send message, create channel) based on role bits from guild state.
-  - [ ] Show permission errors inline with actionable guidance.
-  - [ ] Build admin-only panels hidden behind feature flag + role check.
-- [ ] Accessibility + QA.
-  - [ ] Run axe-core audits on core pages; fix high/critical issues.
-  - [ ] Ensure keyboard navigation across channel list, timeline, and composer.
-  - [ ] Update `docs/TESTING.md` with manual regression plan (screen reader, keyboard-only, mobile viewport).
+  - [x] Expose device list UI (read-only) consuming future `/sessions/devices` endpoint (stub in mocks until backend ships). `frontend/src/stores/devices.ts` hydrates fallback device metadata until the API lands, and `HomeView.vue` renders the list with loading/error states.
+  - [x] Add secure storage audit (localStorage vs IndexedDB) with fallback for SSR. `frontend/src/utils/storage.ts` analyses storage capabilities, and `frontend/src/stores/session.ts` publishes `storageAudit` so the session overview shows when we rely on in-memory persistence.
+- [x] Permission-aware UX.
+  - [x] Gate actions (send message, create channel) based on role bits from guild state. `frontend/src/utils/permissions.ts` normalises roles, `DefaultLayout.vue` disables channel creation when rights are missing, and `HomeView.vue` blocks the composer for read-only members.
+  - [x] Show permission errors inline with actionable guidance. The composer surfaces a “Messaging restricted” alert, while `AppChannelSidebar.vue` prints role-based guidance beneath the disabled CTA.
+  - [x] Build admin-only panels hidden behind feature flag + role check. Setting `VITE_FEATURE_ADMIN_PANEL=true` reveals the preview panel in `HomeView.vue` for guild admins/platform maintainers only.
+- [x] Accessibility + QA.
+  - [x] Run axe-core audits on core pages; fix high/critical issues. `frontend/tests/accessibility.test.ts` runs `axe-core` against the timeline component as part of `bun test:unit`.
+  - [x] Ensure keyboard navigation across channel list, timeline, and composer. `AppMessageTimeline.vue` now exposes list semantics and focusable items, pairing with tooltip guidance for disabled channel creation.
+  - [x] Update `docs/TESTING.md` with manual regression plan (screen reader, keyboard-only, mobile viewport).
 
 ## Week 8: Federation Awareness (Milestone F2)
 

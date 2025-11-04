@@ -62,10 +62,14 @@ This document maps each shipped backend feature in Weeks 1 through 7 to the auto
 | Security headers middleware       | `backend/crates/server/src/main.rs::health_route_returns_ok` (asserts CSP, referrer, nosniff, frame guard)                                             | `cargo test -p openguild-server health_route_returns_ok`                                                                                                                                                     |
 | Refresh + revoke lifecycle        | `backend/crates/server/src/session.rs::tests::login_emits_refresh_tokens`, `::refresh_rotates_tokens`, `::revoke_refresh_token_rejects_future_use`     | `cargo test -p openguild-server session::tests`                                                                                                                                                              |
 | Credential bootstrap validation   | `backend/crates/server/src/users.rs::tests::validation_rejects_short_passwords`, `::validation_accepts_valid_payload`                                  | `cargo test -p openguild-server users::tests`                                                                                                                                                                |
+| Frontend permissions & a11y       | `frontend/tests/accessibility.test.ts` (axe-core against `AppMessageTimeline`), manual keyboard/screen-reader plan below                               | `(cd frontend && bun test:unit)`                                                                                                                                                                             |
 
 ## Manual / Exploratory Checks
 
 - **Docker Compose smoke** — `docker compose up server` (see `docs/SETUP.md`) and hit `/ready`, `/metrics`, `/channels/*` with HTTPie for manual regression checks when touching networking or auth.
+- **Keyboard-only sweep** — With the frontend dev server running, tab across guild rail → channel list → timeline → composer. Confirm focus outlines are visible and actions remain accessible when permissions are revoked (expect disabled CTA guidance instead of hard errors).
+- **Screen-reader spot check** — In VoiceOver/NVDA, navigate the channel timeline and verify aria labels read “Sender at time: preview”. Confirm the composer announces the messaging restriction alert when perms are missing.
+- **Responsive/mobile audit** — Resize to 360px width (or use device emulator) and ensure sidebar slideover and admin panel copy remain readable; run manual axe browser extension spot checks.
 - **Proptest amplification** — set `PROPTEST_CASES` environment variable higher when investigating flaky event ID generation: `PROPTEST_CASES=1024 cargo test -p openguild-core messaging`.
 - **Load testing placeholder** — Week 8+ will add k6/wrk scenarios; track status in `docs/TIMELINE.md`.
 

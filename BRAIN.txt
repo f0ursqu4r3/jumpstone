@@ -22,7 +22,7 @@
 ## Frontend (Vue 3 / Vite)
 - **Foundations & Working Assumptions (Weeks 0–2)**
   - Vue 3 + Pinia + TypeScript in Vite, Tailwind tokens + Nuxt UI components, documented aliases (`@/`, `~/`).
-  - `frontend/src/composables/useApiClient.ts` ensures request IDs, auth propagation, and telemetry breadcrumbs. Vitest + Testing Library suites cover core stores and API client behaviour.
+  - `frontend/src/composables/useApiClient.ts` ensures request IDs, auth propagation, and telemetry breadcrumbs. Vitest suites (`frontend/tests/accessibility.test.ts`, store specs) guard regressions.
   - Accessibility, responsive layout, and instrumentation (Sentry stubs, LogRocket hooks, Lighthouse budgets) are treated as baseline requirements.
 - **Auth & Onboarding (Week 3)**
   - Session store handles login/register, secure persistence, silent refresh, and device metadata prompts. Views live at `LoginView.vue` / `RegisterView.vue`; onboarding carousel links core docs.
@@ -34,16 +34,20 @@
   - `AppMessageComposer.vue` delivers multi-line input, optimistic queueing, and connectivity banners; `useMessageComposerStore` manages optimistic events, retry queues, and backend validation (using the authenticated user ID for POSTs).
   - `useRealtimeStore` adds exponential backoff, heartbeats, visibility-aware pause/resume, typing-preview emission (WebSocket first, HTTP fallback), and Sentry breadcrumbs.
   - Home dashboard (`HomeView.vue`) wires in realtime status, typing previews, retry hooks, and degraded connectivity alerts. Lighthouse performance budgets live at `frontend/lighthouse.budgets.json`.
+- **Security & Accessibility (Weeks 6–7)**
+  - Role-aware permissions live in `frontend/src/utils/permissions.ts`; `DefaultLayout.vue` and `AppChannelSidebar.vue` gate channel creation with user guidance, while `HomeView.vue` blocks the composer for read-only members and surfaces an admin-only panel behind `VITE_FEATURE_ADMIN_PANEL`.
+  - Device inventory hydrates via `frontend/src/stores/devices.ts`, falling back to mock data until `/sessions/devices` lands. Session persistence now uses `frontend/src/utils/storage.ts` to audit storage capabilities, exposing `storageAudit` in the session overview.
+  - Accessibility upgrades include focusable timeline items and an axe-core regression test (`frontend/tests/accessibility.test.ts`); keyboard/screen-reader/manual plans captured in `docs/TESTING.md`.
 
 ## Testing & Tooling
 - **Backend**: `cargo xtask test`, `cargo xtask ci`, `cargo xtask ci-metrics-smoke`; targeted messaging/federation suites documented in `docs/TESTING.md`.
-- **Frontend**: `bun test:unit` (Vitest, jsdom), `bun run type-check` (vue-tsc). Storybook/Playwright remain optional via `STORYBOOK_TESTS=true`.
-- Docs to watch: `docs/FRONTEND_TIMELINE.md` (timeline synced through Week 5), `docs/TESTING.md`, product brief (`BRIEF.md`), observability/threat model references.
+- **Frontend**: `bun test:unit` (Vitest, jsdom, axe-core), `bun run type-check` (vue-tsc). Storybook/Playwright remain optional via `STORYBOOK_TESTS=true`.
+- Docs to watch: `docs/FRONTEND_TIMELINE.md` (timeline synced through Week 7), `docs/TESTING.md`, product brief (`BRIEF.md`), observability/threat model references.
 
 ## Deployment Notes
 - Backend defaults to Postgres (`DATABASE_URL`) but supports in-memory fallback for local dev; metrics exporter is feature gated.
 - Frontend served via Vite dev server (`bun dev`), production assets with `bun run build`. Docker Compose seeds local env (`OPENGUILD_SERVER__SERVER_NAME`) for federation experiments.
 
 ## Current Focus & Next Steps
-- Weeks 1–5 are done; upcoming work targets Week 6–7 deliverables: device list UX, permission-aware UI states, secure storage audit, and accessibility QA (axe-core, keyboard navigation).
+- Weeks 0–7 are complete; upcoming work moves into Week 8 federation features and MLS prep.
 - Maintain parity between backend capabilities and frontend docs/tests, and continue logging realtime/messaging telemetry for observability.

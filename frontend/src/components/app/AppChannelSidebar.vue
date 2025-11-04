@@ -16,10 +16,12 @@ const props = withDefaults(
     channels: ChannelEntry[]
     loading?: boolean
     canCreateChannel?: boolean
+    createChannelDisabledReason?: string
   }>(),
   {
     loading: false,
     canCreateChannel: true,
+    createChannelDisabledReason: '',
   },
 )
 
@@ -32,6 +34,18 @@ const emit = defineEmits<{
 const guildName = computed(() => props.guildName)
 const channels = computed(() => props.channels)
 const loading = computed(() => props.loading)
+const createChannelTooltip = computed(() => {
+  if (props.canCreateChannel) {
+    return 'Create channel'
+  }
+  return props.createChannelDisabledReason || 'Insufficient permissions to create channels.'
+})
+const createChannelDisabledMessage = computed(() => {
+  if (props.canCreateChannel) {
+    return ''
+  }
+  return props.createChannelDisabledReason || ''
+})
 const sessionStore = useSessionStore()
 const {
   isAuthenticated: isAuthenticatedRef,
@@ -161,7 +175,7 @@ const groupedChannels = computed(() => {
       </div>
 
       <div class="px-2">
-        <UTooltip text="Create channel" placement="right" :content="{ side: 'right' }">
+        <UTooltip :text="createChannelTooltip" placement="right" :content="{ side: 'right' }">
           <Button
             color="info"
             variant="soft"
@@ -174,6 +188,12 @@ const groupedChannels = computed(() => {
             New channel
           </Button>
         </UTooltip>
+        <p
+          v-if="createChannelDisabledMessage"
+          class="mt-2 text-xs text-amber-200/70"
+        >
+          {{ createChannelDisabledMessage }}
+        </p>
       </div>
 
       <USeparator class="mt-4 opacity-50" />

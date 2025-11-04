@@ -4,15 +4,18 @@ import { storeToRefs } from 'pinia'
 
 import AppMessageComposer from '@/components/app/AppMessageComposer.vue'
 import AppMessageTimeline from '@/components/app/AppMessageTimeline.vue'
+import { getFeatureFlags } from '@/config/features'
 import { getRuntimeConfig } from '@/config/runtime'
 import { useChannelStore } from '@/stores/channels'
 import { useConnectivityStore } from '@/stores/connectivity'
+import { useSessionDevicesStore } from '@/stores/devices'
 import { useGuildStore } from '@/stores/guilds'
 import { useMessageComposerStore } from '@/stores/messages'
 import { useSessionStore } from '@/stores/session'
 import { useSystemStore } from '@/stores/system'
 import { useTimelineStore } from '@/stores/timeline'
 import { useRealtimeStore } from '@/stores/realtime'
+import { deriveGuildPermissions, permissionGuidance, resolveGuildRole } from '@/utils/permissions'
 import type { ComponentStatus } from '@/types/api'
 
 const timelineEntries = [
@@ -72,6 +75,9 @@ const timelineStore = useTimelineStore()
 const realtimeStore = useRealtimeStore()
 const messageComposerStore = useMessageComposerStore()
 const connectivityStore = useConnectivityStore()
+const sessionDevicesStore = useSessionDevicesStore()
+
+const featureFlags = getFeatureFlags()
 
 const realtimeStatus = realtimeStore.status
 const realtimeAttemptingReconnect = realtimeStore.attemptingReconnect
@@ -84,6 +90,8 @@ const {
 } = storeToRefs(channelStore)
 
 const { activeGuild: activeGuildRef } = storeToRefs(guildStore)
+
+const activeGuildId = computed(() => activeGuildRef.value?.id ?? null)
 
 const {
   eventsByChannel: eventsByChannelRef,
@@ -168,7 +176,9 @@ const hasChannels = computed(
   () => (channelsForGuildRef.value ? channelsForGuildRef.value.length > 0 : false),
 )
 const channelListLoading = computed(() => channelStoreLoadingRef.value)
-const composerDisabled = computed(() => !activeChannelId.value || channelListLoading.value)
+const composerDisabled = computed(
+  () => !activeChannelId.value || channelListLoading.value || !canSendMessages.value,
+)
 
 const latestSequenceLabel = computed(() => {
   const events = timelineEvents.value
@@ -286,6 +296,13 @@ const {
   isAuthenticated: isAuthenticatedRef,
 } = storeToRefs(sessionStore)
 
+const {
+  devices: devicesRef,
+  loading: devicesLoadingRef,
+  error: devicesErrorRef,
+  hydrated: devicesHydratedRef,
+} = storeToRefs(sessionDevicesStore)
+
 if (!readinessRef.value) {
   systemStore.fetchBackendStatus()
 }
@@ -300,6 +317,19 @@ if (
     console.warn('Failed to preload session profile', err)
   })
 }
+
+watch(
+  () => isAuthenticatedRef.value,
+  (authenticated) => {
+    if (!authenticated || devicesHydratedRef.value) {
+      return
+    }
+    sessionDevicesStore.fetchDevices().catch((err) => {
+      console.warn('Failed to load session devices', err)
+    })
+  },
+  { immediate: true },
+)
 
 const backendPending = computed(() => loadingRef.value)
 const backendError = computed(() => errorRef.value)
@@ -372,6 +402,7 @@ const sessionProfileLoading = computed(() => profileLoadingRef.value)
 const sessionProfileError = computed(() => profileErrorRef.value)
 const sessionDisplayName = computed(() => displayNameRef.value || identifierRef.value || '—')
 const sessionUsername = computed(() => sessionProfile.value?.username ?? identifierRef.value ?? '—')
+const storageAudit = computed(() => sessionStore.storageAudit)
 const formatDateTime = (iso: string | null | undefined) => {
   if (!iso) {
     return '—'
@@ -406,8 +437,25 @@ const sessionServerName = computed(() => {
 
   return 'Local server'
 })
+const platformRoles = computed(() => sessionProfile.value?.roles ?? [])
 const sessionGuilds = computed(() => sessionProfile.value?.guilds ?? [])
-const sessionDevices = computed(() => sessionProfile.value?.devices ?? [])
+const sessionDevices = computed(() =>
+  devicesRef.value.length ? devicesRef.value : sessionProfile.value?.devices ?? [],
+)
+const devicesLoading = computed(() => devicesLoadingRef.value)
+const devicesError = computed(() => devicesErrorRef.value)
+
+const activeGuildRole = computed(() => resolveGuildRole(activeGuildId.value, sessionGuilds.value))
+const guildPermissions = computed(() =>
+  deriveGuildPermissions(activeGuildRole.value, platformRoles.value || []),
+)
+const canSendMessages = computed(() => guildPermissions.value.canSendMessages)
+const canViewAdminPanel = computed(
+  () => featureFlags.adminPanel && guildPermissions.value.canManageGuild,
+)
+const sendPermissionMessage = computed(() =>
+  canSendMessages.value ? null : permissionGuidance('sendMessages', guildPermissions.value),
+)
 const sessionAvatarUrl = computed(() => {
   const custom = profileAvatarRef.value
   if (custom) {
@@ -426,6 +474,13 @@ const sessionMetadata = computed(() => [
   { label: 'Timezone', value: sessionProfile.value?.timezone ?? '—' },
   { label: 'Created', value: profileCreatedAt.value },
   { label: 'Updated', value: profileUpdatedAt.value },
+  {
+    label: 'Storage backend',
+    value:
+      storageAudit.value?.available === false && storageAudit.value?.reason
+        ? `${storageAudit.value.type} · ${storageAudit.value.reason}`
+        : storageAudit.value?.type ?? 'unknown',
+  },
 ])
 
 const refreshProfile = async () => {
@@ -523,6 +578,15 @@ const refreshProfile = async () => {
           <span>·</span>
           <span class="truncate">{{ typingPreview }}</span>
         </div>
+
+        <UAlert
+          v-if="sendPermissionMessage"
+          color="neutral"
+          variant="soft"
+          icon="i-heroicons-lock-closed"
+          title="Messaging restricted"
+          :description="sendPermissionMessage"
+        />
 
         <AppMessageComposer
           :channel-id="activeChannelId"
@@ -702,9 +766,21 @@ const refreshProfile = async () => {
 
           <div class="space-y-3">
             <p class="text-xs uppercase tracking-wide text-slate-500">Devices</p>
-            <div v-if="!sessionDevices.length" class="text-xs text-slate-500">
-              Refresh token store not populated yet. This will display device metadata once the
-              backend exposes session inventory.
+            <div v-if="devicesLoading" class="space-y-2">
+              <USkeleton class="h-3 w-32 rounded" />
+              <USkeleton class="h-3 w-40 rounded" />
+            </div>
+            <UAlert
+              v-else-if="devicesError"
+              color="warning"
+              variant="soft"
+              icon="i-heroicons-exclamation-triangle"
+              title="Unable to load devices"
+              :description="devicesError"
+            />
+            <div v-else-if="!sessionDevices.length" class="text-xs text-slate-500">
+              No device inventory yet. The UI falls back to mock data until `/sessions/devices`
+              ships.
             </div>
             <ul v-else class="space-y-2">
               <li
@@ -724,6 +800,38 @@ const refreshProfile = async () => {
               </li>
             </ul>
           </div>
+        </div>
+      </UCard>
+
+      <UCard
+        v-if="canViewAdminPanel"
+        class="border border-emerald-500/20 bg-emerald-500/5"
+      >
+        <template #header>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Admin controls</h2>
+              <p class="text-sm text-emerald-200/80">
+                Feature flag `VITE_FEATURE_ADMIN_PANEL` enabled · admin or maintainer role required.
+              </p>
+            </div>
+            <UBadge color="success" variant="soft" label="Preview" />
+          </div>
+        </template>
+
+        <div class="space-y-4 text-sm text-emerald-100/90">
+          <p>
+            Manage guild-level settings, promote members, and review audit trails. These controls
+            surface automatically once the backend ships the admin APIs.
+          </p>
+          <ul class="list-disc space-y-2 pl-5">
+            <li>Review pending role change requests</li>
+            <li>Download compliance activity logs</li>
+            <li>Toggle experimental messaging features per guild</li>
+          </ul>
+          <p class="text-xs text-emerald-200/70">
+            Not seeing this panel? Double-check your guild role or reach out to a platform admin.
+          </p>
         </div>
       </UCard>
     </section>

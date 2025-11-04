@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 
 import { extractErrorMessage } from '@/utils/errors'
 import { getRuntimeConfig } from '@/config/runtime'
+import { getStorageResolution } from '@/utils/storage'
 import type {
   ApiErrorResponse,
   CurrentUser,
@@ -21,6 +22,8 @@ const PROFILE_ENDPOINTS = ['/client/v1/users/me'] as const
 
 let resolvedProfileEndpoint: string | null = null
 let refreshPromise: Promise<boolean> | null = null
+
+const { adapter: persistentStorage, snapshot: storageSnapshot } = getStorageResolution()
 
 interface SessionTokens {
   accessToken: string
@@ -276,12 +279,8 @@ const sanitizeProfile = (value: unknown): StoredProfile | null => {
 }
 
 const readFromStorage = (): PersistedSession | null => {
-  if (typeof window === 'undefined') {
-    return null
-  }
-
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = persistentStorage.getItem(STORAGE_KEY)
     if (!raw) {
       return null
     }
@@ -300,12 +299,8 @@ const readFromStorage = (): PersistedSession | null => {
 }
 
 const writeToStorage = (value: PersistedSession) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+    persistentStorage.setItem(STORAGE_KEY, JSON.stringify(value))
   } catch {
     // ignore storage failures to avoid breaking login flows when storage is unavailable
   }
@@ -968,6 +963,7 @@ export const useSessionStore = defineStore('session', () => {
     accessToken,
     displayName,
     profileAvatar,
+    storageAudit: storageSnapshot,
     resetErrors,
     persist,
     hydrate,

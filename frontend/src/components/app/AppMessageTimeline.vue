@@ -188,6 +188,17 @@ const groupedEvents = computed(() => {
 })
 
 const hasEvents = computed(() => groupedEvents.value.length > 0)
+
+const describeMessage = (message: {
+  sender: string
+  time: string
+  content: string
+  eventType: string
+}) => {
+  const content = message.content.trim()
+  const summary = content.length ? (content.length > 80 ? `${content.slice(0, 77)}…` : content) : message.eventType
+  return `${message.sender} at ${message.time}: ${summary}`
+}
 </script>
 
 <template>
@@ -250,11 +261,14 @@ const hasEvents = computed(() => groupedEvents.value.length > 0)
           />
         </div>
 
-        <ul class="space-y-6">
+        <ul class="space-y-6" role="list">
           <li
             v-for="message in group.items"
             :key="message.id"
             :class="computeItemClasses(message)"
+            role="listitem"
+            tabindex="0"
+            :aria-label="describeMessage(message)"
           >
             <div
               class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold uppercase text-slate-200"

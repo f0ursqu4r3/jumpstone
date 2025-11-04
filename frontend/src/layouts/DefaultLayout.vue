@@ -11,6 +11,7 @@ import AppGuildRail from '@/components/app/AppGuildRail.vue'
 import AppTopbar from '@/components/app/AppTopbar.vue'
 import Button from '@/components/ui/Button.vue'
 import { extractErrorMessage } from '@/utils/errors'
+import { deriveGuildPermissions, permissionGuidance, resolveGuildRole } from '@/utils/permissions'
 import { useChannelStore } from '@/stores/channels'
 import { useGuildStore } from '@/stores/guilds'
 import { useSessionStore } from '@/stores/session'
@@ -36,7 +37,11 @@ const {
   loading: channelLoadingRef,
 } = storeToRefs(channelStore)
 
-const { hydrated: hydratedRef, isAuthenticated: isAuthenticatedRef } = storeToRefs(sessionStore)
+const {
+  hydrated: hydratedRef,
+  isAuthenticated: isAuthenticatedRef,
+  profile: profileRef,
+} = storeToRefs(sessionStore)
 
 const mobileSidebarOpen = ref(false)
 const ready = ref(false)
@@ -93,6 +98,18 @@ const channelLoading = computed(() => channelLoadingRef.value)
 const hydrated = computed(() => hydratedRef.value)
 const isAuthenticated = computed(() => isAuthenticatedRef.value)
 const showAppShell = computed(() => hydrated.value && isAuthenticated.value)
+
+const sessionProfile = computed(() => profileRef.value)
+const sessionGuilds = computed(() => sessionProfile.value?.guilds ?? [])
+const platformRoles = computed(() => sessionProfile.value?.roles ?? [])
+const activeGuildRole = computed(() => resolveGuildRole(activeGuildIdRef.value, sessionGuilds.value))
+const guildPermissions = computed(() =>
+  deriveGuildPermissions(activeGuildRole.value, platformRoles.value || []),
+)
+const canCreateChannel = computed(() => guildPermissions.value.canCreateChannels)
+const createChannelDisabledReason = computed(() =>
+  canCreateChannel.value ? '' : permissionGuidance('createChannels', guildPermissions.value),
+)
 
 const updateRouteQuery = (
   guildId?: string | null,
@@ -247,6 +264,10 @@ const handleChannelSelect = async (channelId: string) => {
 }
 
 const handleCreateChannel = () => {
+  if (!canCreateChannel.value) {
+    createChannelError.value = permissionGuidance('createChannels', guildPermissions.value)
+    return
+  }
   createChannelError.value = null
   showCreateChannelModal.value = true
 }
@@ -336,7 +357,8 @@ const resetCreateChannelError = () => {
       :guild-name="activeGuild?.name || ''"
       :channels="channels"
       :loading="channelLoading"
-      :can-create-channel="Boolean(activeGuildIdRef && !createChannelLoading)"
+      :can-create-channel="canCreateChannel && !createChannelLoading"
+      :create-channel-disabled-reason="createChannelDisabledReason"
       class="hidden lg:flex"
       @select-channel="handleChannelSelect"
       @create-channel="handleCreateChannel"
@@ -350,7 +372,8 @@ const resetCreateChannelError = () => {
             :guild-name="activeGuild?.name || ''"
             :channels="channels"
             :loading="channelLoading"
-            :can-create-channel="Boolean(activeGuildIdRef && !createChannelLoading)"
+            :can-create-channel="canCreateChannel && !createChannelLoading"
+            :create-channel-disabled-reason="createChannelDisabledReason"
             class="flex"
             @select-channel="handleChannelSelect"
             @create-channel="handleCreateChannel"
