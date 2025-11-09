@@ -82,17 +82,17 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Week 8: Federation Awareness (Milestone F2)
 
-- [ ] Surface remote context.
-  - [ ] Display origin server badges on messages fetched via `/federation/channels/{channel_id}/events`.
-  - [ ] Provide trust indicators (warning banner) when guild includes remote homeservers.
-  - [ ] Wire filtering UI for message origin (local vs remote).
-- [ ] Federation settings UI.
-  - [ ] Build guild settings page listing trusted servers (read-only, backend-provided).
-  - [ ] Allow operators to copy event IDs + origin metadata for support tickets.
-  - [ ] Log federation errors to Sentry with origin tags.
-- [ ] QA handshake vectors.
-  - [ ] Integrate `GET /mls/handshake-test-vectors` in developer tools modal so client engineers can verify signature checking.
-  - [ ] Document verification steps in `docs/DEV_NOTES.md` (new section).
+- [x] Surface remote context.
+  - [x] Display origin server badges on messages fetched via `/federation/channels/{channel_id}/events`. `frontend/src/components/app/AppMessageTimeline.vue` now flags remote events, badges their origin host, and exposes a copy-to-clipboard action.
+  - [x] Provide trust indicators (warning banner) when guild includes remote homeservers. `HomeView.vue` consumes `useFederationStore` to show alerts listing remote hosts and guidance for mitigations.
+  - [x] Wire filtering UI for message origin (local vs remote). The timeline section includes a Nuxt UI radio group that filters `AppMessageTimeline` to all/local/remote events on demand.
+- [x] Federation settings UI.
+  - [x] Build guild settings page listing trusted servers (read-only, backend-provided). The new federation card in `HomeView.vue` enumerates remote servers per guild and exposes copy actions.
+  - [x] Allow operators to copy event IDs + origin metadata for support tickets. Timeline rows now provide a `Copy meta` button that captures the event ID + origin server.
+  - [x] Log federation errors to Sentry with origin tags. `frontend/src/stores/federation.ts` recycles `recordNetworkBreadcrumb` whenever context/handshake fetches fail or fall back to mocks.
+- [x] QA handshake vectors.
+  - [x] Integrate `GET /mls/handshake-test-vectors` in developer tools modal so client engineers can verify signature checking. `HomeView.vue` exposes a “Refresh vectors” button (admin section) that hydrates and previews handshake payloads.
+  - [x] Document verification steps in `docs/TESTING.md`. The manual testing section now outlines the federation handshake exercise plus the accessibility plan from Week 7.
 
 ## Week 9: MLS & Device Prep (Milestone F2)
 

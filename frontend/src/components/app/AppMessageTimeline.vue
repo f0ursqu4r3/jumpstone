@@ -8,6 +8,8 @@ const props = defineProps<{
   events: TimelineEntry[]
   loading?: boolean
   error?: string | null
+  localOriginHost?: string | null
+  remoteServers?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -135,6 +137,25 @@ const computeItemClasses = (message: { optimistic: boolean; status?: TimelineSta
   return [baseItemClass, 'border-sky-500/30 bg-sky-500/10']
 }
 
+const normalizedLocalHost = computed(() => {
+  if (!props.localOriginHost) {
+    return null
+  }
+  return props.localOriginHost.toLowerCase()
+})
+
+const isRemoteOrigin = (origin?: string | null) => {
+  if (!origin) {
+    return false
+  }
+  const normalized = origin.toLowerCase()
+  const localHost = normalizedLocalHost.value
+  if (localHost && normalized === localHost) {
+    return false
+  }
+  return true
+}
+
 const groupedEvents = computed(() => {
   const groups: Array<{
     date: string
@@ -145,6 +166,8 @@ const groupedEvents = computed(() => {
       time: string
       content: string
       eventType: string
+      originServer: string | null
+      remote: boolean
       optimistic: boolean
       status: TimelineStatus | undefined
       statusMessage: string | null
@@ -160,6 +183,8 @@ const groupedEvents = computed(() => {
     const timeLabel = formatTimeLabel(occurredAt)
     const latestGroup = groups[groups.length - 1]
 
+    const originServer =
+      typeof entry.event.origin_server === 'string' ? entry.event.origin_server : null
     const record = {
       id: entry.localId ?? `${entry.channel_id}-${entry.sequence}`,
       localId: entry.localId,
@@ -167,6 +192,8 @@ const groupedEvents = computed(() => {
       time: timeLabel,
       content: resolveContent(entry),
       eventType: entry.event.event_type,
+      originServer,
+      remote: isRemoteOrigin(originServer),
       optimistic: Boolean(entry.optimistic),
       status: entry.status,
       statusMessage: entry.statusMessage ?? null,
@@ -198,6 +225,31 @@ const describeMessage = (message: {
   const content = message.content.trim()
   const summary = content.length ? (content.length > 80 ? `${content.slice(0, 77)}…` : content) : message.eventType
   return `${message.sender} at ${message.time}: ${summary}`
+}
+
+const copyMetadata = async (payload: { id: string; origin?: string | null }) => {
+  const content = JSON.stringify(payload, null, 2)
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(content)
+      return
+    }
+  } catch (err) {
+    console.warn('Failed to copy event metadata', err)
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = content
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'absolute'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    document.execCommand('copy')
+  } catch (err) {
+    console.warn('Fallback copy failed', err)
+  }
+  document.body.removeChild(textarea)
 }
 </script>
 
@@ -295,6 +347,13 @@ const describeMessage = (message: {
                   label="Optimistic"
                 />
                 <span class="text-xs text-slate-500">{{ message.time }}</span>
+                <UBadge
+                  v-if="message.originServer"
+                  size="xs"
+                  :color="message.remote ? 'warning' : 'neutral'"
+                  variant="soft"
+                  :label="message.remote ? `Remote · ${message.originServer}` : 'Local origin'"
+                />
               </div>
               <p class="text-sm text-slate-200 whitespace-pre-line break-words">
                 {{ message.content }}
@@ -336,6 +395,15 @@ const describeMessage = (message: {
               <div class="flex items-center gap-2 text-xs text-slate-500">
                 <UIcon name="i-heroicons-face-smile" class="h-4 w-4" />
                 <span>Reactions placeholder · emoji + counts coming soon</span>
+                <UButton
+                  size="xs"
+                  variant="ghost"
+                  color="neutral"
+                  icon="i-heroicons-clipboard"
+                  @click="copyMetadata({ id: message.id, origin: message.originServer })"
+                >
+                  Copy meta
+                </UButton>
               </div>
             </div>
           </li>

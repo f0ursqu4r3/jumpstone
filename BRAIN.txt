@@ -38,16 +38,20 @@
   - Role-aware permissions live in `frontend/src/utils/permissions.ts`; `DefaultLayout.vue` and `AppChannelSidebar.vue` gate channel creation with user guidance, while `HomeView.vue` blocks the composer for read-only members and surfaces an admin-only panel behind `VITE_FEATURE_ADMIN_PANEL`.
   - Device inventory hydrates via `frontend/src/stores/devices.ts`, falling back to mock data until `/sessions/devices` lands. Session persistence now uses `frontend/src/utils/storage.ts` to audit storage capabilities, exposing `storageAudit` in the session overview.
   - Accessibility upgrades include focusable timeline items and an axe-core regression test (`frontend/tests/accessibility.test.ts`); keyboard/screen-reader/manual plans captured in `docs/TESTING.md`.
+- **Federation Awareness (Week 8)**
+  - `frontend/src/stores/federation.ts` tracks per-guild remote contexts, logs Sentry breadcrumbs on failures, and fetches MLS handshake vectors for the admin console.
+  - `HomeView.vue` now shows remote trust alerts, a federation settings card (remote hosts + handshake vectors), and an origin filter for the timeline; `AppMessageTimeline.vue` badges remote events and exposes a “Copy meta” action for support workflows.
+  - The testing guide documents the handshake vector validation workflow alongside the accessibility audits added in Week 7.
 
 ## Testing & Tooling
 - **Backend**: `cargo xtask test`, `cargo xtask ci`, `cargo xtask ci-metrics-smoke`; targeted messaging/federation suites documented in `docs/TESTING.md`.
 - **Frontend**: `bun test:unit` (Vitest, jsdom, axe-core), `bun run type-check` (vue-tsc). Storybook/Playwright remain optional via `STORYBOOK_TESTS=true`.
-- Docs to watch: `docs/FRONTEND_TIMELINE.md` (timeline synced through Week 7), `docs/TESTING.md`, product brief (`BRIEF.md`), observability/threat model references.
+- Docs to watch: `docs/FRONTEND_TIMELINE.md` (timeline synced through Week 8), `docs/TESTING.md`, product brief (`BRIEF.md`), observability/threat model references.
 
 ## Deployment Notes
 - Backend defaults to Postgres (`DATABASE_URL`) but supports in-memory fallback for local dev; metrics exporter is feature gated.
 - Frontend served via Vite dev server (`bun dev`), production assets with `bun run build`. Docker Compose seeds local env (`OPENGUILD_SERVER__SERVER_NAME`) for federation experiments.
 
 ## Current Focus & Next Steps
-- Weeks 0–7 are complete; upcoming work moves into Week 8 federation features and MLS prep.
+- Weeks 0–8 are complete; upcoming work moves into Week 9 MLS prep and device bootstrap flows.
 - Maintain parity between backend capabilities and frontend docs/tests, and continue logging realtime/messaging telemetry for observability.

@@ -15,6 +15,7 @@ import { useSessionStore } from '@/stores/session'
 import { useSystemStore } from '@/stores/system'
 import { useTimelineStore } from '@/stores/timeline'
 import { useRealtimeStore } from '@/stores/realtime'
+import { useFederationStore } from '@/stores/federation'
 import { deriveGuildPermissions, permissionGuidance, resolveGuildRole } from '@/utils/permissions'
 import type { ComponentStatus } from '@/types/api'
 
@@ -76,6 +77,7 @@ const realtimeStore = useRealtimeStore()
 const messageComposerStore = useMessageComposerStore()
 const connectivityStore = useConnectivityStore()
 const sessionDevicesStore = useSessionDevicesStore()
+const federationStore = useFederationStore()
 
 const featureFlags = getFeatureFlags()
 
@@ -116,9 +118,7 @@ watch(
       return
     }
 
-    const options = loadedChannels.has(channelId)
-      ? { refresh: true }
-      : { force: true }
+    const options = loadedChannels.has(channelId) ? { refresh: true } : { force: true }
 
     try {
       await timelineStore.loadChannel(channelId, options)
@@ -134,6 +134,19 @@ watch(
   () => activeChannelIdRef.value,
   (channelId) => {
     realtimeStore.connect(channelId ?? null)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => activeGuildId.value,
+  (guildId) => {
+    if (!guildId) {
+      return
+    }
+    federationStore.fetchContext(guildId).catch((err) => {
+      console.warn('Failed to load federation context', err)
+    })
   },
   { immediate: true },
 )
@@ -154,6 +167,67 @@ const timelineEvents = computed(() => {
   return eventsByChannelRef.value[channelId] ?? []
 })
 
+const normalizeHost = (value: string | null | undefined) => {
+  if (!value) {
+    return null
+  }
+  try {
+    const sanitized = value.replace(/^https?:\/\//, '').split('/')[0] ?? value
+    return sanitized.split(':')[0]?.toLowerCase() ?? sanitized.toLowerCase()
+  } catch {
+    return value.toLowerCase()
+  }
+}
+
+const localOriginHost = computed(() => {
+  if (sessionServerName.value && sessionServerName.value !== 'Local server') {
+    return sessionServerName.value
+  }
+  const base = apiBaseHost.value
+  return base || null
+})
+
+const normalizedLocalOriginHost = computed(() => normalizeHost(localOriginHost.value))
+
+const timelineOriginFilter = ref<'all' | 'local' | 'remote'>('all')
+const originFilterOptions = [
+  { value: 'all', label: 'All events' },
+  { value: 'local', label: 'Local' },
+  { value: 'remote', label: 'Remote' },
+]
+
+const isRemoteEvent = (event: (typeof timelineEvents.value)[number]) => {
+  const origin = normalizeHost(event?.event.origin_server ?? null)
+  if (!origin) {
+    return false
+  }
+  const localHost = normalizedLocalOriginHost.value
+  if (localHost && origin === localHost) {
+    return false
+  }
+  return true
+}
+
+const filteredTimelineEvents = computed(() => {
+  if (timelineOriginFilter.value === 'all') {
+    return timelineEvents.value
+  }
+  const wantRemote = timelineOriginFilter.value === 'remote'
+  return timelineEvents.value.filter((event) => isRemoteEvent(event) === wantRemote)
+})
+
+const federationContext = computed(() => federationStore.contextForGuild(activeGuildId.value))
+const federationRemoteServers = computed(() => federationContext.value?.remoteServers ?? [])
+const federationTrustLevel = computed(() => federationContext.value?.trustLevel ?? 'trusted')
+const hasRemoteServers = computed(() => federationRemoteServers.value.length > 0)
+const trustAlertVariant = computed(() =>
+  federationTrustLevel.value === 'trusted'
+    ? 'info'
+    : federationTrustLevel.value === 'limited'
+      ? 'warning'
+      : 'error',
+)
+
 const timelineLoading = computed(() => {
   const channelId = activeChannelIdRef.value
   if (!channelId) {
@@ -172,13 +246,10 @@ const timelineError = computed(() => {
 
 const activeChannelName = computed(() => activeChannelRef.value?.label ?? '')
 const activeGuildName = computed(() => activeGuildRef.value?.name ?? '—')
-const hasChannels = computed(
-  () => (channelsForGuildRef.value ? channelsForGuildRef.value.length > 0 : false),
+const hasChannels = computed(() =>
+  channelsForGuildRef.value ? channelsForGuildRef.value.length > 0 : false,
 )
 const channelListLoading = computed(() => channelStoreLoadingRef.value)
-const composerDisabled = computed(
-  () => !activeChannelId.value || channelListLoading.value || !canSendMessages.value,
-)
 
 const latestSequenceLabel = computed(() => {
   const events = timelineEvents.value
@@ -211,13 +282,7 @@ const handleRetryOptimistic = async (localId: string) => {
   }
 }
 
-const handleTyping = ({
-  channelId,
-  preview,
-}: {
-  channelId: string | null
-  preview: string
-}) => {
+const handleTyping = ({ channelId, preview }: { channelId: string | null; preview: string }) => {
   if (channelId !== activeChannelId.value) {
     return
   }
@@ -295,6 +360,12 @@ const {
   identifier: identifierRef,
   isAuthenticated: isAuthenticatedRef,
 } = storeToRefs(sessionStore)
+
+const {
+  handshakeVectors: handshakeVectorsRef,
+  handshakeLoading: handshakeLoadingRef,
+  handshakeError: handshakeErrorRef,
+} = storeToRefs(federationStore)
 
 const {
   devices: devicesRef,
@@ -440,7 +511,7 @@ const sessionServerName = computed(() => {
 const platformRoles = computed(() => sessionProfile.value?.roles ?? [])
 const sessionGuilds = computed(() => sessionProfile.value?.guilds ?? [])
 const sessionDevices = computed(() =>
-  devicesRef.value.length ? devicesRef.value : sessionProfile.value?.devices ?? [],
+  devicesRef.value.length ? devicesRef.value : (sessionProfile.value?.devices ?? []),
 )
 const devicesLoading = computed(() => devicesLoadingRef.value)
 const devicesError = computed(() => devicesErrorRef.value)
@@ -450,11 +521,15 @@ const guildPermissions = computed(() =>
   deriveGuildPermissions(activeGuildRole.value, platformRoles.value || []),
 )
 const canSendMessages = computed(() => guildPermissions.value.canSendMessages)
+const canCreateChannels = computed(() => guildPermissions.value.canCreateChannels)
 const canViewAdminPanel = computed(
   () => featureFlags.adminPanel && guildPermissions.value.canManageGuild,
 )
 const sendPermissionMessage = computed(() =>
   canSendMessages.value ? null : permissionGuidance('sendMessages', guildPermissions.value),
+)
+const composerDisabled = computed(
+  () => !activeChannelId.value || channelListLoading.value || !canSendMessages.value,
 )
 const sessionAvatarUrl = computed(() => {
   const custom = profileAvatarRef.value
@@ -479,7 +554,7 @@ const sessionMetadata = computed(() => [
     value:
       storageAudit.value?.available === false && storageAudit.value?.reason
         ? `${storageAudit.value.type} · ${storageAudit.value.reason}`
-        : storageAudit.value?.type ?? 'unknown',
+        : (storageAudit.value?.type ?? 'unknown'),
   },
 ])
 
@@ -490,6 +565,48 @@ const refreshProfile = async () => {
     console.warn('Failed to refresh session profile', err)
   }
 }
+
+const fetchHandshakeVectors = async () => {
+  try {
+    await federationStore.fetchHandshakeVectors()
+  } catch (err) {
+    console.warn('Failed to fetch handshake vectors', err)
+  }
+}
+
+const copyToClipboard = async (payload: string, fallbackMessage: string) => {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(payload)
+      return
+    }
+  } catch (err) {
+    console.warn(fallbackMessage, err)
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = payload
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'absolute'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    document.execCommand('copy')
+  } catch (err) {
+    console.warn(fallbackMessage, err)
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
+const copyRemoteServer = async (server: string) => {
+  await copyToClipboard(server, 'Failed to copy remote server host')
+}
+
+const handshakeVectors = computed(() => handshakeVectorsRef.value ?? [])
+const handshakeLoading = computed(() => handshakeLoadingRef.value)
+const handshakeError = computed(() => handshakeErrorRef.value)
+const handshakePreview = computed(() => handshakeVectors.value.slice(0, 2))
 </script>
 
 <template>
@@ -560,11 +677,56 @@ const refreshProfile = async () => {
           :description="degradedMessage"
         />
 
+        <UAlert
+          v-else-if="hasRemoteServers"
+          :color="trustAlertVariant"
+          variant="soft"
+          icon="i-heroicons-globe-alt"
+          title="Remote federation active"
+        >
+          <template #description>
+            <p class="text-xs text-slate-200">This guild pulls events from remote homeservers:</p>
+            <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-200">
+              <li
+                v-for="server in federationRemoteServers"
+                :key="server"
+                class="flex items-center gap-2"
+              >
+                <span>{{ server }}</span>
+                <UButton
+                  size="xs"
+                  variant="ghost"
+                  color="neutral"
+                  @click="copyRemoteServer(server)"
+                >
+                  Copy
+                </UButton>
+              </li>
+            </ul>
+          </template>
+        </UAlert>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-slate-900/40 px-3 py-2"
+        >
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Event origin filter
+          </p>
+          <URadioGroup
+            v-model="timelineOriginFilter"
+            :items="originFilterOptions"
+            size="sm"
+            class="max-w-xs"
+          />
+        </div>
+
         <AppMessageTimeline
           :channel-name="activeChannelName"
-          :events="timelineEvents"
+          :events="filteredTimelineEvents"
           :loading="timelineLoading"
           :error="timelineError"
+          :local-origin-host="localOriginHost || ''"
+          :remote-servers="federationRemoteServers"
           @refresh="refreshTimeline"
           @retry="handleRetryOptimistic"
         />
@@ -625,7 +787,11 @@ const refreshProfile = async () => {
           <template #header>
             <div class="flex items-center justify-between">
               <h2 class="text-lg font-semibold text-white">Upcoming tasks</h2>
-              <UButton icon="i-heroicons-clipboard-document-check" color="neutral" variant="ghost" />
+              <UButton
+                icon="i-heroicons-clipboard-document-check"
+                color="neutral"
+                variant="ghost"
+              />
             </div>
           </template>
           <div class="space-y-4">
@@ -653,12 +819,19 @@ const refreshProfile = async () => {
               <h2 class="text-lg font-semibold text-white">Week 4 delivery log</h2>
               <p class="text-sm text-slate-400">Highlights from the guild and channel rollout.</p>
             </div>
-            <UButton icon="i-heroicons-arrow-path" color="neutral" variant="ghost" aria-label="Refresh feed" />
+            <UButton
+              icon="i-heroicons-arrow-path"
+              color="neutral"
+              variant="ghost"
+              aria-label="Refresh feed"
+            />
           </div>
         </template>
         <div class="space-y-8">
           <div v-for="item in timelineEntries" :key="item.id" class="relative pl-8">
-            <span class="absolute left-0 top-1 h-2.5 w-2.5 rounded-full bg-sky-400 ring-4 ring-sky-500/20" />
+            <span
+              class="absolute left-0 top-1 h-2.5 w-2.5 rounded-full bg-sky-400 ring-4 ring-sky-500/20"
+            />
             <div class="flex flex-wrap items-center gap-3">
               <p class="text-sm font-semibold text-white">
                 {{ item.title }}
@@ -803,10 +976,7 @@ const refreshProfile = async () => {
         </div>
       </UCard>
 
-      <UCard
-        v-if="canViewAdminPanel"
-        class="border border-emerald-500/20 bg-emerald-500/5"
-      >
+      <UCard v-if="canViewAdminPanel" class="border border-emerald-500/20 bg-emerald-500/5">
         <template #header>
           <div class="flex items-center justify-between">
             <div>
@@ -832,6 +1002,80 @@ const refreshProfile = async () => {
           <p class="text-xs text-emerald-200/70">
             Not seeing this panel? Double-check your guild role or reach out to a platform admin.
           </p>
+        </div>
+      </UCard>
+
+      <UCard class="border border-sky-500/20 bg-sky-500/5">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Federation settings</h2>
+              <p class="text-sm text-sky-200/80">Remote homeservers and handshake vectors</p>
+            </div>
+            <UButton
+              icon="i-heroicons-arrow-path"
+              color="neutral"
+              variant="ghost"
+              :loading="handshakeLoading"
+              @click="fetchHandshakeVectors"
+            >
+              Refresh vectors
+            </UButton>
+          </div>
+        </template>
+
+        <div class="space-y-4 text-sm text-slate-100">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-400">Remote servers</p>
+            <div v-if="federationRemoteServers.length === 0" class="text-xs text-slate-500">
+              No remote servers reported.
+            </div>
+            <ul v-else class="mt-2 space-y-2">
+              <li
+                v-for="server in federationRemoteServers"
+                :key="server"
+                class="flex items-center justify-between rounded bg-slate-900/70 px-3 py-2 text-xs"
+              >
+                <span>{{ server }}</span>
+                <UButton
+                  size="xs"
+                  variant="ghost"
+                  color="neutral"
+                  @click="copyRemoteServer(server)"
+                >
+                  Copy
+                </UButton>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-400">Handshake vectors</p>
+            <div v-if="handshakeError" class="text-xs text-rose-200">{{ handshakeError }}</div>
+            <div v-else-if="handshakeLoading" class="space-y-2">
+              <USkeleton class="h-3 w-40 rounded" />
+              <USkeleton class="h-3 w-32 rounded" />
+            </div>
+            <div v-else-if="handshakePreview.length === 0" class="text-xs text-slate-500">
+              Fetch the handshake test vectors to validate MLS readiness.
+            </div>
+            <ul v-else class="mt-2 space-y-2">
+              <li
+                v-for="vector in handshakePreview"
+                :key="vector.vector_id"
+                class="rounded bg-slate-900/70 px-3 py-2 text-xs"
+              >
+                <div class="flex items-center justify-between text-slate-200">
+                  <span>{{ vector.vector_id }}</span>
+                  <UBadge color="info" variant="soft" :label="vector.origin" />
+                </div>
+                <pre
+                  class="mt-2 overflow-x-auto rounded bg-slate-900/80 p-2 text-[10px] text-slate-300"
+                  >{{ JSON.stringify(vector.payload, null, 2) }}
+                </pre>
+              </li>
+            </ul>
+          </div>
         </div>
       </UCard>
     </section>

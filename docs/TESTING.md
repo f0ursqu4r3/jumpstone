@@ -70,6 +70,7 @@ This document maps each shipped backend feature in Weeks 1 through 7 to the auto
 - **Keyboard-only sweep** — With the frontend dev server running, tab across guild rail → channel list → timeline → composer. Confirm focus outlines are visible and actions remain accessible when permissions are revoked (expect disabled CTA guidance instead of hard errors).
 - **Screen-reader spot check** — In VoiceOver/NVDA, navigate the channel timeline and verify aria labels read “Sender at time: preview”. Confirm the composer announces the messaging restriction alert when perms are missing.
 - **Responsive/mobile audit** — Resize to 360px width (or use device emulator) and ensure sidebar slideover and admin panel copy remain readable; run manual axe browser extension spot checks.
+- **Federation handshake vectors** — Hit `GET /mls/handshake-test-vectors` (or use the admin portal button in `HomeView`) and confirm the payload copies cleanly. Capture the vector ID + origin host for support tickets when investigating MLS regressions.
 - **Proptest amplification** — set `PROPTEST_CASES` environment variable higher when investigating flaky event ID generation: `PROPTEST_CASES=1024 cargo test -p openguild-core messaging`.
 - **Load testing placeholder** — Week 8+ will add k6/wrk scenarios; track status in `docs/TIMELINE.md`.
 
