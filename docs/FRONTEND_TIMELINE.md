@@ -110,7 +110,8 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Week 10+: Frontend Roadmap
 
-- [ ] Evaluate component library extraction (design system package shared across marketing/admin).
+- [x] Evaluate component library extraction (design system package shared across marketing/admin).
+  - [x] Documented the extraction strategy in `docs/UI_SYSTEM.md` and introduced `frontend/src/components/primitives/GuildSurfaceCard.vue` plus an index barrel so future packages can tree-shake shared primitives. `HomeView.vue` now consumes the new primitive as a showcase.
 - [ ] Implement rich reactions, message edits, and context menus.
 - [x] Add global search (placeholder until search API shipped).
   - [x] `AppGlobalSearchModal.vue` plus `useSearchStore` now hydrate queries via `/search/messages` when available, falling back to mock results (with telemetry breadcrumbs) so the UX is testable before the backend lands.

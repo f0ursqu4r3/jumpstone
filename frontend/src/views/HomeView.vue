@@ -6,6 +6,7 @@ import AppDeviceBootstrapModal from '@/components/app/AppDeviceBootstrapModal.vu
 import AppGlobalSearchModal from '@/components/app/AppGlobalSearchModal.vue'
 import AppMessageComposer from '@/components/app/AppMessageComposer.vue'
 import AppMessageTimeline from '@/components/app/AppMessageTimeline.vue'
+import { GuildSurfaceCard } from '@/components/primitives'
 import { getFeatureFlags } from '@/config/features'
 import { getRuntimeConfig } from '@/config/runtime'
 import { useChannelStore } from '@/stores/channels'
@@ -899,7 +900,7 @@ const searchModalOpen = ref(false)
     </section>
 
     <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <UCard class="border border-white/5 bg-slate-950/60">
+      <GuildSurfaceCard>
         <template #header>
           <div class="flex items-center justify-between">
             <div>
@@ -936,7 +937,7 @@ const searchModalOpen = ref(false)
             <p class="mt-2 text-xs font-medium text-slate-500">Posted by {{ item.author }}</p>
           </div>
         </div>
-      </UCard>
+      </GuildSurfaceCard>
 
       <UCard class="border border-white/5 bg-slate-950/60">
         <template #header>
