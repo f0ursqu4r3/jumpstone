@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import axe from 'axe-core'
 
-import AppMessageTimeline from '@/components/app/AppMessageTimeline.vue'
+import AppMessageTimeline from '../src/components/app/AppMessageTimeline.vue'
 
 const sampleEvents = [
   {
@@ -46,15 +48,28 @@ const runAxeCheck = async (element: HTMLElement) => {
   expect(severeViolations).toHaveLength(0)
 }
 
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [{ path: '/', component: { template: '<div />' } }],
+})
+
+beforeAll(async () => {
+  await router.push('/')
+  await router.isReady()
+})
+
 describe('Accessibility regressions', () => {
   it('AppMessageTimeline renders without serious axe violations', async () => {
     const wrapper = mount(AppMessageTimeline, {
+      attachTo: document.body,
       props: {
         channelName: 'general',
         events: sampleEvents,
       },
       global: {
+        plugins: [router],
         stubs: {
+          Link: { template: '<button><slot /></button>' },
           UButton: { template: '<button><slot /></button>' },
           UIcon: { template: '<span><slot /></span>' },
           UBadge: { template: '<span><slot /></span>' },
@@ -64,6 +79,8 @@ describe('Accessibility regressions', () => {
       },
     })
 
+    await nextTick()
     await runAxeCheck(wrapper.element as HTMLElement)
+    wrapper.unmount()
   })
 })
