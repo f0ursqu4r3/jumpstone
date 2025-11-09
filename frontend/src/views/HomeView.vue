@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import AppDeviceBootstrapModal from '@/components/app/AppDeviceBootstrapModal.vue'
+import AppGlobalSearchModal from '@/components/app/AppGlobalSearchModal.vue'
 import AppMessageComposer from '@/components/app/AppMessageComposer.vue'
 import AppMessageTimeline from '@/components/app/AppMessageTimeline.vue'
 import { getFeatureFlags } from '@/config/features'
@@ -676,6 +677,7 @@ const copyKeyMaterial = async (value: string, meta: { identity: string; field: s
 }
 
 const deviceBootstrapOpen = ref(false)
+const searchModalOpen = ref(false)
 </script>
 
 <template>
@@ -686,6 +688,7 @@ const deviceBootstrapOpen = ref(false)
       :identifier="sessionUsername"
       :server-name="sessionServerName"
     />
+    <AppGlobalSearchModal v-model:open="searchModalOpen" />
 
     <section
       class="relative overflow-hidden rounded-3xl border border-slate-800/50 bg-linear-to-br from-slate-900 via-slate-950 to-slate-950/60 px-8 py-10 shadow-xl shadow-slate-950/40"
@@ -722,6 +725,13 @@ const deviceBootstrapOpen = ref(false)
             label="View styleguide"
             to="/styleguide"
             variant="ghost"
+          />
+          <UButton
+            icon="i-heroicons-magnifying-glass"
+            color="neutral"
+            label="Search"
+            variant="soft"
+            @click="searchModalOpen = true"
           />
         </div>
       </div>

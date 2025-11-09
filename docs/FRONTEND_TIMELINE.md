@@ -112,7 +112,9 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 - [ ] Evaluate component library extraction (design system package shared across marketing/admin).
 - [ ] Implement rich reactions, message edits, and context menus.
-- [ ] Add global search (placeholder until search API shipped).
+- [x] Add global search (placeholder until search API shipped).
+  - [x] `AppGlobalSearchModal.vue` plus `useSearchStore` now hydrate queries via `/search/messages` when available, falling back to mock results (with telemetry breadcrumbs) so the UX is testable before the backend lands.
+  - [x] `HomeView.vue` exposes a hero-level “Search” CTA that opens the modal, tracks last queries, and surfaces empty states + result metadata.
 - [ ] Mobile app shell (Capacitor/React Native evaluation) leveraging existing stores.
 - [ ] Telemetry dashboards (PostHog or Amplitude) for engagement metrics.
 
