@@ -17,7 +17,6 @@ import { useTimelineStore } from '@/stores/timeline'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useFederationStore } from '@/stores/federation'
 import { deriveGuildPermissions, permissionGuidance, resolveGuildRole } from '@/utils/permissions'
-import type { ComponentStatus } from '@/types/api'
 
 const timelineEntries = [
   {
@@ -340,15 +339,7 @@ const apiBaseHost = computed(() => {
 })
 
 const systemStore = useSystemStore()
-const {
-  readiness: readinessRef,
-  status: statusRef,
-  components: componentsRef,
-  uptimeSeconds: uptimeSecondsRef,
-  loading: loadingRef,
-  error: errorRef,
-  version: versionRef,
-} = storeToRefs(systemStore)
+const { readiness: readinessRef } = storeToRefs(systemStore)
 
 const sessionStore = useSessionStore()
 const {
@@ -402,47 +393,6 @@ watch(
   { immediate: true },
 )
 
-const backendPending = computed(() => loadingRef.value)
-const backendError = computed(() => errorRef.value)
-const backendErrorMessage = computed(() => errorRef.value ?? '')
-
-const refreshBackend = () => systemStore.fetchBackendStatus(true)
-
-const readinessStatus = computed(() => statusRef.value)
-const readinessBadgeColor = computed(() => {
-  if (readinessStatus.value === 'ready') {
-    return 'success'
-  }
-  if (readinessStatus.value === 'degraded') {
-    return 'warning'
-  }
-  return 'neutral'
-})
-
-const readinessStatusLabel = computed(() => {
-  const label = readinessStatus.value ?? 'unknown'
-  return label.charAt(0).toUpperCase() + label.slice(1)
-})
-
-const backendVersion = computed(() => versionRef.value ?? '—')
-
-const componentStatuses = computed<ComponentStatus[]>(() => componentsRef.value ?? [])
-
-const componentBadgeColor = (status: string) => {
-  if (status === 'configured') {
-    return 'success'
-  }
-  if (status === 'pending') {
-    return 'warning'
-  }
-  if (status === 'error') {
-    return 'error'
-  }
-  return 'neutral'
-}
-
-const componentStatusLabel = (status: string) => status.charAt(0).toUpperCase() + status.slice(1)
-
 const formatDuration = (totalSeconds: number | null | undefined) => {
   if (typeof totalSeconds !== 'number' || !Number.isFinite(totalSeconds)) {
     return '—'
@@ -465,8 +415,6 @@ const formatDuration = (totalSeconds: number | null | undefined) => {
 
   return segments.join(' ')
 }
-
-const uptime = computed(() => formatDuration(uptimeSecondsRef.value))
 
 const sessionProfile = computed(() => profileRef.value)
 const sessionProfileLoading = computed(() => profileLoadingRef.value)
@@ -603,10 +551,11 @@ const copyRemoteServer = async (server: string) => {
   await copyToClipboard(server, 'Failed to copy remote server host')
 }
 
-const handshakeVectors = computed(() => handshakeVectorsRef.value ?? [])
 const handshakeLoading = computed(() => handshakeLoadingRef.value)
 const handshakeError = computed(() => handshakeErrorRef.value)
-const handshakePreview = computed(() => handshakeVectors.value.slice(0, 2))
+const handshakePreview = computed(
+  () => (handshakeVectorsRef.value ?? []).slice(0, 2),
+)
 </script>
 
 <template>
