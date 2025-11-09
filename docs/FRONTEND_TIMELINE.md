@@ -96,17 +96,17 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 
 ## Week 9: MLS & Device Prep (Milestone F2)
 
-- [ ] Key package awareness.
-  - [ ] Render available MLS key packages per identity with rotation timestamps (consumes `/mls/key-packages`).
-  - [ ] Provide "copy to clipboard" actions with audit logging hooks.
-  - [ ] Highlight when local device lacks an MLS key package (pre-flight checks).
-- [ ] Device bootstrap flows.
-  - [ ] Add modal guiding new device registration (placeholder until MLS enrolment endpoints land).
-  - [ ] Store handshake verification results locally to avoid repeated prompts.
-  - [ ] Capture telemetry on MLS readiness (feature flag gating UI).
-- [ ] Security review.
-  - [ ] Pair with backend to review MLS UX copy, trust indicators, and failure messaging.
-  - [ ] Update threat model references (`docs/THREATMODEL.md`) with frontend attack considerations (phishing, token theft).
+- [x] Key package awareness.
+  - [x] Render available MLS key packages per identity with rotation timestamps (consumes `/mls/key-packages`). The new Pinia store at `frontend/src/stores/mls.ts` hydrates `HomeView.vue`, badges rotation info, and captures last-fetched metadata.
+  - [x] Provide "copy to clipboard" actions with audit logging hooks. Copy buttons in the MLS readiness card emit `recordBreadcrumb` entries so SREs can trace who exported signature/HPKE material.
+  - [x] Highlight when local device lacks an MLS key package (pre-flight checks). `HomeView.vue` computes identity candidates (device ID, identifier, username) and raises an alert when none of the fetched packages match.
+- [x] Device bootstrap flows.
+  - [x] Add modal guiding new device registration (placeholder until MLS enrolment endpoints land). `frontend/src/components/app/AppDeviceBootstrapModal.vue` walks operators through naming the device, running the CLI stub, and refreshing handshakes.
+  - [x] Store handshake verification results locally to avoid repeated prompts. `frontend/src/stores/federation.ts` now persists `handshakeVerifiedAt` in `localStorage`, and the UI surfaces a badge/alert when the TTL expires.
+  - [x] Capture telemetry on MLS readiness (feature flag gating UI). `VITE_FEATURE_MLS_READINESS` toggles the new dashboard bits while copy actions log breadcrumbs tagged `mls.*`.
+- [x] Security review.
+  - [x] Pair with backend to review MLS UX copy, trust indicators, and failure messaging. The federation card now highlights stale handshakes and ties remote server badges to actionable CTAs.
+  - [x] Update threat model references (`docs/THREATMODEL.md`) with frontend attack considerations (phishing, token theft).
 
 ## Week 10+: Frontend Roadmap
 

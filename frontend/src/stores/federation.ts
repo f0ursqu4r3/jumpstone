@@ -18,12 +18,42 @@ export interface HandshakeVector {
   payload: Record<string, unknown>
 }
 
+const HANDSHAKE_VERIFIED_KEY = 'openguild.federation.handshake_verified_at'
+
 const mockContext = (guildId: string): GuildFederationContext => ({
   guildId,
   remoteServers: ['relay.dev.openguild.net'],
   trustLevel: 'limited',
   updatedAt: new Date().toISOString(),
 })
+
+const readPersistedHandshakeVerification = () => {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null
+  }
+
+  try {
+    return window.localStorage.getItem(HANDSHAKE_VERIFIED_KEY)
+  } catch {
+    return null
+  }
+}
+
+const persistHandshakeVerification = (value: string | null) => {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return
+  }
+
+  try {
+    if (!value) {
+      window.localStorage.removeItem(HANDSHAKE_VERIFIED_KEY)
+      return
+    }
+    window.localStorage.setItem(HANDSHAKE_VERIFIED_KEY, value)
+  } catch {
+    // Ignore storage errors (Safari private mode, etc.)
+  }
+}
 
 export const useFederationStore = defineStore('federation', () => {
   const contexts = ref<Record<string, GuildFederationContext>>({})
@@ -32,6 +62,7 @@ export const useFederationStore = defineStore('federation', () => {
   const handshakeVectors = ref<HandshakeVector[] | null>(null)
   const handshakeLoading = ref(false)
   const handshakeError = ref<string | null>(null)
+  const handshakeVerifiedAt = ref<string | null>(readPersistedHandshakeVerification())
 
   const api = () => useApiClient()
 
@@ -78,6 +109,12 @@ export const useFederationStore = defineStore('federation', () => {
     }
   }
 
+  const markHandshakeVerified = (timestamp?: string) => {
+    const resolved = timestamp ?? new Date().toISOString()
+    handshakeVerifiedAt.value = resolved
+    persistHandshakeVerification(resolved)
+  }
+
   const fetchHandshakeVectors = async () => {
     handshakeLoading.value = true
     handshakeError.value = null
@@ -85,6 +122,7 @@ export const useFederationStore = defineStore('federation', () => {
     try {
       const payload = await api()<HandshakeVector[]>('/mls/handshake-test-vectors')
       handshakeVectors.value = payload
+      markHandshakeVerified()
       recordNetworkBreadcrumb('api', {
         message: 'Fetched handshake test vectors',
         level: 'info',
@@ -118,8 +156,10 @@ export const useFederationStore = defineStore('federation', () => {
     handshakeVectors,
     handshakeLoading,
     handshakeError,
+    handshakeVerifiedAt,
     fetchContext,
     fetchHandshakeVectors,
+    markHandshakeVerified,
     contextForGuild,
   }
 })

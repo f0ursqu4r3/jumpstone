@@ -23,6 +23,7 @@ This living document enumerates assets, adversaries, attack surfaces, and mitiga
 - Federation API endpoints *(future work)*.
 - Media retrieval paths.
 - Voice SFU signaling and transport.
+- **MLS readiness UI** – key package exports, bootstrap modal copy actions, and local handshake verification state accessible via the dashboard.
 
 ## Mitigations (Current Status)
 
@@ -35,6 +36,7 @@ This living document enumerates assets, adversaries, attack surfaces, and mitiga
 | Clickjacking, response sniffing | Global CSP (`default-src 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` applied at the gateway. | Review compatibility once UI embeds server responses. |
 | Metrics exposure | Metrics listener can bind to separate interface; documentation instructs operators to ensure restricted network access. | Add auth/ACL story for multi-tenant deployments. |
 | Session token theft | Access tokens signed with ed25519; refresh tokens bound to device metadata. | Enforce token rotation telemetry + anomaly detection. |
+| MLS bootstrap phishing / token theft | `HomeView.vue` displays explicit device/server metadata, MLS copy actions log breadcrumbs via `recordBreadcrumb`, and `VITE_FEATURE_MLS_READINESS` gates the UI until operators opt in. Handshake verification timestamps persist locally so stale prompts stand out. | Add signed bootstrap instructions + clipboard hardening (auto-clear, warning modals) once MLS enrolment APIs land. |
 
 ### Outstanding Work
 
@@ -42,4 +44,4 @@ This living document enumerates assets, adversaries, attack surfaces, and mitiga
 - Model exposure from future federation endpoints; define signature verification and rate limiting per peer.
 - Capture audit logging plan (current middleware placeholder).
 - Revisit threat posture once MLS integration progresses.
-
+- Harden MLS clipboard exports (clear-after-copy, integrate signed device provisioning flows).

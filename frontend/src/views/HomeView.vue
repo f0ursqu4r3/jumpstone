@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
+import AppDeviceBootstrapModal from '@/components/app/AppDeviceBootstrapModal.vue'
 import AppMessageComposer from '@/components/app/AppMessageComposer.vue'
 import AppMessageTimeline from '@/components/app/AppMessageTimeline.vue'
 import { getFeatureFlags } from '@/config/features'
@@ -11,63 +12,67 @@ import { useConnectivityStore } from '@/stores/connectivity'
 import { useSessionDevicesStore } from '@/stores/devices'
 import { useGuildStore } from '@/stores/guilds'
 import { useMessageComposerStore } from '@/stores/messages'
+import { useMlsStore } from '@/stores/mls'
 import { useSessionStore } from '@/stores/session'
 import { useSystemStore } from '@/stores/system'
 import { useTimelineStore } from '@/stores/timeline'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useFederationStore } from '@/stores/federation'
 import { deriveGuildPermissions, permissionGuidance, resolveGuildRole } from '@/utils/permissions'
+import { recordBreadcrumb } from '@/utils/telemetry'
 
 const timelineEntries = [
   {
-    id: 'guild-sync',
-    title: 'Guild roster hydrates from /guilds',
+    id: 'mls-key-packages',
+    title: 'MLS key packages surface in dashboard',
     author: 'Lia Chen',
     time: 'Today · 09:15',
     summary:
-      'Pinia guild store now sources data from the backend and updates the rail instantly. The Vue layout syncs query params so deep links land on the right workspace.',
-    tag: 'Week 4',
+      'HomeView now fetches `/mls/key-packages`, badges rotation timestamps, and lets operators copy HPKE + signature keys with telemetry breadcrumbs.',
+    tag: 'Week 9',
   },
   {
-    id: 'channel-sidebar',
-    title: 'Channel sidebar switches via store wiring',
+    id: 'device-bootstrap-modal',
+    title: 'Device bootstrap modal ships for MLS prep',
     author: 'Maya Singh',
     time: 'Today · 08:42',
     summary:
-      'Channel store fetches `/guilds/{guild_id}/channels` on selection, highlights unread stubs, and disables CTA buttons while loading.',
-    tag: 'UI Shell',
+      'A guided modal walks admins through naming devices, running the CLI, and verifying handshake vectors so new hardware lands cleanly.',
+    tag: 'Device Prep',
   },
   {
-    id: 'timeline-fetch',
-    title: 'Timeline reads from /channels/{id}/events',
+    id: 'handshake-persistence',
+    title: 'Handshake verification stored locally',
     author: 'Kai Patel',
     time: 'Yesterday · 17:05',
     summary:
-      'The new AppMessageTimeline component renders canonical events, groups by day, and surfaces refresh actions for manual QA runs.',
-    tag: 'Messaging',
+      'Fetching handshake test vectors now records the verification timestamp, muting repeated prompts until the TTL expires.',
+    tag: 'Federation',
   },
 ] as const
 
 const upcomingTasks = [
   {
-    id: 'guild-create-modal',
-    label: 'Guild creation modal (POST /guilds)',
+    id: 'mls-rotation-ui',
+    label: 'Expose key package rotation actions',
     owner: 'lia',
     status: 'Planned',
   },
   {
-    id: 'channel-empty-states',
-    label: 'Channel empty and invite-only states',
+    id: 'device-enrolment-api',
+    label: 'Wire MLS enrolment endpoint once available',
     owner: 'maya',
-    status: 'In progress',
+    status: 'Researching',
   },
   {
-    id: 'timeline-virtualize',
-    label: 'Virtualize timeline for >200 events',
+    id: 'mls-telemetry',
+    label: 'Expand MLS readiness telemetry dashboards',
     owner: 'kai',
     status: 'Backlog',
   },
 ] as const
+
+const HANDSHAKE_REVIEW_TTL_MS = 12 * 60 * 60 * 1000
 
 const channelStore = useChannelStore()
 const guildStore = useGuildStore()
@@ -77,6 +82,7 @@ const messageComposerStore = useMessageComposerStore()
 const connectivityStore = useConnectivityStore()
 const sessionDevicesStore = useSessionDevicesStore()
 const federationStore = useFederationStore()
+const mlsStore = useMlsStore()
 
 const featureFlags = getFeatureFlags()
 
@@ -349,6 +355,7 @@ const {
   displayName: displayNameRef,
   profileAvatar: profileAvatarRef,
   identifier: identifierRef,
+  deviceId: sessionDeviceIdRef,
   isAuthenticated: isAuthenticatedRef,
 } = storeToRefs(sessionStore)
 
@@ -364,6 +371,13 @@ const {
   error: devicesErrorRef,
   hydrated: devicesHydratedRef,
 } = storeToRefs(sessionDevicesStore)
+
+const {
+  keyPackages: keyPackagesRef,
+  loading: keyPackagesLoadingRef,
+  error: keyPackagesErrorRef,
+  lastFetchedAt: keyPackagesFetchedAtRef,
+} = storeToRefs(mlsStore)
 
 if (!readinessRef.value) {
   systemStore.fetchBackendStatus()
@@ -388,6 +402,19 @@ watch(
     }
     sessionDevicesStore.fetchDevices().catch((err) => {
       console.warn('Failed to load session devices', err)
+    })
+  },
+  { immediate: true },
+)
+
+watch(
+  () => isAuthenticatedRef.value,
+  (authenticated) => {
+    if (!featureFlags.mlsReadiness || !authenticated) {
+      return
+    }
+    mlsStore.fetchKeyPackages().catch((err) => {
+      console.warn('Failed to load MLS key packages', err)
     })
   },
   { immediate: true },
@@ -506,6 +533,56 @@ const sessionMetadata = computed(() => [
   },
 ])
 
+const sessionDeviceId = computed(() => sessionDeviceIdRef.value || '')
+const keyPackages = computed(() => keyPackagesRef.value ?? [])
+const keyPackagesLoading = computed(() => keyPackagesLoadingRef.value)
+const keyPackagesError = computed(() => keyPackagesErrorRef.value)
+const keyPackagesLastFetchedLabel = computed(() =>
+  keyPackagesFetchedAtRef.value ? formatDateTime(keyPackagesFetchedAtRef.value) : '—',
+)
+const localKeyIdentityCandidates = computed(() => {
+  const candidates = new Set<string>()
+  if (sessionDeviceId.value) {
+    candidates.add(sessionDeviceId.value)
+  }
+  if (identifierRef.value) {
+    candidates.add(identifierRef.value)
+  }
+  if (sessionProfile.value?.username) {
+    candidates.add(sessionProfile.value.username)
+  }
+  return Array.from(candidates).filter(Boolean)
+})
+const hasLocalKeyPackage = computed(() => {
+  if (!featureFlags.mlsReadiness) {
+    return true
+  }
+  const candidates = localKeyIdentityCandidates.value
+  if (!candidates.length) {
+    return true
+  }
+  if (!keyPackages.value.length) {
+    return false
+  }
+  return candidates.some((candidate) =>
+    keyPackages.value.some((pkg) => pkg.identity === candidate),
+  )
+})
+const missingKeyPackageIdentity = computed(() => {
+  if (hasLocalKeyPackage.value) {
+    return null
+  }
+  return localKeyIdentityCandidates.value[0] ?? null
+})
+const showMissingKeyPackageAlert = computed(
+  () =>
+    featureFlags.mlsReadiness &&
+    !keyPackagesLoading.value &&
+    !keyPackagesError.value &&
+    Boolean(localKeyIdentityCandidates.value.length) &&
+    !hasLocalKeyPackage.value,
+)
+
 const refreshProfile = async () => {
   try {
     await sessionStore.fetchProfile(true)
@@ -519,6 +596,17 @@ const fetchHandshakeVectors = async () => {
     await federationStore.fetchHandshakeVectors()
   } catch (err) {
     console.warn('Failed to fetch handshake vectors', err)
+  }
+}
+
+const refreshKeyPackages = async () => {
+  if (!featureFlags.mlsReadiness) {
+    return
+  }
+  try {
+    await mlsStore.fetchKeyPackages()
+  } catch (err) {
+    console.warn('Failed to refresh MLS key packages', err)
   }
 }
 
@@ -556,21 +644,61 @@ const handshakeError = computed(() => handshakeErrorRef.value)
 const handshakePreview = computed(
   () => (handshakeVectorsRef.value ?? []).slice(0, 2),
 )
+const handshakeVerifiedAt = computed(() => federationStore.handshakeVerifiedAt)
+const handshakeVerifiedLabel = computed(() => formatDateTime(handshakeVerifiedAt.value))
+const handshakeNeedsReview = computed(() => {
+  const iso = handshakeVerifiedAt.value
+  if (!iso) {
+    return true
+  }
+  const parsed = Date.parse(iso)
+  if (Number.isNaN(parsed)) {
+    return true
+  }
+  return Date.now() - parsed > HANDSHAKE_REVIEW_TTL_MS
+})
+const handshakeStatus = computed(() => ({
+  color: handshakeNeedsReview.value ? 'warning' : 'success',
+  label: handshakeNeedsReview.value ? 'Needs verification' : 'Verified',
+}))
+
+const copyKeyMaterial = async (value: string, meta: { identity: string; field: string }) => {
+  if (!value) {
+    return
+  }
+  await copyToClipboard(value, 'Failed to copy MLS key material')
+  recordBreadcrumb({
+    message: 'Copied MLS key material',
+    category: 'mls.copy',
+    level: 'info',
+    data: meta,
+  })
+}
+
+const deviceBootstrapOpen = ref(false)
 </script>
 
 <template>
   <div class="space-y-10">
+    <AppDeviceBootstrapModal
+      v-model:open="deviceBootstrapOpen"
+      :device-id="sessionDeviceId"
+      :identifier="sessionUsername"
+      :server-name="sessionServerName"
+    />
+
     <section
       class="relative overflow-hidden rounded-3xl border border-slate-800/50 bg-linear-to-br from-slate-900 via-slate-950 to-slate-950/60 px-8 py-10 shadow-xl shadow-slate-950/40"
     >
       <div class="relative z-10 max-w-3xl space-y-4">
-        <UBadge variant="soft" color="info" label="Milestone F0 · Week 4" />
+        <UBadge variant="soft" color="info" label="Milestone F2 · Week 9" />
         <h1 class="text-3xl font-semibold text-white sm:text-4xl">
-          Guild and channel shell syncing from the backend
+          MLS readiness and device bootstrap dashboard
         </h1>
         <p class="text-base text-slate-300 sm:text-lg">
-          Pinia stores now hydrate from the Axum APIs. Pick a channel to stream recent events,
-          verify the payloads, and update the docs as Week&nbsp;4 work lands.
+          Review MLS key packages, remote trust indicators, and device bootstrap guidance without
+          leaving the home dashboard. Refresh vectors after rotations and capture telemetry as Week
+          9 lands.
         </p>
         <div class="flex flex-wrap gap-3 pt-2">
           <UButton
@@ -765,8 +893,10 @@ const handshakePreview = computed(
         <template #header>
           <div class="flex items-center justify-between">
             <div>
-              <h2 class="text-lg font-semibold text-white">Week 4 delivery log</h2>
-              <p class="text-sm text-slate-400">Highlights from the guild and channel rollout.</p>
+              <h2 class="text-lg font-semibold text-white">Week 9 delivery log</h2>
+              <p class="text-sm text-slate-400">
+                Key MLS readiness updates: key packages, bootstrap tooling, and trust signals.
+              </p>
             </div>
             <UButton
               icon="i-heroicons-arrow-path"
@@ -956,24 +1086,44 @@ const handshakePreview = computed(
 
       <UCard class="border border-sky-500/20 bg-sky-500/5">
         <template #header>
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 class="text-lg font-semibold text-white">Federation settings</h2>
               <p class="text-sm text-sky-200/80">Remote homeservers and handshake vectors</p>
             </div>
-            <UButton
-              icon="i-heroicons-arrow-path"
-              color="neutral"
-              variant="ghost"
-              :loading="handshakeLoading"
-              @click="fetchHandshakeVectors"
-            >
-              Refresh vectors
-            </UButton>
+            <div class="flex items-center gap-2">
+              <UBadge
+                :color="handshakeStatus.color"
+                variant="soft"
+                :label="handshakeStatus.label"
+              />
+              <UButton
+                icon="i-heroicons-arrow-path"
+                color="neutral"
+                variant="ghost"
+                :loading="handshakeLoading"
+                @click="fetchHandshakeVectors"
+              >
+                Refresh vectors
+              </UButton>
+            </div>
           </div>
         </template>
 
         <div class="space-y-4 text-sm text-slate-100">
+          <UAlert
+            v-if="handshakeNeedsReview"
+            color="warning"
+            variant="soft"
+            icon="i-heroicons-shield-exclamation"
+            title="Handshake verification required"
+          >
+            <template #description>
+              Last verified {{ handshakeVerifiedLabel }}. Refresh the vectors above to store a new
+              verification timestamp.
+            </template>
+          </UAlert>
+
           <div>
             <p class="text-xs uppercase tracking-wide text-slate-400">Remote servers</p>
             <div v-if="federationRemoteServers.length === 0" class="text-xs text-slate-500">
@@ -1000,6 +1150,9 @@ const handshakePreview = computed(
 
           <div>
             <p class="text-xs uppercase tracking-wide text-slate-400">Handshake vectors</p>
+            <p class="text-[11px] text-slate-500">
+              Last verified {{ handshakeVerifiedLabel }}
+            </p>
             <div v-if="handshakeError" class="text-xs text-rose-200">{{ handshakeError }}</div>
             <div v-else-if="handshakeLoading" class="space-y-2">
               <USkeleton class="h-3 w-40 rounded" />
@@ -1025,6 +1178,138 @@ const handshakePreview = computed(
               </li>
             </ul>
           </div>
+        </div>
+      </UCard>
+
+      <UCard
+        v-if="featureFlags.mlsReadiness"
+        class="border border-indigo-500/20 bg-indigo-500/5"
+      >
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-white">MLS readiness</h2>
+              <p class="text-sm text-indigo-100/80">
+                Key packages, copy actions, and device bootstrap guidance
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton
+                icon="i-heroicons-bolt"
+                color="info"
+                variant="ghost"
+                @click="deviceBootstrapOpen = true"
+              >
+                Register device
+              </UButton>
+              <UButton
+                icon="i-heroicons-arrow-path"
+                color="neutral"
+                variant="ghost"
+                :loading="keyPackagesLoading"
+                @click="refreshKeyPackages"
+              >
+                Refresh packages
+              </UButton>
+            </div>
+          </div>
+        </template>
+
+        <div class="space-y-4 text-sm text-slate-100">
+          <UAlert
+            v-if="keyPackagesError"
+            color="warning"
+            variant="soft"
+            icon="i-heroicons-exclamation-triangle"
+            title="Unable to load key packages"
+            :description="keyPackagesError"
+          />
+          <UAlert
+            v-else-if="showMissingKeyPackageAlert"
+            color="warning"
+            variant="soft"
+            icon="i-heroicons-key"
+            title="Device missing MLS key package"
+          >
+            <template #description>
+              {{ missingKeyPackageIdentity || 'Current device' }} has no MLS key package yet. Use
+              the registration modal to mint one before attempting MLS enrolment.
+            </template>
+          </UAlert>
+          <UAlert
+            v-else-if="!keyPackagesLoading && keyPackages.length === 0"
+            color="neutral"
+            variant="soft"
+            icon="i-heroicons-information-circle"
+            title="No key packages reported"
+            description="Once the backend exposes MLS identities they will appear here."
+          />
+
+          <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-400">
+            <span>Last fetched {{ keyPackagesLastFetchedLabel }}</span>
+            <span v-if="sessionDeviceId">Local device ID {{ sessionDeviceId }}</span>
+          </div>
+
+          <div v-if="keyPackagesLoading" class="space-y-3">
+            <USkeleton class="h-16 w-full rounded-xl" />
+            <USkeleton class="h-16 w-full rounded-xl" />
+          </div>
+
+          <ul v-else class="space-y-3">
+            <li
+              v-for="pkg in keyPackages"
+              :key="pkg.identity"
+              class="rounded-2xl border border-white/10 bg-slate-950/40 p-4"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-white">{{ pkg.identity }}</p>
+                  <p class="text-xs text-slate-400">{{ pkg.ciphersuite }}</p>
+                </div>
+                <UBadge
+                  color="info"
+                  variant="soft"
+                  :label="
+                    pkg.rotated_at ? `Rotated ${formatDateTime(pkg.rotated_at)}` : 'Rotation pending'
+                  "
+                />
+              </div>
+
+              <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                <div class="rounded-xl border border-white/5 bg-slate-900/70 p-3">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-500">Signature key</p>
+                  <p class="mt-1 break-all font-mono text-[11px] text-slate-100">
+                    {{ pkg.signature_key }}
+                  </p>
+                  <UButton
+                    size="xs"
+                    variant="ghost"
+                    color="neutral"
+                    class="mt-2"
+                    @click="copyKeyMaterial(pkg.signature_key, { identity: pkg.identity, field: 'signature_key' })"
+                  >
+                    Copy
+                  </UButton>
+                </div>
+
+                <div class="rounded-xl border border-white/5 bg-slate-900/70 p-3">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-500">HPKE public key</p>
+                  <p class="mt-1 break-all font-mono text-[11px] text-slate-100">
+                    {{ pkg.hpke_public_key }}
+                  </p>
+                  <UButton
+                    size="xs"
+                    variant="ghost"
+                    color="neutral"
+                    class="mt-2"
+                    @click="copyKeyMaterial(pkg.hpke_public_key, { identity: pkg.identity, field: 'hpke_public_key' })"
+                  >
+                    Copy
+                  </UButton>
+                </div>
+              </div>
+            </li>
+          </ul>
         </div>
       </UCard>
     </section>
