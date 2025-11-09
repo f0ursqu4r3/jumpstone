@@ -42,6 +42,8 @@
   - `frontend/src/stores/federation.ts` tracks per-guild remote contexts, logs Sentry breadcrumbs on failures, and fetches MLS handshake vectors for the admin console.
   - `HomeView.vue` now shows remote trust alerts, a federation settings card (remote hosts + handshake vectors), and an origin filter for the timeline; `AppMessageTimeline.vue` badges remote events and exposes a “Copy meta” action for support workflows.
   - The testing guide documents the handshake vector validation workflow alongside the accessibility audits added in Week 7.
+- **Global Search Placeholder (Week 10)**
+  - `frontend/src/stores/search.ts` calls `GET /search/messages?q=` and falls back to mock data (with telemetry breadcrumbs) when the backend responds `404/501`. Backfill the Axum search endpoint so `AppGlobalSearchModal.vue` renders real results.
 
 ## Testing & Tooling
 - **Backend**: `cargo xtask test`, `cargo xtask ci`, `cargo xtask ci-metrics-smoke`; targeted messaging/federation suites documented in `docs/TESTING.md`.
