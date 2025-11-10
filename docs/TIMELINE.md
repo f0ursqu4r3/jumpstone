@@ -166,4 +166,5 @@ Testing coverage and commands for Weeks 1-7 live in `docs/TESTING.md`; update bo
   - [ ] Add coverage reporting and enforce minimum threshold.
   - [ ] Schedule `cargo audit`/`cargo deny` with triage guidance.
   - [ ] Track flaky tests and establish remediation workflow.
+
 Keep this document living—after each weekly sync, update status, adjust scope, annotate owners, and log new discoveries so we maintain momentum and clarity.

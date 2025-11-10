@@ -150,6 +150,30 @@ cargo run --bin openguild-server -- \
 - The command is idempotent: if the username already exists it logs a skip message and exits successfully.
 - Passwords must be **at least 8 characters**; credentials are stored using Argon2id hashing.
 
+Need to manage roles? The CLI exposes scoped helpers:
+
+```bash
+# Server-wide role (highest precedence)
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/openguild \
+  assign-server-role --username admin --role owner
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/openguild \
+  revoke-server-role --username admin --role owner
+
+# Guild-level role
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/openguild \
+  assign-guild-role --username admin --guild-id 62a8da03-1e15-46a1-9a2e-0cfd5d1cf5a5 --role admin
+
+# Channel-level role
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/openguild \
+  assign-channel-role --username admin --channel-id 28fbd745-4514-4bab-bfd5-acc8a2c2abd0 --role moderator
+```
+
+Supported role labels (case-insensitive): `owner`, `admin`, `moderator`, `maintainer`, `member`, `contributor`, `viewer`, `guest`. Server roles outrank guild roles, which outrank channel roles when permissions are evaluated.
+
 You can also provision accounts through the HTTP API once the server is running:
 
 ```bash

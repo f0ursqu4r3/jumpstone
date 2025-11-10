@@ -69,7 +69,7 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 use openguild_storage::{
-    connect, CreateUserError, MlsKeyPackageStore, StoragePool, UserRepository,
+    connect, CreateUserError, MessagingRepository, MlsKeyPackageStore, StoragePool, UserRepository,
 };
 use session::{
     DatabaseSessionAuthenticator, InMemorySessionStore, PostgresSessionRepository, SessionContext,
@@ -238,6 +238,14 @@ impl ConfigArgs {
 enum CliCommand {
     /// Seed a user account into the configured database.
     SeedUser(SeedUserCommand),
+    /// Assign a server-wide role to a user.
+    AssignServerRole(ServerRoleCommand),
+    /// Revoke a server-wide role from a user.
+    RevokeServerRole(ServerRoleCommand),
+    /// Assign a guild-scoped role to a user.
+    AssignGuildRole(GuildRoleCommand),
+    /// Assign a channel-scoped role to a user.
+    AssignChannelRole(ChannelRoleCommand),
 }
 
 #[derive(Args, Debug)]
@@ -248,6 +256,42 @@ struct SeedUserCommand {
     /// Plaintext password for the seeded account.
     #[arg(long)]
     password: String,
+}
+
+#[derive(Args, Debug)]
+struct ServerRoleCommand {
+    /// Username to modify.
+    #[arg(long)]
+    username: String,
+    /// Role label to assign or revoke (e.g., owner, admin, moderator).
+    #[arg(long)]
+    role: String,
+}
+
+#[derive(Args, Debug)]
+struct GuildRoleCommand {
+    /// Username to modify.
+    #[arg(long)]
+    username: String,
+    /// Target guild identifier.
+    #[arg(long)]
+    guild_id: Uuid,
+    /// Role label to assign (e.g., owner, admin, moderator, member).
+    #[arg(long)]
+    role: String,
+}
+
+#[derive(Args, Debug)]
+struct ChannelRoleCommand {
+    /// Username to modify.
+    #[arg(long)]
+    username: String,
+    /// Target channel identifier.
+    #[arg(long)]
+    channel_id: Uuid,
+    /// Role label to assign.
+    #[arg(long)]
+    role: String,
 }
 
 #[tokio::main]
@@ -268,6 +312,10 @@ async fn main() -> Result<()> {
 async fn run_command(config: &ServerConfig, command: CliCommand) -> Result<()> {
     match command {
         CliCommand::SeedUser(cmd) => seed_user(config, cmd).await,
+        CliCommand::AssignServerRole(cmd) => assign_server_role(config, cmd).await,
+        CliCommand::RevokeServerRole(cmd) => revoke_server_role(config, cmd).await,
+        CliCommand::AssignGuildRole(cmd) => assign_guild_role(config, cmd).await,
+        CliCommand::AssignChannelRole(cmd) => assign_channel_role(config, cmd).await,
     }
 }
 
@@ -289,6 +337,153 @@ async fn seed_user(config: &ServerConfig, cmd: SeedUserCommand) -> Result<()> {
         }
         Err(CreateUserError::Other(err)) => Err(err),
     }
+}
+
+async fn assign_server_role(config: &ServerConfig, cmd: ServerRoleCommand) -> Result<()> {
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| anyhow!("database_url must be configured to assign server roles"))?;
+
+    let username = cmd.username.trim();
+    if username.is_empty() {
+        anyhow::bail!("username must be provided");
+    }
+
+    let role = validate_role(&cmd.role)?;
+
+    let pool = connect(database_url).await?;
+    let Some(user_id) = UserRepository::find_user_id_by_username(pool.pool(), username).await?
+    else {
+        anyhow::bail!("user '{}' not found", username);
+    };
+
+    UserRepository::upsert_role(pool.pool(), user_id, &role).await?;
+    println!(
+        "Assigned server role '{}' to user '{}' (id: {})",
+        role, username, user_id
+    );
+    Ok(())
+}
+
+async fn revoke_server_role(config: &ServerConfig, cmd: ServerRoleCommand) -> Result<()> {
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| anyhow!("database_url must be configured to revoke server roles"))?;
+
+    let username = cmd.username.trim();
+    if username.is_empty() {
+        anyhow::bail!("username must be provided");
+    }
+
+    let role = validate_role(&cmd.role)?;
+
+    let pool = connect(database_url).await?;
+    let Some(user_id) = UserRepository::find_user_id_by_username(pool.pool(), username).await?
+    else {
+        anyhow::bail!("user '{}' not found", username);
+    };
+
+    let removed = UserRepository::revoke_role(pool.pool(), user_id, &role).await?;
+    if removed {
+        println!(
+            "Removed server role '{}' from user '{}' (id: {})",
+            role, username, user_id
+        );
+    } else {
+        println!(
+            "User '{}' (id: {}) did not have server role '{}'",
+            username, user_id, role
+        );
+    }
+    Ok(())
+}
+
+async fn assign_guild_role(config: &ServerConfig, cmd: GuildRoleCommand) -> Result<()> {
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| anyhow!("database_url must be configured to assign guild roles"))?;
+
+    let username = cmd.username.trim();
+    if username.is_empty() {
+        anyhow::bail!("username must be provided");
+    }
+
+    let role = validate_role(&cmd.role)?;
+    let pool = connect(database_url).await?;
+    let Some(user_id) = UserRepository::find_user_id_by_username(pool.pool(), username).await?
+    else {
+        anyhow::bail!("user '{}' not found", username);
+    };
+
+    let repo = MessagingRepository::new(pool.clone());
+    repo.upsert_guild_membership(cmd.guild_id, user_id, &role)
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
+    println!(
+        "Assigned guild role '{}' to user '{}' in guild {}",
+        role, username, cmd.guild_id
+    );
+    Ok(())
+}
+
+async fn assign_channel_role(config: &ServerConfig, cmd: ChannelRoleCommand) -> Result<()> {
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| anyhow!("database_url must be configured to assign channel roles"))?;
+
+    let username = cmd.username.trim();
+    if username.is_empty() {
+        anyhow::bail!("username must be provided");
+    }
+
+    let role = validate_role(&cmd.role)?;
+    let pool = connect(database_url).await?;
+    let Some(user_id) = UserRepository::find_user_id_by_username(pool.pool(), username).await?
+    else {
+        anyhow::bail!("user '{}' not found", username);
+    };
+
+    let repo = MessagingRepository::new(pool.clone());
+    repo.upsert_channel_membership(cmd.channel_id, user_id, &role)
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
+    println!(
+        "Assigned channel role '{}' to user '{}' in channel {}",
+        role, username, cmd.channel_id
+    );
+    Ok(())
+}
+
+fn validate_role(raw: &str) -> Result<String> {
+    let role = raw.trim().to_lowercase();
+    if role.is_empty() {
+        anyhow::bail!("role must be provided");
+    }
+
+    const ALLOWED_ROLES: &[&str] = &[
+        "owner",
+        "admin",
+        "moderator",
+        "maintainer",
+        "member",
+        "contributor",
+        "viewer",
+        "guest",
+    ];
+
+    if !ALLOWED_ROLES.contains(&role.as_str()) {
+        anyhow::bail!(
+            "unsupported role '{}'; expected one of {:?}",
+            role,
+            ALLOWED_ROLES
+        );
+    };
+
+    Ok(role)
 }
 
 async fn run(config: Arc<ServerConfig>) -> Result<()> {

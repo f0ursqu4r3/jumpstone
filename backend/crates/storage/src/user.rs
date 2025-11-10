@@ -137,8 +137,8 @@ impl UserRepository {
         Ok(())
     }
 
-    pub async fn revoke_role(pool: &PgPool, user_id: Uuid, role: &str) -> Result<()> {
-        sqlx::query(
+    pub async fn revoke_role(pool: &PgPool, user_id: Uuid, role: &str) -> Result<bool> {
+        let result = sqlx::query(
             r#"
             DELETE FROM user_roles
             WHERE user_id = $1 AND role = $2
@@ -149,7 +149,7 @@ impl UserRepository {
         .execute(pool)
         .await
         .with_context(|| format!("revoking role '{role}' from user '{user_id}'"))?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn list_roles(pool: &PgPool, user_id: Uuid) -> Result<Vec<String>> {
@@ -166,6 +166,21 @@ impl UserRepository {
         .await
         .with_context(|| format!("listing roles for user '{user_id}'"))?;
         Ok(roles)
+    }
+
+    pub async fn find_user_id_by_username(pool: &PgPool, username: &str) -> Result<Option<Uuid>> {
+        let user_id = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT user_id
+            FROM users
+            WHERE username = $1
+            "#,
+        )
+        .bind(username)
+        .fetch_optional(pool)
+        .await
+        .with_context(|| format!("locating user '{username}'"))?;
+        Ok(user_id)
     }
 }
 
@@ -289,7 +304,8 @@ mod tests {
         roles.sort();
         assert_eq!(roles, vec!["admin".to_string(), "maintainer".to_string()]);
 
-        UserRepository::revoke_role(pool.pool(), user_id, "admin").await?;
+        let removed = UserRepository::revoke_role(pool.pool(), user_id, "admin").await?;
+        assert!(removed, "expected admin role to be removed");
         let roles = UserRepository::list_roles(pool.pool(), user_id).await?;
         assert_eq!(roles, vec!["maintainer".to_string()]);
 

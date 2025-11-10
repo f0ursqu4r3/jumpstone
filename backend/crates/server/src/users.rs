@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     extract::{MatchedPath, State},
     http::{HeaderMap, StatusCode},
@@ -149,6 +151,8 @@ struct ChannelMembershipResponse {
     name: String,
     role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    effective_role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     joined_at: Option<DateTime<Utc>>,
 }
 
@@ -170,6 +174,7 @@ impl From<ChannelMembershipSummary> for ChannelMembershipResponse {
             guild_id: summary.guild_id,
             name: summary.channel_name,
             role: summary.role,
+            effective_role: None,
             joined_at: Some(summary.joined_at),
         }
     }
@@ -240,6 +245,50 @@ impl UserProfileResponse {
     }
 }
 
+fn normalize_role(role: &str) -> String {
+    role.trim().to_lowercase()
+}
+
+fn role_rank(role: &str) -> i32 {
+    match normalize_role(role).as_str() {
+        "owner" => 7,
+        "admin" => 6,
+        "moderator" => 5,
+        "maintainer" => 4,
+        "member" => 3,
+        "contributor" => 2,
+        "viewer" => 1,
+        "guest" => 0,
+        _ => -1,
+    }
+}
+
+fn dominant_role(
+    server_role: Option<&String>,
+    guild_role: Option<&String>,
+    channel_role: &str,
+) -> String {
+    let mut effective_role = channel_role.to_string();
+    let mut effective_rank = role_rank(channel_role);
+
+    if let Some(guild_role) = guild_role {
+        let guild_rank = role_rank(guild_role);
+        if guild_rank >= effective_rank {
+            effective_role = guild_role.clone();
+            effective_rank = guild_rank;
+        }
+    }
+
+    if let Some(server_role) = server_role {
+        let server_rank = role_rank(server_role);
+        if server_rank >= effective_rank {
+            effective_role = server_role.clone();
+        }
+    }
+
+    effective_role
+}
+
 pub async fn me(
     matched_path: MatchedPath,
     State(state): State<AppState>,
@@ -300,6 +349,26 @@ pub async fn me(
         }
     }
 
+    let best_server_role = response
+        .roles
+        .iter()
+        .max_by_key(|role| role_rank(role))
+        .cloned();
+
+    if !response.channels.is_empty() {
+        let guild_lookup: HashMap<Uuid, String> = response
+            .guilds
+            .iter()
+            .map(|guild| (guild.guild_id, guild.role.clone()))
+            .collect();
+
+        for channel in response.channels.iter_mut() {
+            let guild_role = guild_lookup.get(&channel.guild_id);
+            let effective = dominant_role(best_server_role.as_ref(), guild_role, &channel.role);
+            channel.effective_role = Some(effective);
+        }
+    }
+
     #[cfg(feature = "metrics")]
     state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
     #[cfg(not(feature = "metrics"))]
@@ -347,5 +416,19 @@ mod tests {
         let record = request.validate().expect("valid input");
         assert_eq!(record.username, "testuser");
         assert_eq!(record.password, "supersecret");
+    }
+
+    #[test]
+    fn dominant_role_respects_scope_precedence() {
+        let server = Some(&"admin".to_string());
+        let guild = Some(&"moderator".to_string());
+        let channel = "member";
+
+        assert_eq!(
+            dominant_role(server.clone(), guild.clone(), channel),
+            "admin"
+        );
+        assert_eq!(dominant_role(None, guild.clone(), channel), "moderator");
+        assert_eq!(dominant_role(None, None, channel), "member");
     }
 }

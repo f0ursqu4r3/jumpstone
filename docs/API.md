@@ -134,11 +134,11 @@ Registers a new user account. Requires a configured database; returns `503 Servi
 
 ### `GET /users/me`
 
-Returns the authenticated user's profile, including platform roles plus guild/channel memberships.
+Returns the authenticated user's profile, including server, guild, and channel roles.
 
-- `roles`: array of platform-wide roles granted to the account (e.g., `["admin","maintainer"]`).
+- `roles`: array of server-wide roles granted to the account (e.g., `["admin","maintainer"]`). These outrank guild/channel roles.
 - `guilds`: guild memberships with `guild_id`, `name`, `role`, and `joined_at`.
-- `channels`: per-channel memberships (role labels scoped to the parent guild).
+- `channels`: per-channel memberships. Each entry exposes `role` (channel-scoped) and `effective_role`, which reflects the highest role after applying server > guild > channel precedence.
 
 #### Successful Response
 
@@ -163,6 +163,7 @@ Returns the authenticated user's profile, including platform roles plus guild/ch
       "guild_id": "62a8da03-1e15-46a1-9a2e-0cfd5d1cf5a5",
       "name": "general",
       "role": "moderator",
+      "effective_role": "admin",
       "joined_at": "2025-10-26T10:16:11.000000Z"
     }
   ]
@@ -221,9 +222,11 @@ curl -X POST http://127.0.0.1:8080/users/register \
   -d '{"username":"alice","password":"supersecret"}'
 ```
 
-### CLI Seeding (`seed-user` subcommand)
+### CLI Helpers (`seed-user`, `assign-*-role`, `revoke-*-role`)
 
-For automated environments you can seed an account without hitting the HTTP API:
+CLI commands respect the same config/env overrides as the server binary and operate directly on Postgres.
+
+#### Seed a user
 
 ```bash
 cargo run --bin openguild-server -- \
@@ -231,8 +234,33 @@ cargo run --bin openguild-server -- \
   seed-user --username alice --password supersecret
 ```
 
-- Respects the same configuration overrides as the server (`--host`, env vars, etc.).
-- Exits successfully when the user already exists (logs a message and skips duplication).
+- Idempotent: if the username already exists the command logs a skip message.
+- Passwords must be ≥ 8 characters; credentials are stored with Argon2id.
+
+#### Assign / revoke roles
+
+```bash
+# Server-wide role (highest precedence)
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/app \
+  assign-server-role --username alice --role owner
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/app \
+  revoke-server-role --username alice --role owner
+
+# Guild role
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/app \
+  assign-guild-role --username alice --guild-id 62a8da03-1e15-46a1-9a2e-0cfd5d1cf5a5 --role admin
+
+# Channel role
+cargo run --bin openguild-server -- \
+  --database-url postgres://app:secret@localhost/app \
+  assign-channel-role --username alice --channel-id 28fbd745-4514-4bab-bfd5-acc8a2c2abd0 --role moderator
+```
+
+Supported labels (case-insensitive): `owner`, `admin`, `moderator`, `maintainer`, `member`, `contributor`, `viewer`, `guest`. Server roles outrank guild roles, which outrank channel roles when permissions are evaluated. The commands resolve usernames to UUIDs and emit clear messages if the target user/role is missing.
+
 
 ## Guilds & Channels (Week 4 bootstrap)
 
