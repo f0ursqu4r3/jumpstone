@@ -9,6 +9,7 @@ import AppChannelSidebar from '@/components/app/AppChannelSidebar.vue'
 import AppGuildCreateModal from '@/components/app/AppGuildCreateModal.vue'
 import AppGuildRail from '@/components/app/AppGuildRail.vue'
 import AppTopbar from '@/components/app/AppTopbar.vue'
+import AppLoadingOverlay from '@/components/app/AppLoadingOverlay.vue'
 import Button from '@/components/ui/Button.vue'
 import { extractErrorMessage } from '@/utils/errors'
 import {
@@ -103,6 +104,7 @@ const channelLoading = computed(() => channelLoadingRef.value)
 const hydrated = computed(() => hydratedRef.value)
 const isAuthenticated = computed(() => isAuthenticatedRef.value)
 const showAppShell = computed(() => hydrated.value && isAuthenticated.value)
+const showGlobalLoading = computed(() => !hydrated.value || (hydrated.value && !ready.value))
 
 const sessionProfile = computed(() => profileRef.value)
 const sessionGuilds = computed(() => sessionProfile.value?.guilds ?? [])
@@ -490,6 +492,7 @@ const resetCreateChannelError = () => {
         </div>
       </div>
     </div>
+    <AppLoadingOverlay v-if="showGlobalLoading" />
   </div>
 
   <AppGuildCreateModal
