@@ -396,6 +396,45 @@ export const useTimelineStore = defineStore('timeline', () => {
     removeOptimisticBy(channelId, (entry) => entry.localId === localId)
   }
 
+  function updateEventContent(
+    channelId: string,
+    eventId: string | null | undefined,
+    content: string,
+  ) {
+    if (!eventId) {
+      return
+    }
+    const existing = eventsByChannel.value[channelId]
+    if (!existing) {
+      return
+    }
+    const idx = existing.findIndex(
+      (entry) => entry.event.event_id && entry.event.event_id === eventId,
+    )
+    if (idx < 0) {
+      return
+    }
+    const target = existing[idx]
+    if (!target) {
+      return
+    }
+    const nextContent = {
+      ...(target.event.content ?? {}),
+      content,
+    }
+    const updated: TimelineEntry = {
+      ...target,
+      event: {
+        ...target.event,
+        content: nextContent,
+      },
+      optimistic: target.optimistic,
+    }
+    const next = [...existing]
+    next.splice(idx, 1, updated)
+    replaceChannelEvents(channelId, next)
+  }
+
   const timelineFor = (channelId: string) =>
     computed<TimelineEntry[]>(() => eventsByChannel.value[channelId] ?? [])
 
@@ -414,6 +453,7 @@ export const useTimelineStore = defineStore('timeline', () => {
     markOptimisticFailed,
     markOptimisticQueued,
     removeOptimistic,
+    updateEventContent,
     timelineFor,
     isLoading,
     errorForChannel,

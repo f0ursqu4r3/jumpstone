@@ -47,6 +47,7 @@
 - **Week 10 UI Enhancements**
   - Shared primitives begin under `frontend/src/components/primitives/` (starting with `GuildSurfaceCard.vue`) with the extraction plan documented in `docs/UI_SYSTEM.md`.
   - `frontend/src/stores/reactions.ts` merges server reaction payloads with local overrides (tolerating 404/501 fallbacks) so `AppMessageTimeline.vue` can render interactive reaction chips and palette popovers while awaiting backend APIs.
+  - Message actions/context: `AppMessageTimeline.vue` now surfaces an action menu for authors, inline editing UI with diff preview (“Original” vs “Revised”), and a placeholder “Report message” action. Edits save via `PATCH /channels/{channel_id}/events/{event_id}` when available or fall back to `useTimelineStore.updateEventContent`.
 
 ## Testing & Tooling
 - **Backend**: `cargo xtask test`, `cargo xtask ci`, `cargo xtask ci-metrics-smoke`; targeted messaging/federation suites documented in `docs/TESTING.md`.

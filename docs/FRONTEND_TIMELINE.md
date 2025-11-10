@@ -114,7 +114,9 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
   - [x] Documented the extraction strategy in `docs/UI_SYSTEM.md` and introduced `frontend/src/components/primitives/GuildSurfaceCard.vue` plus an index barrel so future packages can tree-shake shared primitives. `HomeView.vue` now consumes the new primitive as a showcase.
 - [ ] Implement rich reactions, message edits, and context menus.
   - [x] Rich reactions — `frontend/src/stores/reactions.ts` merges server payloads with optimistic overrides (handling 404/501 fallbacks) while `AppMessageTimeline.vue` renders reaction chips, palette popovers, and toggles hooked into the store.
-  - [ ] Message edits with inline composer + diff preview.
+  - [x] Inline message edits + context menu — `AppMessageTimeline.vue` now exposes an action menu (authors only) that opens an inline editor. Saves call `PATCH /channels/{channel_id}/events/{event_id}` when available, otherwise fall back to local updates via `useTimelineStore.updateEventContent`.
+  - [x] Moderation placeholders — The same menu includes a “Report message” action (stubbed to console logging for now) so future moderation workflows have a visible entry point.
+  - [x] Message edits with inline composer + diff preview. Editing surfaces now include a live diff panel (“Original” vs “Revised preview”) so reviewers can verify changes before saving.
   - [ ] Context menu affordances for moderation actions.
 - [x] Add global search (placeholder until search API shipped).
   - [x] `AppGlobalSearchModal.vue` plus `useSearchStore` now hydrate queries via `/search/messages` when available, falling back to mock results (with telemetry breadcrumbs) so the UX is testable before the backend lands.
