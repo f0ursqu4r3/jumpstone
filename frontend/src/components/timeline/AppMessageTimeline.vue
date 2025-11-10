@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import TimelineMessageCard from '@/components/timeline/TimelineMessageCard.vue'
 import { useApiClient } from '@/composables/useApiClient'
 import { useReactionStore, type ReactionSummary, type ServerReaction } from '@/stores/reactions'
 import { useTimelineStore, type TimelineEntry, type TimelineStatus } from '@/stores/timeline'

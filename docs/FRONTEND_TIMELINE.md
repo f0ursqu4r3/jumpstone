@@ -46,9 +46,9 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
   - [x] Support skeleton/loading states using Suspense for SSR hydration. The sidebar shows loading placeholders while `/guilds/{guild_id}/channels` resolves.
   - [x] Implement channel creation modal. `frontend/src/components/app/AppChannelCreateModal.vue` posts to `/guilds/{id}/channels`, updates the store, and surfaces placeholders for empty/invite-only states.
 - [x] Timeline scaffold.
-  - [x] Render message timeline (virtualized list) with author pill, timestamp, and Markdown parsing. `frontend/src/components/app/AppMessageTimeline.vue` renders grouped events with sender badges and timestamps (virtualization to follow in Week 5).
+  - [x] Render message timeline (virtualized list) with author pill, timestamp, and Markdown parsing. `frontend/src/components/timeline/AppMessageTimeline.vue` renders grouped events with sender badges and timestamps (virtualization to follow in Week 5).
   - [x] Integrate initial fetch via `GET /channels/{channel_id}/events` (limit/ pagination support).
-  - [x] Provide placeholder for reactions and system events. `frontend/src/components/app/AppMessageTimeline.vue` now renders badges for non-message events and a reactions stub ahead of Week 5 real-time UX.
+  - [x] Provide placeholder for reactions and system events. `frontend/src/components/timeline/AppMessageTimeline.vue` now renders badges for non-message events and a reactions stub ahead of Week 5 real-time UX.
 
 ## Week 5: Messaging UX & Realtime (Milestone F1)
 
@@ -83,7 +83,7 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 ## Week 8: Federation Awareness (Milestone F2)
 
 - [x] Surface remote context.
-  - [x] Display origin server badges on messages fetched via `/federation/channels/{channel_id}/events`. `frontend/src/components/app/AppMessageTimeline.vue` now flags remote events, badges their origin host, and exposes a copy-to-clipboard action.
+  - [x] Display origin server badges on messages fetched via `/federation/channels/{channel_id}/events`. `frontend/src/components/timeline/AppMessageTimeline.vue` now flags remote events, badges their origin host, and exposes a copy-to-clipboard action.
   - [x] Provide trust indicators (warning banner) when guild includes remote homeservers. `HomeView.vue` consumes `useFederationStore` to show alerts listing remote hosts and guidance for mitigations.
   - [x] Wire filtering UI for message origin (local vs remote). The timeline section includes a Nuxt UI radio group that filters `AppMessageTimeline` to all/local/remote events on demand.
 - [x] Federation settings UI.

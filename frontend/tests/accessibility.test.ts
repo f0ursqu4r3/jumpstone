@@ -5,7 +5,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia } from 'pinia'
 import axe from 'axe-core'
 
-import AppMessageTimeline from '../src/components/app/AppMessageTimeline.vue'
+import AppMessageTimeline from '../src/components/timeline/AppMessageTimeline.vue'
 
 const sampleEvents = [
   {
