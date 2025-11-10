@@ -46,6 +46,14 @@ interface StoredGuild {
   role?: string | null
 }
 
+interface StoredChannel {
+  channelId: string
+  guildId: string
+  name?: string | null
+  role?: string | null
+  effectiveRole?: string | null
+}
+
 interface StoredProfile {
   userId: string
   username: string
@@ -60,6 +68,7 @@ interface StoredProfile {
   updatedAt?: string | null
   roles?: string[]
   guilds?: StoredGuild[]
+  channels?: StoredChannel[]
   devices?: StoredDevice[]
   metadata?: Record<string, unknown>
 }
@@ -238,6 +247,59 @@ const sanitizeGuilds = (value: unknown): StoredGuild[] | undefined => {
   return guilds.length ? guilds : undefined
 }
 
+const sanitizeChannels = (value: unknown): StoredChannel[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const channels = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return null
+      }
+
+      const base = entry as Partial<StoredChannel> & {
+        channel_id?: string
+        guild_id?: string
+        effective_role?: string | null
+      }
+
+      const channelId =
+        typeof base.channelId === 'string'
+          ? base.channelId
+          : typeof base.channel_id === 'string'
+            ? base.channel_id
+            : null
+
+      const guildId =
+        typeof base.guildId === 'string'
+          ? base.guildId
+          : typeof base.guild_id === 'string'
+            ? base.guild_id
+            : null
+
+      if (!channelId || !guildId) {
+        return null
+      }
+
+      return {
+        channelId,
+        guildId,
+        name: typeof base.name === 'string' ? base.name : null,
+        role: typeof base.role === 'string' ? base.role : null,
+        effectiveRole:
+          typeof base.effectiveRole === 'string'
+            ? base.effectiveRole
+            : typeof base.effective_role === 'string'
+              ? base.effective_role
+              : null,
+      }
+    })
+    .filter(Boolean) as StoredChannel[]
+
+  return channels.length ? channels : undefined
+}
+
 const sanitizeProfile = (value: unknown): StoredProfile | null => {
   if (!value || typeof value !== 'object') {
     return null
@@ -271,6 +333,7 @@ const sanitizeProfile = (value: unknown): StoredProfile | null => {
       ? raw.roles.filter((role): role is string => typeof role === 'string' && role.length > 0)
       : undefined,
     guilds: sanitizeGuilds(raw.guilds),
+    channels: sanitizeChannels(raw.channels),
     devices: sanitizeDevices(raw.devices),
     metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : undefined,
   }

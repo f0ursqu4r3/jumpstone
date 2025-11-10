@@ -11,7 +11,12 @@ import AppGuildRail from '@/components/app/AppGuildRail.vue'
 import AppTopbar from '@/components/app/AppTopbar.vue'
 import Button from '@/components/ui/Button.vue'
 import { extractErrorMessage } from '@/utils/errors'
-import { deriveGuildPermissions, permissionGuidance, resolveGuildRole } from '@/utils/permissions'
+import {
+  deriveGuildPermissions,
+  permissionGuidance,
+  resolveChannelRole,
+  resolveGuildRole,
+} from '@/utils/permissions'
 import { useChannelStore } from '@/stores/channels'
 import { useGuildStore } from '@/stores/guilds'
 import { useSessionStore } from '@/stores/session'
@@ -101,10 +106,18 @@ const showAppShell = computed(() => hydrated.value && isAuthenticated.value)
 
 const sessionProfile = computed(() => profileRef.value)
 const sessionGuilds = computed(() => sessionProfile.value?.guilds ?? [])
+const sessionChannels = computed(() => sessionProfile.value?.channels ?? [])
 const platformRoles = computed(() => sessionProfile.value?.roles ?? [])
 const activeGuildRole = computed(() => resolveGuildRole(activeGuildIdRef.value, sessionGuilds.value))
+const activeChannelRole = computed(() =>
+  resolveChannelRole(activeChannelIdRef.value, sessionChannels.value),
+)
 const guildPermissions = computed(() =>
-  deriveGuildPermissions(activeGuildRole.value, platformRoles.value || []),
+  deriveGuildPermissions(
+    activeGuildRole.value,
+    platformRoles.value || [],
+    activeChannelRole.value?.role ?? null,
+  ),
 )
 const canCreateChannel = computed(() => guildPermissions.value.canCreateChannels)
 const createChannelDisabledReason = computed(() =>

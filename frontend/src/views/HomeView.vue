@@ -20,7 +20,12 @@ import { useSystemStore } from '@/stores/system'
 import { useTimelineStore } from '@/stores/timeline'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useFederationStore } from '@/stores/federation'
-import { deriveGuildPermissions, permissionGuidance, resolveGuildRole } from '@/utils/permissions'
+import {
+  deriveGuildPermissions,
+  permissionGuidance,
+  resolveChannelRole,
+  resolveGuildRole,
+} from '@/utils/permissions'
 import { recordBreadcrumb } from '@/utils/telemetry'
 
 const timelineEntries = [
@@ -487,6 +492,7 @@ const sessionServerName = computed(() => {
 })
 const platformRoles = computed(() => sessionProfile.value?.roles ?? [])
 const sessionGuilds = computed(() => sessionProfile.value?.guilds ?? [])
+const sessionChannels = computed(() => sessionProfile.value?.channels ?? [])
 const sessionDevices = computed(() =>
   devicesRef.value.length ? devicesRef.value : (sessionProfile.value?.devices ?? []),
 )
@@ -494,8 +500,15 @@ const devicesLoading = computed(() => devicesLoadingRef.value)
 const devicesError = computed(() => devicesErrorRef.value)
 
 const activeGuildRole = computed(() => resolveGuildRole(activeGuildId.value, sessionGuilds.value))
+const activeChannelRole = computed(() =>
+  resolveChannelRole(activeChannelId.value, sessionChannels.value),
+)
 const guildPermissions = computed(() =>
-  deriveGuildPermissions(activeGuildRole.value, platformRoles.value || []),
+  deriveGuildPermissions(
+    activeGuildRole.value,
+    platformRoles.value || [],
+    activeChannelRole.value?.role ?? null,
+  ),
 )
 const canSendMessages = computed(() => guildPermissions.value.canSendMessages)
 const canCreateChannels = computed(() => guildPermissions.value.canCreateChannels)
@@ -826,7 +839,7 @@ const searchModalOpen = ref(false)
           :local-origin-host="localOriginHost || ''"
           :remote-servers="federationRemoteServers"
           :current-user-id="sessionUserId"
-          :current-user-role="activeGuildRole"
+          :current-user-role="guildPermissions.role"
           :current-user-permissions="guildPermissions"
           @refresh="refreshTimeline"
           @retry="handleRetryOptimistic"

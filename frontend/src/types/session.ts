@@ -67,6 +67,14 @@ export interface CurrentUserGuild {
   role?: string | null
 }
 
+export interface CurrentUserChannel {
+  channel_id: string
+  guild_id: string
+  name?: string | null
+  role?: string | null
+  effective_role?: string | null
+}
+
 export interface CurrentUser {
   user_id: string
   username: string
@@ -81,6 +89,7 @@ export interface CurrentUser {
   updated_at?: string | null
   devices?: CurrentUserDevice[]
   guilds?: CurrentUserGuild[]
+  channels?: CurrentUserChannel[]
   roles?: string[]
   metadata?: Record<string, unknown>
 }

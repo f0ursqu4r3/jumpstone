@@ -1,5 +1,7 @@
 export interface GuildPermissionSnapshot {
   role: string
+  guildRole: string | null
+  channelRole: string | null
   platformRoles: string[]
   canSendMessages: boolean
   canCreateChannels: boolean
@@ -61,18 +63,34 @@ const platformAdminMatchers = [/admin/, /owner/, /superuser/, /maintainer/] as c
 export const deriveGuildPermissions = (
   guildRole?: string | null,
   platformRoles: string[] = [],
+  channelRole?: string | null,
 ): GuildPermissionSnapshot => {
-  const normalizedRole = normalizeRole(guildRole)
+  const normalizedGuildRole = normalizeRole(guildRole)
+  const normalizedChannelRole = normalizeRole(channelRole)
   const normalizedPlatformRoles = platformRoles.map((role) => normalizeRole(role)).filter(Boolean)
+
+  const bestServerRole = normalizedPlatformRoles.length
+    ? normalizedPlatformRoles.reduce((best, candidate) =>
+        roleRank(candidate) > roleRank(best) ? candidate : best,
+        normalizedPlatformRoles[0],
+      )
+    : null
+
+  const selectedGuildRole = normalizedGuildRole || null
+  const selectedChannelRole = normalizedChannelRole || null
+  const effectiveRole =
+    bestServerRole ?? selectedGuildRole ?? selectedChannelRole ?? 'member'
 
   const isPlatformAdmin = normalizedPlatformRoles.some((role) =>
     platformAdminMatchers.some((matcher) => matcher.test(role)),
   )
 
-  const capabilities = capabilityMatrix[normalizedRole] ?? capabilityMatrix.member
+  const capabilities = capabilityMatrix[effectiveRole] ?? capabilityMatrix.member
 
   return {
-    role: normalizedRole,
+    role: effectiveRole,
+    guildRole: selectedGuildRole,
+    channelRole: selectedChannelRole,
     platformRoles: normalizedPlatformRoles,
     canSendMessages: capabilities.canSendMessages || isPlatformAdmin,
     canCreateChannels: capabilities.canCreateChannels || isPlatformAdmin,
@@ -107,4 +125,28 @@ export const resolveGuildRole = (
 
   const match = guilds.find((guild) => guild.guildId === guildId)
   return match?.role ?? null
+}
+
+export const resolveChannelRole = (
+  channelId: string | null,
+  channels:
+    | Array<{ channelId: string; role?: string | null; effectiveRole?: string | null }>
+    | undefined,
+): { role: string | null; effectiveRole: string | null } | null => {
+  if (!channelId || !channels?.length) {
+    return null
+  }
+
+  const match = channels.find((channel) => channel.channelId === channelId)
+  if (!match) {
+    return null
+  }
+
+  const normalizedRole = normalizeRole(match.role)
+  const normalizedEffective = normalizeRole(match.effectiveRole ?? match.role)
+
+  return {
+    role: normalizedRole || null,
+    effectiveRole: normalizedEffective || normalizedRole || null,
+  }
 }
