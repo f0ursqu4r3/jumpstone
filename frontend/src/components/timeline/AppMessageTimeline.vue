@@ -7,6 +7,7 @@ import { useReactionStore, type ReactionSummary, type ServerReaction } from '@/s
 import { useTimelineStore, type TimelineEntry, type TimelineStatus } from '@/stores/timeline'
 import type { TimelineMessage } from '@/types/messaging'
 import { extractErrorMessage } from '@/utils/errors'
+import type { GuildPermissionSnapshot } from '@/utils/permissions'
 
 const props = defineProps<{
   channelId?: string | null
@@ -17,12 +18,17 @@ const props = defineProps<{
   localOriginHost?: string | null
   remoteServers?: string[]
   currentUserId?: string | null
+  currentUserRole?: string | null
+  currentUserPermissions?: GuildPermissionSnapshot | null
 }>()
 
 const emit = defineEmits<{
   (event: 'refresh'): void
   (event: 'retry', localId: string): void
 }>()
+
+const viewerRole = computed(() => props.currentUserRole ?? null)
+const viewerPermissions = computed(() => props.currentUserPermissions ?? null)
 
 const resolveContent = (event: TimelineEntry) => {
   const payload = event.event.content
@@ -77,6 +83,43 @@ const formatTimeLabel = (value: Date) => {
     return value.toLocaleTimeString()
   }
 }
+
+const formatRoleLabel = (value?: string | null) => {
+  if (!value) {
+    return null
+  }
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  return trimmed
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
+}
+
+const viewerRoleLabel = computed(() => formatRoleLabel(viewerRole.value))
+const viewerPermissionBadges = computed(() => {
+  const snapshot = viewerPermissions.value
+  if (!snapshot) {
+    return []
+  }
+  const badges: string[] = []
+  if (snapshot.canSendMessages) {
+    badges.push('Send messages')
+  }
+  if (snapshot.canCreateChannels) {
+    badges.push('Create channels')
+  }
+  if (snapshot.canManageGuild) {
+    badges.push('Manage guild')
+  }
+  return badges
+})
+const showViewerPermissionSummary = computed(
+  () => Boolean(viewerRoleLabel.value) || viewerPermissionBadges.value.length > 0,
+)
 
 const statusDescriptor = (status?: TimelineStatus | null) => {
   switch (status) {
@@ -464,6 +507,31 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
       />
     </header>
 
+    <div
+      v-if="showViewerPermissionSummary"
+      class="flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-slate-900/40 px-3 py-2 text-xs text-slate-300"
+    >
+      <span v-if="viewerRoleLabel" class="inline-flex items-center gap-1 text-white">
+        <UIcon name="i-heroicons-identification" class="h-4 w-4 text-slate-400" />
+        <span class="font-semibold">{{ viewerRoleLabel }}</span>
+        <span class="text-slate-500">role</span>
+      </span>
+      <span
+        v-if="viewerPermissionBadges.length"
+        class="inline-flex flex-wrap items-center gap-1 text-slate-300"
+      >
+        <UIcon name="i-heroicons-shield-check" class="h-4 w-4 text-slate-400" />
+        <UBadge
+          v-for="badge in viewerPermissionBadges"
+          :key="badge"
+          size="xs"
+          color="neutral"
+          variant="soft"
+          :label="badge"
+        />
+      </span>
+    </div>
+
     <div v-if="loading && !hasEvents" class="space-y-4">
       <div v-for="index in 6" :key="index" class="flex gap-3">
         <USkeleton class="h-10 w-10 rounded-full" />
@@ -534,12 +602,17 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
                 :reaction-button-classes="reactionButtonClasses"
                 :can-edit-message="canEditMessage"
                 :can-report-message="canReportMessage"
+                :viewer-role="viewerRole"
+                :viewer-permissions="viewerPermissions"
                 @retry="(localId) => emit('retry', localId)"
                 @edit="beginEdit(message)"
                 @cancel-edit="cancelEdit"
                 @save-edit="handleEditSave(message)"
                 @update:editDraft="(value) => (editDraft.value = value)"
-                @toggle-reaction="(payload) => handleReactionToggle(message, payload.emoji, payload.currentlyReacted)"
+                @toggle-reaction="
+                  (payload) =>
+                    handleReactionToggle(message, payload.emoji, payload.currentlyReacted)
+                "
                 @select-reaction="(emoji) => handleReactionPaletteSelect(message, emoji)"
                 @copy-meta="() => copyMetadata({ id: message.id, origin: message.originServer })"
                 @report="() => handleReportMessage(message)"

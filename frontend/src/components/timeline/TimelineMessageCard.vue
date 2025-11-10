@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { ReactionSummary } from '@/stores/reactions'
 import type { TimelineMessage } from '@/types/messaging'
+import type { GuildPermissionSnapshot } from '@/utils/permissions'
 
 const props = defineProps<{
   message: TimelineMessage
@@ -16,6 +16,8 @@ const props = defineProps<{
   reactionButtonClasses: (active: boolean) => string[]
   canEditMessage: (message: { isAuthor: boolean; optimistic: boolean }) => boolean
   canReportMessage: () => boolean
+  viewerRole?: string | null
+  viewerPermissions?: GuildPermissionSnapshot | null
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +34,41 @@ const emit = defineEmits<{
 
 const formattedDraft = computed(() => props.editDraft || '—')
 const formattedOriginal = computed(() => props.editOriginal || '—')
+const formatRoleLabel = (value?: string | null) => {
+  if (!value) {
+    return null
+  }
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  return trimmed
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
+}
+const viewerRoleLabel = computed(() => formatRoleLabel(props.viewerRole))
+const viewerPermissionBadges = computed(() => {
+  const snapshot = props.viewerPermissions
+  if (!snapshot) {
+    return []
+  }
+  const badges: string[] = []
+  if (snapshot.canSendMessages) {
+    badges.push('Send messages')
+  }
+  if (snapshot.canCreateChannels) {
+    badges.push('Create channels')
+  }
+  if (snapshot.canManageGuild) {
+    badges.push('Manage guild')
+  }
+  return badges
+})
+const showViewerContext = computed(
+  () => Boolean(viewerRoleLabel.value) || viewerPermissionBadges.value.length > 0,
+)
 </script>
 
 <template>
@@ -104,6 +141,31 @@ const formattedOriginal = computed(() => props.editOriginal || '—')
           </div>
         </template>
       </UPopover>
+    </div>
+
+    <div
+      v-if="message.isAuthor && showViewerContext"
+      class="flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-slate-900/40 px-2 py-1 text-[11px] text-slate-400"
+    >
+      <span v-if="viewerRoleLabel" class="inline-flex items-center gap-1 text-white">
+        <UIcon name="i-heroicons-identification" class="h-3.5 w-3.5 text-slate-400" />
+        <span class="font-semibold">{{ viewerRoleLabel }}</span>
+        <span class="text-slate-500">role</span>
+      </span>
+      <span
+        v-if="viewerPermissionBadges.length"
+        class="inline-flex flex-wrap items-center gap-1 text-slate-200"
+      >
+        <UIcon name="i-heroicons-shield-check" class="h-3.5 w-3.5 text-slate-400" />
+        <UBadge
+          v-for="badge in viewerPermissionBadges"
+          :key="badge"
+          size="xs"
+          color="neutral"
+          variant="soft"
+          :label="badge"
+        />
+      </span>
     </div>
 
     <div v-if="isEditing" class="space-y-3">

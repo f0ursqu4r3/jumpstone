@@ -37,6 +37,41 @@ pub struct ChannelEvent {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, FromRow)]
+pub struct GuildMembership {
+    pub guild_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub joined_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct GuildMembershipSummary {
+    pub guild_id: Uuid,
+    #[sqlx(rename = "guild_name")]
+    pub guild_name: String,
+    pub role: String,
+    pub joined_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct ChannelMembership {
+    pub channel_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub joined_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct ChannelMembershipSummary {
+    pub channel_id: Uuid,
+    pub guild_id: Uuid,
+    #[sqlx(rename = "channel_name")]
+    pub channel_name: String,
+    pub role: String,
+    pub joined_at: DateTime<Utc>,
+}
+
 impl MessagingRepository {
     pub fn new(pool: StoragePool) -> Arc<Self> {
         Arc::new(Self { pool })
@@ -192,6 +227,97 @@ impl MessagingRepository {
 
         Ok(events)
     }
+
+    pub async fn upsert_guild_membership(
+        &self,
+        guild_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<GuildMembership> {
+        let membership = sqlx::query_as::<_, GuildMembership>(
+            r#"
+            INSERT INTO guild_memberships (guild_id, user_id, role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (guild_id, user_id)
+            DO UPDATE SET role = EXCLUDED.role
+            RETURNING guild_id, user_id, role, joined_at
+            "#,
+        )
+        .bind(guild_id)
+        .bind(user_id)
+        .bind(role)
+        .fetch_one(self.pool.pool())
+        .await?;
+        Ok(membership)
+    }
+
+    pub async fn guild_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<GuildMembershipSummary>> {
+        let memberships = sqlx::query_as::<_, GuildMembershipSummary>(
+            r#"
+            SELECT gm.guild_id,
+                   g.name AS guild_name,
+                   gm.role,
+                   gm.joined_at
+            FROM guild_memberships gm
+            JOIN guilds g ON g.guild_id = gm.guild_id
+            WHERE gm.user_id = $1
+            ORDER BY g.created_at ASC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(self.pool.pool())
+        .await?;
+        Ok(memberships)
+    }
+
+    pub async fn upsert_channel_membership(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<ChannelMembership> {
+        let membership = sqlx::query_as::<_, ChannelMembership>(
+            r#"
+            INSERT INTO channel_memberships (channel_id, user_id, role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (channel_id, user_id)
+            DO UPDATE SET role = EXCLUDED.role
+            RETURNING channel_id, user_id, role, joined_at
+            "#,
+        )
+        .bind(channel_id)
+        .bind(user_id)
+        .bind(role)
+        .fetch_one(self.pool.pool())
+        .await?;
+        Ok(membership)
+    }
+
+    pub async fn channel_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelMembershipSummary>> {
+        let memberships = sqlx::query_as::<_, ChannelMembershipSummary>(
+            r#"
+            SELECT cm.channel_id,
+                   c.guild_id,
+                   c.name AS channel_name,
+                   cm.role,
+                   cm.joined_at
+            FROM channel_memberships cm
+            JOIN channels c ON c.channel_id = cm.channel_id
+            WHERE cm.user_id = $1
+            ORDER BY cm.joined_at ASC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(self.pool.pool())
+        .await?;
+        Ok(memberships)
+    }
 }
 
 #[cfg(test)]
@@ -212,7 +338,7 @@ mod tests {
     }
 
     async fn truncate_tables(pool: &StoragePool) -> anyhow::Result<()> {
-        sqlx::query("TRUNCATE channel_events, channel_memberships, channels, guilds RESTART IDENTITY CASCADE")
+        sqlx::query("TRUNCATE channel_events, channel_memberships, guild_memberships, channels, guilds RESTART IDENTITY CASCADE")
             .execute(pool.pool())
             .await
             .map(|_| ())
@@ -282,6 +408,50 @@ mod tests {
             .await?;
         assert_eq!(from_sequence.len(), 1);
         assert_eq!(from_sequence[0].event_id, second_event_id);
+
+        truncate_tables(&pool).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn messaging_repository_tracks_memberships() -> anyhow::Result<()> {
+        let Some(database_url) = test_database_url() else {
+            eprintln!("skipping messaging repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL");
+            return Ok(());
+        };
+
+        let pool = connect(&database_url).await?;
+        MIGRATOR
+            .run(pool.pool())
+            .await
+            .context("running migrations for membership repository tests failed")?;
+
+        let repo = MessagingRepository::new(pool.clone());
+        truncate_tables(&pool).await?;
+
+        let guild = repo.create_guild("Members").await?;
+        let channel = repo.create_channel(guild.guild_id, "general").await?;
+        let user_id = Uuid::new_v4();
+
+        let guild_membership = repo
+            .upsert_guild_membership(guild.guild_id, user_id, "admin")
+            .await?;
+        assert_eq!(guild_membership.role, "admin");
+
+        let guilds = repo.guild_memberships_for_user(user_id).await?;
+        assert_eq!(guilds.len(), 1);
+        assert_eq!(guilds[0].guild_name, "Members");
+        assert_eq!(guilds[0].role, "admin");
+
+        let channel_membership = repo
+            .upsert_channel_membership(channel.channel_id, user_id, "moderator")
+            .await?;
+        assert_eq!(channel_membership.role, "moderator");
+
+        let channels = repo.channel_memberships_for_user(user_id).await?;
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].channel_name, "general");
+        assert_eq!(channels[0].role, "moderator");
 
         truncate_tables(&pool).await?;
         Ok(())

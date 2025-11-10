@@ -826,6 +826,8 @@ const searchModalOpen = ref(false)
           :local-origin-host="localOriginHost || ''"
           :remote-servers="federationRemoteServers"
           :current-user-id="sessionUserId"
+          :current-user-role="activeGuildRole"
+          :current-user-permissions="guildPermissions"
           @refresh="refreshTimeline"
           @retry="handleRetryOptimistic"
         />

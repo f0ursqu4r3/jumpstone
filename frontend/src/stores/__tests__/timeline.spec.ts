@@ -61,9 +61,10 @@ describe('timeline store', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const raw = typeof input === 'string' ? input : input.toString()
-      const url = new URL(raw)
+      const url = raw.startsWith('http') ? new URL(raw) : new URL(raw, 'http://localhost')
+      const pathname = url.pathname.replace(/^\/api/, '')
 
-      if (url.pathname.endsWith('/channels/channel-1/events')) {
+      if (pathname.endsWith('/channels/channel-1/events')) {
         if (url.searchParams.get('since') === '1') {
           return createJsonResponse(secondPayload)
         }

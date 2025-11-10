@@ -45,7 +45,13 @@ describe('channel store', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
-      const key = url.replace('http://127.0.0.1:8080', '')
+      let pathname: string
+      try {
+        pathname = new URL(url).pathname
+      } catch {
+        pathname = url.startsWith('http') ? url : url
+      }
+      const key = pathname.replace(/^\/api/, '')
       return responses[key] ?? createJsonResponse([])
     })
 
@@ -65,7 +71,15 @@ describe('channel store', () => {
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input.toString()
-        if (url.endsWith('/guilds/guild-1/channels') && init?.method === 'POST') {
+        const pathname = (() => {
+          try {
+            return new URL(url).pathname
+          } catch {
+            return url
+          }
+        })().replace(/^\/api/, '')
+
+        if (pathname.endsWith('/guilds/guild-1/channels') && init?.method === 'POST') {
           return createJsonResponse({
             channel_id: 'channel-3',
             guild_id: 'guild-1',
@@ -74,7 +88,7 @@ describe('channel store', () => {
           })
         }
 
-        if (url.endsWith('/guilds/guild-1/channels')) {
+        if (pathname.endsWith('/guilds/guild-1/channels')) {
           return createJsonResponse([
             {
               channel_id: 'channel-1',

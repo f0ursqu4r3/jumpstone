@@ -18,7 +18,10 @@ use axum::{
     Extension, Json,
 };
 use openguild_core::{event::CanonicalEvent, messaging::MessagePayload};
-use openguild_storage::{Channel, ChannelEvent, Guild, MessagingRepository, StoragePool};
+use openguild_storage::{
+    Channel, ChannelEvent, ChannelMembership, ChannelMembershipSummary, Guild, GuildMembership,
+    GuildMembershipSummary, MessagingRepository, StoragePool,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -87,6 +90,26 @@ pub trait ChannelStore: Send + Sync {
         limit: i64,
     ) -> Result<Vec<ChannelEvent>, MessagingError>;
     async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError>;
+    async fn upsert_guild_membership(
+        &self,
+        guild_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<GuildMembership, MessagingError>;
+    async fn guild_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<GuildMembershipSummary>, MessagingError>;
+    async fn upsert_channel_membership(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<ChannelMembership, MessagingError>;
+    async fn channel_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelMembershipSummary>, MessagingError>;
 }
 
 #[async_trait]
@@ -160,6 +183,60 @@ impl ChannelStore for MessagingRepository {
             .await
             .map_err(MessagingError::from)
     }
+
+    async fn upsert_guild_membership(
+        &self,
+        guild_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<GuildMembership, MessagingError> {
+        if !self
+            .guild_exists(guild_id)
+            .await
+            .map_err(MessagingError::from)?
+        {
+            return Err(MessagingError::GuildNotFound);
+        }
+        MessagingRepository::upsert_guild_membership(self, guild_id, user_id, role)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn guild_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<GuildMembershipSummary>, MessagingError> {
+        MessagingRepository::guild_memberships_for_user(self, user_id)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn upsert_channel_membership(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<ChannelMembership, MessagingError> {
+        if !self
+            .channel_exists(channel_id)
+            .await
+            .map_err(MessagingError::from)?
+        {
+            return Err(MessagingError::ChannelNotFound);
+        }
+        MessagingRepository::upsert_channel_membership(self, channel_id, user_id, role)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn channel_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelMembershipSummary>, MessagingError> {
+        MessagingRepository::channel_memberships_for_user(self, user_id)
+            .await
+            .map_err(MessagingError::from)
+    }
 }
 
 #[derive(Default)]
@@ -168,7 +245,21 @@ struct InMemoryMessaging {
     channels: RwLock<HashMap<Uuid, Channel>>,
     guild_index: RwLock<HashMap<Uuid, Vec<Uuid>>>,
     events: RwLock<HashMap<Uuid, Vec<ChannelEvent>>>,
+    guild_memberships: RwLock<HashMap<Uuid, HashMap<Uuid, InMemoryGuildMembership>>>,
+    channel_memberships: RwLock<HashMap<Uuid, HashMap<Uuid, InMemoryChannelMembership>>>,
     sequence: AtomicI64,
+}
+
+#[derive(Clone)]
+struct InMemoryGuildMembership {
+    role: String,
+    joined_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Clone)]
+struct InMemoryChannelMembership {
+    role: String,
+    joined_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[async_trait]
@@ -278,6 +369,129 @@ impl ChannelStore for InMemoryMessaging {
 
     async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError> {
         Ok(self.channels.read().await.contains_key(&channel_id))
+    }
+
+    async fn upsert_guild_membership(
+        &self,
+        guild_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<GuildMembership, MessagingError> {
+        if !self.guilds.read().await.contains_key(&guild_id) {
+            return Err(MessagingError::GuildNotFound);
+        }
+
+        let record = GuildMembership {
+            guild_id,
+            user_id,
+            role: role.to_string(),
+            joined_at: chrono::Utc::now(),
+        };
+
+        let entry = InMemoryGuildMembership {
+            role: record.role.clone(),
+            joined_at: record.joined_at,
+        };
+
+        self.guild_memberships
+            .write()
+            .await
+            .entry(user_id)
+            .or_default()
+            .insert(guild_id, entry);
+
+        Ok(record)
+    }
+
+    async fn guild_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<GuildMembershipSummary>, MessagingError> {
+        let entries = {
+            let map = self.guild_memberships.read().await;
+            map.get(&user_id).cloned()
+        };
+
+        let Some(entries) = entries else {
+            return Ok(Vec::new());
+        };
+
+        let guilds = self.guilds.read().await;
+        let mut summaries = Vec::new();
+        for (guild_id, membership) in entries {
+            if let Some(guild) = guilds.get(&guild_id) {
+                summaries.push(GuildMembershipSummary {
+                    guild_id,
+                    guild_name: guild.name.clone(),
+                    role: membership.role.clone(),
+                    joined_at: membership.joined_at,
+                });
+            }
+        }
+        summaries.sort_by_key(|entry| entry.joined_at);
+        Ok(summaries)
+    }
+
+    async fn upsert_channel_membership(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<ChannelMembership, MessagingError> {
+        if !self.channels.read().await.contains_key(&channel_id) {
+            return Err(MessagingError::ChannelNotFound);
+        }
+
+        let record = ChannelMembership {
+            channel_id,
+            user_id,
+            role: role.to_string(),
+            joined_at: chrono::Utc::now(),
+        };
+
+        let entry = InMemoryChannelMembership {
+            role: record.role.clone(),
+            joined_at: record.joined_at,
+        };
+
+        self.channel_memberships
+            .write()
+            .await
+            .entry(user_id)
+            .or_default()
+            .insert(channel_id, entry);
+
+        Ok(record)
+    }
+
+    async fn channel_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelMembershipSummary>, MessagingError> {
+        let entries = {
+            let map = self.channel_memberships.read().await;
+            map.get(&user_id).cloned()
+        };
+
+        let Some(entries) = entries else {
+            return Ok(Vec::new());
+        };
+
+        let channels = self.channels.read().await;
+        let mut summaries = Vec::new();
+        for (channel_id, membership) in entries {
+            if let Some(channel) = channels.get(&channel_id) {
+                summaries.push(ChannelMembershipSummary {
+                    channel_id,
+                    guild_id: channel.guild_id,
+                    channel_name: channel.name.clone(),
+                    role: membership.role.clone(),
+                    joined_at: membership.joined_at,
+                });
+            }
+        }
+        summaries.sort_by_key(|entry| entry.joined_at);
+        Ok(summaries)
     }
 }
 
@@ -470,6 +684,42 @@ impl MessagingService {
 
     pub async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError> {
         self.store.channel_exists(channel_id).await
+    }
+
+    pub async fn upsert_guild_membership(
+        &self,
+        guild_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<GuildMembership, MessagingError> {
+        self.store
+            .upsert_guild_membership(guild_id, user_id, role)
+            .await
+    }
+
+    pub async fn guild_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<GuildMembershipSummary>, MessagingError> {
+        self.store.guild_memberships_for_user(user_id).await
+    }
+
+    pub async fn upsert_channel_membership(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<ChannelMembership, MessagingError> {
+        self.store
+            .upsert_channel_membership(channel_id, user_id, role)
+            .await
+    }
+
+    pub async fn channel_memberships_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelMembershipSummary>, MessagingError> {
+        self.store.channel_memberships_for_user(user_id).await
     }
 
     async fn broadcast(

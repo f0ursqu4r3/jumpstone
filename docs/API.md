@@ -132,6 +132,43 @@ Registers a new user account. Requires a configured database; returns `503 Servi
 }
 ```
 
+### `GET /users/me`
+
+Returns the authenticated user's profile, including platform roles plus guild/channel memberships.
+
+- `roles`: array of platform-wide roles granted to the account (e.g., `["admin","maintainer"]`).
+- `guilds`: guild memberships with `guild_id`, `name`, `role`, and `joined_at`.
+- `channels`: per-channel memberships (role labels scoped to the parent guild).
+
+#### Successful Response
+
+```json
+{
+  "user_id": "5f6171fb-4c76-43f7-9e2f-5b6f5fd278af",
+  "username": "alice",
+  "display_name": "alice",
+  "server_name": "dev.openguild.local",
+  "roles": ["admin"],
+  "guilds": [
+    {
+      "guild_id": "62a8da03-1e15-46a1-9a2e-0cfd5d1cf5a5",
+      "name": "Profile Guild",
+      "role": "admin",
+      "joined_at": "2025-10-26T10:15:30.123456Z"
+    }
+  ],
+  "channels": [
+    {
+      "channel_id": "28fbd745-4514-4bab-bfd5-acc8a2c2abd0",
+      "guild_id": "62a8da03-1e15-46a1-9a2e-0cfd5d1cf5a5",
+      "name": "general",
+      "role": "moderator",
+      "joined_at": "2025-10-26T10:16:11.000000Z"
+    }
+  ]
+}
+```
+
 ### `POST /sessions/refresh`
 
 Returns a fresh access token (and rotated refresh token) when provided with a valid, unexpired refresh token.

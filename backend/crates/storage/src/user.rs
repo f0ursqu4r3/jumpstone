@@ -120,6 +120,53 @@ impl UserRepository {
             updated_at: row.3,
         }))
     }
+
+    pub async fn upsert_role(pool: &PgPool, user_id: Uuid, role: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO user_roles (user_id, role)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id, role) DO NOTHING
+            "#,
+        )
+        .bind(user_id)
+        .bind(role)
+        .execute(pool)
+        .await
+        .with_context(|| format!("granting role '{role}' to user '{user_id}'"))?;
+        Ok(())
+    }
+
+    pub async fn revoke_role(pool: &PgPool, user_id: Uuid, role: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM user_roles
+            WHERE user_id = $1 AND role = $2
+            "#,
+        )
+        .bind(user_id)
+        .bind(role)
+        .execute(pool)
+        .await
+        .with_context(|| format!("revoking role '{role}' from user '{user_id}'"))?;
+        Ok(())
+    }
+
+    pub async fn list_roles(pool: &PgPool, user_id: Uuid) -> Result<Vec<String>> {
+        let roles = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT role
+            FROM user_roles
+            WHERE user_id = $1
+            ORDER BY granted_at ASC, role ASC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+        .with_context(|| format!("listing roles for user '{user_id}'"))?;
+        Ok(roles)
+    }
 }
 
 #[cfg(test)]
@@ -214,6 +261,44 @@ mod tests {
 
         sqlx::query("DELETE FROM users WHERE username = $1")
             .bind(username)
+            .execute(pool.pool())
+            .await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn user_roles_round_trip() -> anyhow::Result<()> {
+        let Some(pool) = setup_pool().await? else {
+            eprintln!(
+                "skipping user repository test: set OPENGUILD_TEST_DATABASE_URL or DATABASE_URL"
+            );
+            return Ok(());
+        };
+
+        let username = format!("role_{}", Uuid::new_v4());
+        let password = "role-test-secret";
+        let user_id = UserRepository::create_user(pool.pool(), &username, password).await?;
+
+        UserRepository::upsert_role(pool.pool(), user_id, "admin").await?;
+        UserRepository::upsert_role(pool.pool(), user_id, "maintainer").await?;
+        // duplicate grant should be ignored
+        UserRepository::upsert_role(pool.pool(), user_id, "admin").await?;
+
+        let mut roles = UserRepository::list_roles(pool.pool(), user_id).await?;
+        roles.sort();
+        assert_eq!(roles, vec!["admin".to_string(), "maintainer".to_string()]);
+
+        UserRepository::revoke_role(pool.pool(), user_id, "admin").await?;
+        let roles = UserRepository::list_roles(pool.pool(), user_id).await?;
+        assert_eq!(roles, vec!["maintainer".to_string()]);
+
+        sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
+            .bind(user_id)
+            .execute(pool.pool())
+            .await?;
+        sqlx::query("DELETE FROM users WHERE user_id = $1")
+            .bind(user_id)
             .execute(pool.pool())
             .await?;
 

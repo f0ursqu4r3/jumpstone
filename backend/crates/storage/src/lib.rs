@@ -13,7 +13,10 @@ pub mod user;
 
 pub use sqlx::PgPool;
 
-pub use messaging::{Channel, ChannelEvent, Guild, MessagingRepository};
+pub use messaging::{
+    Channel, ChannelEvent, ChannelMembership, ChannelMembershipSummary, Guild, GuildMembership,
+    GuildMembershipSummary, MessagingRepository,
+};
 pub use mls::{MlsKeyPackageRecord, MlsKeyPackageStore, NewMlsKeyPackage};
 pub use refresh::{DeviceMetadata, NewRefreshSession, RefreshSessionRecord, RefreshSessionStore};
 pub use session::{PersistedSession, SessionPersistence};

@@ -72,7 +72,8 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
   - [x] Expose device list UI (read-only) consuming future `/sessions/devices` endpoint (stub in mocks until backend ships). `frontend/src/stores/devices.ts` hydrates fallback device metadata until the API lands, and `HomeView.vue` renders the list with loading/error states.
   - [x] Add secure storage audit (localStorage vs IndexedDB) with fallback for SSR. `frontend/src/utils/storage.ts` analyses storage capabilities, and `frontend/src/stores/session.ts` publishes `storageAudit` so the session overview shows when we rely on in-memory persistence.
 - [x] Permission-aware UX.
-  - [x] Gate actions (send message, create channel) based on role bits from guild state. `frontend/src/utils/permissions.ts` normalises roles, `DefaultLayout.vue` disables channel creation when rights are missing, and `HomeView.vue` blocks the composer for read-only members.
+- [x] Gate actions (send message, create channel) based on role bits from guild state. `frontend/src/utils/permissions.ts` normalises roles, `DefaultLayout.vue` disables channel creation when rights are missing, and `HomeView.vue` blocks the composer for read-only members.
+- [x] Backfill guild + channel membership metadata via the `/users/me` profile payload so the client can hydrate permission guards directly from the homeserver.
   - [x] Show permission errors inline with actionable guidance. The composer surfaces a “Messaging restricted” alert, while `AppChannelSidebar.vue` prints role-based guidance beneath the disabled CTA.
   - [x] Build admin-only panels hidden behind feature flag + role check. Setting `VITE_FEATURE_ADMIN_PANEL=true` reveals the preview panel in `HomeView.vue` for guild admins/platform maintainers only.
 - [x] Accessibility + QA.

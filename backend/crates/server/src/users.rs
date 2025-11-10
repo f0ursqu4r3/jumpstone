@@ -5,10 +5,12 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use openguild_storage::{CreateUserError, UserRecord, UserRepository};
+use openguild_storage::{
+    ChannelMembershipSummary, CreateUserError, GuildMembershipSummary, UserRecord, UserRepository,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::error;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::{session, AppState};
@@ -132,6 +134,48 @@ pub async fn register(
 }
 
 #[derive(Debug, Serialize)]
+struct GuildMembershipResponse {
+    guild_id: Uuid,
+    name: String,
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    joined_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChannelMembershipResponse {
+    channel_id: Uuid,
+    guild_id: Uuid,
+    name: String,
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    joined_at: Option<DateTime<Utc>>,
+}
+
+impl From<GuildMembershipSummary> for GuildMembershipResponse {
+    fn from(summary: GuildMembershipSummary) -> Self {
+        Self {
+            guild_id: summary.guild_id,
+            name: summary.guild_name,
+            role: summary.role,
+            joined_at: Some(summary.joined_at),
+        }
+    }
+}
+
+impl From<ChannelMembershipSummary> for ChannelMembershipResponse {
+    fn from(summary: ChannelMembershipSummary) -> Self {
+        Self {
+            channel_id: summary.channel_id,
+            guild_id: summary.guild_id,
+            name: summary.channel_name,
+            role: summary.role,
+            joined_at: Some(summary.joined_at),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct UserProfileResponse {
     user_id: Uuid,
     username: String,
@@ -155,7 +199,9 @@ struct UserProfileResponse {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     roles: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    guilds: Vec<Value>,
+    guilds: Vec<GuildMembershipResponse>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    channels: Vec<ChannelMembershipResponse>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     devices: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -179,6 +225,7 @@ impl UserProfileResponse {
             updated_at: None,
             roles: Vec::new(),
             guilds: Vec::new(),
+            channels: Vec::new(),
             devices: Vec::new(),
             metadata: None,
         }
@@ -213,18 +260,43 @@ pub async fn me(
         match UserRepository::find_user_by_id(pool.pool(), claims.user_id).await {
             Ok(Some(record)) => response.apply_user_record(&record),
             Ok(None) => {
-                tracing::warn!(
+                warn!(
                     user_id = %claims.user_id,
                     "user record not found while building profile response"
                 );
             }
             Err(err) => {
-                tracing::error!(
+                error!(
                     ?err,
                     user_id = %claims.user_id,
                     "failed to fetch user profile record"
                 );
             }
+        }
+
+        match UserRepository::list_roles(pool.pool(), claims.user_id).await {
+            Ok(roles) => response.roles = roles,
+            Err(err) => warn!(?err, user_id = %claims.user_id, "failed to load user roles"),
+        }
+    }
+
+    if let Some(messaging) = state.messaging() {
+        match messaging.guild_memberships_for_user(claims.user_id).await {
+            Ok(memberships) => {
+                response.guilds = memberships.into_iter().map(Into::into).collect();
+            }
+            Err(err) => warn!(?err, user_id = %claims.user_id, "failed to load guild memberships"),
+        }
+
+        match messaging.channel_memberships_for_user(claims.user_id).await {
+            Ok(memberships) => {
+                response.channels = memberships.into_iter().map(Into::into).collect();
+            }
+            Err(err) => warn!(
+                ?err,
+                user_id = %claims.user_id,
+                "failed to load channel memberships"
+            ),
         }
     }
 

@@ -2026,6 +2026,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn user_profile_includes_memberships() {
+        let config = test_config();
+        let messaging = Arc::new(messaging::MessagingService::new_in_memory(
+            config.server_name.clone(),
+        ));
+        let (session_harness, auth_header, user_id) = session_with_logged_in_user().await;
+        let guild = messaging
+            .create_guild("Profile Guild")
+            .await
+            .expect("guild creation");
+        let channel = messaging
+            .create_channel(guild.guild_id, "general")
+            .await
+            .expect("channel creation");
+        messaging
+            .upsert_guild_membership(guild.guild_id, user_id, "admin")
+            .await
+            .expect("guild membership");
+        messaging
+            .upsert_channel_membership(channel.channel_id, user_id, "moderator")
+            .await
+            .expect("channel membership");
+
+        let state = AppState::new(config, storage_unconfigured(), messaging)
+            .with_session(session_harness.context.clone());
+        let app = build_app(state);
+        let authorization = auth_header.as_str();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/users/me")
+                    .header("authorization", authorization)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        let guilds = payload["guilds"].as_array().expect("guilds array");
+        assert_eq!(guilds.len(), 1);
+        assert_eq!(guilds[0]["role"], "admin");
+        assert_eq!(guilds[0]["name"], "Profile Guild");
+
+        let channels = payload["channels"].as_array().expect("channels array");
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0]["role"], "moderator");
+        assert_eq!(channels[0]["name"], "general");
+    }
+
+    #[tokio::test]
     async fn create_guild_requires_bearer_token() {
         let config = test_config();
         let messaging = Arc::new(messaging::MessagingService::new_in_memory(
