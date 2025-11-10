@@ -115,9 +115,7 @@ const userDirectory = computed(() => {
     return null
   }
   const source =
-    (metadata as { users?: unknown }).users ??
-    (metadata as { roster?: unknown }).roster ??
-    null
+    (metadata as { users?: unknown }).users ?? (metadata as { roster?: unknown }).roster ?? null
   return buildDirectoryMap(source ?? null)
 })
 
@@ -720,7 +718,7 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
                 @edit="beginEdit(message)"
                 @cancel-edit="cancelEdit"
                 @save-edit="handleEditSave(message)"
-                @update:editDraft="(value) => (editDraft.value = value)"
+                @update:editDraft="(value) => (editDraft = value)"
                 @toggle-reaction="
                   (payload) =>
                     handleReactionToggle(message, payload.emoji, payload.currentlyReacted)
