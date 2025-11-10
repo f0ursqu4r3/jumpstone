@@ -41,3 +41,31 @@ export interface MessageCreateResponse {
   event_id: string
   created_at: string
 }
+
+export interface TimelineMessage {
+  id: string
+  localId?: string
+  sender: string
+  time: string
+  content: string
+  eventType: string
+  originServer: string | null
+  remote: boolean
+  optimistic: boolean
+  status?: string | null
+  statusMessage?: string | null
+  statusMeta: {
+    icon: string
+    label: string
+    color: string
+    spin: boolean
+  }
+  reactions: {
+    emoji: string
+    count: number
+    reacted: boolean
+  }[]
+  eventId: string | null
+  channelId: string | null
+  isAuthor: boolean
+}

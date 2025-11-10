@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { useApiClient } from '@/composables/useApiClient'
 import { useReactionStore, type ReactionSummary, type ServerReaction } from '@/stores/reactions'
 import { useTimelineStore, type TimelineEntry, type TimelineStatus } from '@/stores/timeline'
+import type { TimelineMessage } from '@/types/messaging'
 import { extractErrorMessage } from '@/utils/errors'
 
 const props = defineProps<{
@@ -210,23 +211,13 @@ const extractServerReactions = (
 const groupedEvents = computed(() => {
   const groups: Array<{
     date: string
-    items: Array<{
-      id: string
-      localId?: string
-      sender: string
-      time: string
-      content: string
-      eventType: string
-      originServer: string | null
-      remote: boolean
-      optimistic: boolean
-      status: TimelineStatus | undefined
-      statusMessage: string | null
-      statusMeta: ReturnType<typeof statusDescriptor>
-      reactions: ReactionSummary[]
-      eventId: string | null
-      channelId: string | null
-    }>
+    items: Array<
+      TimelineMessage & {
+        status?: TimelineStatus | undefined
+        statusMessage: string | null
+        statusMeta: ReturnType<typeof statusDescriptor>
+      }
+    >
   }> = []
 
   const sorted = [...props.events]
@@ -252,7 +243,11 @@ const groupedEvents = computed(() => {
       props.currentUserId.length > 0 &&
       entry.event.sender === props.currentUserId
 
-    const record = {
+    const record: TimelineMessage & {
+      status?: TimelineStatus | undefined
+      statusMessage: string | null
+      statusMeta: ReturnType<typeof statusDescriptor>
+    } = {
       id: entry.localId ?? `${entry.channel_id}-${entry.sequence}`,
       localId: entry.localId,
       sender: entry.event.sender,
@@ -378,7 +373,6 @@ const handleEditSave = async (message: {
   editOriginal.value = ''
 }
 
-const messageActionsAvailable = () => true
 const canEditMessage = (message: { isAuthor: boolean; optimistic: boolean }) =>
   message.isAuthor && !message.optimistic
 const canReportMessage = () => true
@@ -527,218 +521,28 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
               {{ message.sender.slice(0, 2) }}
             </div>
             <div class="flex-1 space-y-2">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex flex-wrap items-center gap-2">
-                  <p class="text-sm font-semibold text-white">
-                    {{ message.sender }}
-                  </p>
-                  <UBadge
-                    v-if="message.eventType !== 'message'"
-                    size="xs"
-                    variant="soft"
-                    color="neutral"
-                    :label="message.eventType"
-                  />
-                  <UBadge
-                    v-else-if="message.optimistic"
-                    size="xs"
-                    variant="soft"
-                    color="info"
-                    label="Optimistic"
-                  />
-                  <span class="text-xs text-slate-500">{{ message.time }}</span>
-                  <UBadge
-                    v-if="message.originServer"
-                    size="xs"
-                    :color="message.remote ? 'warning' : 'neutral'"
-                    variant="soft"
-                    :label="message.remote ? `Remote · ${message.originServer}` : 'Local origin'"
-                  />
-                </div>
-                <UPopover v-if="messageActionsAvailable(message)">
-                  <UButton
-                    size="xs"
-                    variant="ghost"
-                    color="neutral"
-                    icon="i-heroicons-ellipsis-vertical"
-                    aria-label="Message actions"
-                  />
-                  <template #content="{ close }">
-                    <div class="w-48 space-y-1 p-2 text-sm">
-                      <button
-                        type="button"
-                        class="flex w-full items-center justify-between rounded px-2 py-1 text-left text-slate-200 hover:bg-white/5 disabled:opacity-40"
-                        :disabled="!canEditMessage(message)"
-                        @click="(beginEdit(message), close())"
-                      >
-                        <span>Edit message</span>
-                        <UIcon name="i-heroicons-pencil-square" class="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        class="flex w-full items-center justify-between rounded px-2 py-1 text-left text-slate-200 hover:bg-white/5"
-                        @click="
-                          (copyMetadata({
-                            id: message.eventId ?? message.id,
-                            origin: message.originServer,
-                          }),
-                          close())
-                        "
-                      >
-                        <span>Copy event ID</span>
-                        <UIcon name="i-heroicons-clipboard" class="h-4 w-4" />
-                      </button>
-                      <button
-                        v-if="canReportMessage()"
-                        type="button"
-                        class="flex w-full items-center justify-between rounded px-2 py-1 text-left text-slate-200 hover:bg-white/5"
-                        @click="(handleReportMessage(message), close())"
-                      >
-                        <span>Report message</span>
-                        <UIcon name="i-heroicons-flag" class="h-4 w-4" />
-                      </button>
-                    </div>
-                  </template>
-                </UPopover>
-              </div>
-              <div v-if="isEditingMessage(message.id)" class="space-y-3">
-                <textarea
-                  v-model="editDraft"
-                  class="w-full rounded-xl border border-white/10 bg-slate-900/60 p-3 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-0"
-                  rows="3"
-                />
-                <div
-                  class="grid gap-3 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2"
-                >
-                  <div class="space-y-1">
-                    <p class="font-semibold uppercase tracking-wide text-slate-500">Original</p>
-                    <p
-                      class="rounded-xl border border-white/5 bg-slate-900/60 p-2 text-sm text-slate-300 whitespace-pre-line wrap-break-word"
-                    >
-                      {{ editOriginal || '—' }}
-                    </p>
-                  </div>
-                  <div class="space-y-1">
-                    <p class="font-semibold uppercase tracking-wide text-slate-500">
-                      Revised preview
-                    </p>
-                    <p
-                      :class="[
-                        'rounded-xl border p-2 text-sm whitespace-pre-line wrap-break-word',
-                        editHasChanges
-                          ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-100'
-                          : 'border-white/5 bg-slate-900/60 text-slate-300',
-                      ]"
-                    >
-                      {{ editDraft || '—' }}
-                    </p>
-                    <p
-                      class="text-[11px]"
-                      :class="editHasChanges ? 'text-emerald-300' : 'text-slate-500'"
-                    >
-                      {{
-                        editHasChanges
-                          ? 'Looks good—save to publish the update.'
-                          : 'No changes yet.'
-                      }}
-                    </p>
-                  </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <UButton
-                    size="xs"
-                    color="info"
-                    :loading="editSaving"
-                    @click="handleEditSave(message)"
-                  >
-                    Save
-                  </UButton>
-                  <UButton size="xs" variant="ghost" color="neutral" @click="cancelEdit">
-                    Cancel
-                  </UButton>
-                  <span v-if="editError" class="text-xs text-rose-300">{{ editError }}</span>
-                </div>
-              </div>
-              <p v-else class="text-sm text-slate-200 whitespace-pre-line wrap-break-word">
-                {{ message.content }}
-              </p>
-              <div v-if="message.optimistic" class="flex flex-wrap items-center gap-2 text-xs">
-                <UIcon
-                  :name="message.statusMeta.icon"
-                  :class="[
-                    'h-4 w-4',
-                    message.statusMeta.color,
-                    message.statusMeta.spin ? 'animate-spin' : '',
-                  ]"
-                />
-                <span :class="['font-semibold', message.statusMeta.color]">
-                  {{ message.statusMeta.label }}
-                </span>
-                <span v-if="message.statusMessage" class="text-slate-400">
-                  · {{ message.statusMessage }}
-                </span>
-                <UButton
-                  v-if="message.status === 'failed' && message.localId"
-                  size="xs"
-                  variant="ghost"
-                  color="neutral"
-                  @click="emit('retry', message.localId)"
-                >
-                  Retry
-                </UButton>
-              </div>
-              <p v-else-if="message.eventType !== 'message'" class="text-xs text-slate-500">
-                System event placeholder — richer rendering lands in Week 6.
-              </p>
-              <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <template v-if="message.reactions.length">
-                  <button
-                    v-for="reaction in message.reactions"
-                    :key="reaction.emoji"
-                    type="button"
-                    :class="reactionButtonClasses(reaction.reacted)"
-                    @click="handleReactionToggle(message, reaction.emoji, reaction.reacted)"
-                  >
-                    <span class="text-base leading-none">{{ reaction.emoji }}</span>
-                    <span class="text-[10px]">{{ reaction.count }}</span>
-                  </button>
-                </template>
-                <span v-else class="text-slate-500">No reactions yet</span>
-                <UPopover>
-                  <UButton
-                    size="xs"
-                    variant="ghost"
-                    color="neutral"
-                    icon="i-heroicons-face-smile"
-                    aria-label="Add reaction"
-                  >
-                    React
-                  </UButton>
-                  <template #content="{ close }">
-                    <div class="flex flex-wrap gap-2 p-3">
-                      <UButton
-                        v-for="emoji in reactionPalette"
-                        :key="emoji"
-                        size="xs"
-                        variant="ghost"
-                        color="neutral"
-                        @click="(handleReactionPaletteSelect(message, emoji), close())"
-                      >
-                        {{ emoji }}
-                      </UButton>
-                    </div>
-                  </template>
-                </UPopover>
-                <UButton
-                  size="xs"
-                  variant="ghost"
-                  color="neutral"
-                  icon="i-heroicons-clipboard"
-                  @click="copyMetadata({ id: message.id, origin: message.originServer })"
-                >
-                  Copy meta
-                </UButton>
-              </div>
+              <TimelineMessageCard
+                :message="message"
+                :reaction-palette="reactionPalette"
+                :is-editing="isEditingMessage(message.id)"
+                :edit-draft="editDraft"
+                :edit-original="editOriginal"
+                :edit-has-changes="editHasChanges"
+                :edit-saving="editSaving"
+                :edit-error="editError"
+                :reaction-button-classes="reactionButtonClasses"
+                :can-edit-message="canEditMessage"
+                :can-report-message="canReportMessage"
+                @retry="(localId) => emit('retry', localId)"
+                @edit="beginEdit(message)"
+                @cancel-edit="cancelEdit"
+                @save-edit="handleEditSave(message)"
+                @update:editDraft="(value) => (editDraft.value = value)"
+                @toggle-reaction="(payload) => handleReactionToggle(message, payload.emoji, payload.currentlyReacted)"
+                @select-reaction="(emoji) => handleReactionPaletteSelect(message, emoji)"
+                @copy-meta="() => copyMetadata({ id: message.id, origin: message.originServer })"
+                @report="() => handleReportMessage(message)"
+              />
             </div>
           </li>
         </ul>
