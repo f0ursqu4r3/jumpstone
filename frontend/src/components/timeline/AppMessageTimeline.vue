@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 
 import TimelineMessageCard from '@/components/timeline/TimelineMessageCard.vue'
 import { useApiClient } from '@/composables/useApiClient'
 import { useReactionStore, type ReactionSummary, type ServerReaction } from '@/stores/reactions'
+import { useSessionStore } from '@/stores/session'
 import { useTimelineStore, type TimelineEntry, type TimelineStatus } from '@/stores/timeline'
 import type { TimelineMessage } from '@/types/messaging'
 import { extractErrorMessage } from '@/utils/errors'
@@ -29,6 +31,111 @@ const emit = defineEmits<{
 
 const viewerRole = computed(() => props.currentUserRole ?? null)
 const viewerPermissions = computed(() => props.currentUserPermissions ?? null)
+const sessionStore = useSessionStore()
+const { profile: sessionProfile } = storeToRefs(sessionStore)
+
+type DirectoryEntry = {
+  displayName?: string
+  username?: string
+}
+
+const normalizeId = (value?: string | null) => {
+  if (!value || typeof value !== 'string') {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed : null
+}
+
+const coerceDirectoryRecord = (hintId: string | null, value: unknown) => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const base = value as {
+    id?: string
+    user_id?: string
+    userId?: string
+    display_name?: string
+    displayName?: string
+    username?: string
+  }
+  const resolvedId =
+    normalizeId(base.user_id) ??
+    normalizeId(base.userId) ??
+    normalizeId(base.id) ??
+    normalizeId(hintId)
+
+  if (!resolvedId) {
+    return null
+  }
+
+  return {
+    id: resolvedId,
+    displayName: normalizeId(base.display_name) ?? normalizeId(base.displayName) ?? undefined,
+    username: normalizeId(base.username) ?? undefined,
+  }
+}
+
+const buildDirectoryMap = (input: unknown) => {
+  if (!input) {
+    return null
+  }
+
+  const map = new Map<string, DirectoryEntry>()
+  const addRecord = (record: { id: string; displayName?: string; username?: string }) => {
+    const key = record.id.toLowerCase()
+    map.set(key, {
+      displayName: record.displayName ?? record.username,
+      username: record.username,
+    })
+  }
+
+  if (Array.isArray(input)) {
+    input.forEach((entry) => {
+      const record = coerceDirectoryRecord(null, entry)
+      if (record) {
+        addRecord(record)
+      }
+    })
+  } else if (typeof input === 'object') {
+    Object.entries(input as Record<string, unknown>).forEach(([key, value]) => {
+      const record = coerceDirectoryRecord(key, value)
+      if (record) {
+        addRecord(record)
+      }
+    })
+  }
+
+  return map.size ? map : null
+}
+
+const userDirectory = computed(() => {
+  const metadata = sessionProfile.value?.metadata
+  if (!metadata || typeof metadata !== 'object') {
+    return null
+  }
+  const source =
+    (metadata as { users?: unknown }).users ??
+    (metadata as { roster?: unknown }).roster ??
+    null
+  return buildDirectoryMap(source ?? null)
+})
+
+const resolveSenderName = (senderId: string | undefined | null) => {
+  if (!senderId) {
+    return null
+  }
+  const directory = userDirectory.value
+  if (!directory) {
+    return null
+  }
+  const key = senderId.toLowerCase()
+  const entry = directory.get(key)
+  if (!entry) {
+    return null
+  }
+  return entry.displayName ?? entry.username ?? null
+}
 
 const resolveContent = (event: TimelineEntry) => {
   const payload = event.event.content
@@ -287,6 +394,10 @@ const groupedEvents = computed(() => {
       props.currentUserId.length > 0 &&
       entry.event.sender === props.currentUserId
 
+    const senderId = typeof entry.event.sender === 'string' ? entry.event.sender : ''
+    const senderName = resolveSenderName(senderId) ?? senderId
+    const senderLabel = senderName && senderName.length ? senderName : 'Unknown user'
+
     const record: TimelineMessage & {
       status?: TimelineStatus | undefined
       statusMessage: string | null
@@ -294,7 +405,8 @@ const groupedEvents = computed(() => {
     } = {
       id: entry.localId ?? `${entry.channel_id}-${entry.sequence}`,
       localId: entry.localId,
-      sender: entry.event.sender,
+      senderId,
+      sender: senderLabel,
       time: timeLabel,
       content: resolveContent(entry),
       eventType: entry.event.event_type,

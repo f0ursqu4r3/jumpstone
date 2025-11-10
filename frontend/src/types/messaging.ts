@@ -45,6 +45,7 @@ export interface MessageCreateResponse {
 export interface TimelineMessage {
   id: string
   localId?: string
+  senderId: string
   sender: string
   time: string
   content: string
