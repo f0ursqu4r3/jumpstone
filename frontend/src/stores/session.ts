@@ -671,6 +671,7 @@ export const useSessionStore = defineStore('session', () => {
         deviceName: state.deviceName,
         tokens: state.tokens,
         profile: state.profile,
+        profileFetchedAt: state.profileFetchedAt,
       }),
     )
   }

@@ -58,6 +58,22 @@ const capabilityMatrix: Record<string, Omit<GuildPermissionSnapshot, 'role' | 'p
   },
 }
 
+const rolePriority: Record<string, number> = {
+  owner: 7,
+  admin: 6,
+  moderator: 5,
+  maintainer: 4,
+  member: 3,
+  contributor: 2,
+  viewer: 1,
+  guest: 0,
+}
+
+const roleRank = (role?: string | null): number => {
+  const normalized = normalizeRole(role)
+  return rolePriority[normalized] ?? -1
+}
+
 const platformAdminMatchers = [/admin/, /owner/, /superuser/, /maintainer/] as const
 
 export const deriveGuildPermissions = (
