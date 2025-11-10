@@ -49,9 +49,21 @@ const serializeData = (data: string | ArrayBuffer | Blob): string | null => {
   return null
 }
 
-const buildSocketUrl = (channelId: string, token: string) => {
+const resolveBaseUrl = () => {
   const runtimeConfig = getRuntimeConfig()
-  const base = runtimeConfig.public.apiBaseUrl || 'http://127.0.0.1:8080'
+  const configured = (runtimeConfig.public.apiBaseUrl || '/api').trim()
+  if (/^https?:/i.test(configured)) {
+    return configured
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    return new URL(configured, window.location.origin).toString()
+  }
+  const fallbackHost = 'http://127.0.0.1:8080'
+  return new URL(configured, fallbackHost).toString()
+}
+
+const buildSocketUrl = (channelId: string, token: string) => {
+  const base = resolveBaseUrl()
   const url = new URL(`/channels/${channelId}/ws`, base)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   url.searchParams.set('access_token', token)

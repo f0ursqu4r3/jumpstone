@@ -632,7 +632,18 @@ const createRequestError = async (response: Response) => {
 export const useSessionStore = defineStore('session', () => {
   const state = reactive<SessionState>(initialState())
   const runtimeConfig = getRuntimeConfig()
-  const apiBaseUrl = runtimeConfig.public.apiBaseUrl.replace(/\/$/, '')
+  const resolveBaseUrl = () => {
+    const configured = (runtimeConfig.public.apiBaseUrl || '/api').trim().replace(/\/$/, '')
+    if (/^https?:/i.test(configured)) {
+      return configured
+    }
+    if (typeof window !== 'undefined' && window.location) {
+      return new URL(configured, window.location.origin).toString().replace(/\/$/, '')
+    }
+    return new URL(configured, 'http://127.0.0.1:8080').toString().replace(/\/$/, '')
+  }
+
+  const apiBaseUrl = resolveBaseUrl()
 
   const buildUrl = (path: string) => {
     if (path.startsWith('http')) {
