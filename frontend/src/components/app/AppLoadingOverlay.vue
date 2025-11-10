@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = withDefaults(
+withDefaults(
   defineProps<{
     message?: string
   }>(),
@@ -11,7 +11,7 @@ const props = withDefaults(
 
 <template>
   <div
-    class="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-slate-950 text-white"
+    class="fixed inset-0 z-1000 flex flex-col items-center justify-center bg-slate-950 text-white"
   >
     <div class="mb-6 flex flex-col items-center gap-3 text-center">
       <p class="text-lg font-semibold tracking-wide text-white">OpenGuild</p>

@@ -79,6 +79,7 @@ interface PersistedSession {
   deviceName: string
   tokens: SessionTokens | null
   profile: StoredProfile | null
+  profileFetchedAt: number | null
 }
 
 interface SessionState extends PersistedSession {
@@ -355,6 +356,10 @@ const readFromStorage = (): PersistedSession | null => {
       deviceName: typeof parsed.deviceName === 'string' ? parsed.deviceName : '',
       tokens: sanitizeTokens(parsed.tokens),
       profile: sanitizeProfile(parsed.profile),
+      profileFetchedAt:
+        typeof parsed.profileFetchedAt === 'number' && Number.isFinite(parsed.profileFetchedAt)
+          ? parsed.profileFetchedAt
+          : null,
     }
   } catch {
     return null
@@ -408,7 +413,7 @@ const initialState = (): SessionState => {
     tokens,
     profile: persisted.profile ?? null,
     hydrated: true,
-    profileFetchedAt: persisted.profile ? Date.now() : null,
+    profileFetchedAt: persisted.profileFetchedAt ?? null,
   }
 }
 
@@ -551,6 +556,7 @@ const toPersistedSession = (state: PersistedSession): PersistedSession => ({
   deviceName: state.deviceName,
   tokens: state.tokens,
   profile: state.profile,
+  profileFetchedAt: state.profileFetchedAt,
 })
 
 const unwrapCurrentUser = (payload: CurrentUser | { user: CurrentUser }): CurrentUser => {
@@ -686,7 +692,7 @@ export const useSessionStore = defineStore('session', () => {
     state.profile = persisted.profile
     state.profileError = null
     state.profileLoading = false
-    state.profileFetchedAt = persisted.profile ? Date.now() : null
+    state.profileFetchedAt = persisted.profileFetchedAt ?? null
     state.refreshing = false
     state.refreshError = null
     state.hydrated = true
