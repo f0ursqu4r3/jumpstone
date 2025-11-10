@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { createPinia } from 'pinia'
 import axe from 'axe-core'
 
 import AppMessageTimeline from '../src/components/app/AppMessageTimeline.vue'
@@ -52,6 +53,7 @@ const router = createRouter({
   history: createMemoryHistory(),
   routes: [{ path: '/', component: { template: '<div />' } }],
 })
+const pinia = createPinia()
 
 beforeAll(async () => {
   await router.push('/')
@@ -67,7 +69,7 @@ describe('Accessibility regressions', () => {
         events: sampleEvents,
       },
       global: {
-        plugins: [router],
+        plugins: [router, pinia],
         stubs: {
           Link: { template: '<button><slot /></button>' },
           UButton: { template: '<button><slot /></button>' },

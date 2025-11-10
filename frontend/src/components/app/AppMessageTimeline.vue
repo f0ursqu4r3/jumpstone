@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { useReactionStore, type ReactionSummary, type ServerReaction } from '@/stores/reactions'
 import type { TimelineEntry, TimelineStatus } from '@/stores/timeline'
 
 const props = defineProps<{
+  channelId?: string | null
   channelName: string
   events: TimelineEntry[]
   loading?: boolean
   error?: string | null
   localOriginHost?: string | null
   remoteServers?: string[]
+  currentUserId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -137,6 +140,9 @@ const computeItemClasses = (message: { optimistic: boolean; status?: TimelineSta
   return [baseItemClass, 'border-sky-500/30 bg-sky-500/10']
 }
 
+const reactionStore = useReactionStore()
+const reactionPalette = reactionStore.COMMON_REACTIONS
+
 const normalizedLocalHost = computed(() => {
   if (!props.localOriginHost) {
     return null
@@ -156,6 +162,37 @@ const isRemoteOrigin = (origin?: string | null) => {
   return true
 }
 
+const extractServerReactions = (content: Record<string, unknown> | undefined | null): ServerReaction[] => {
+  if (!content || typeof content !== 'object') {
+    return []
+  }
+  const raw = (content as { reactions?: unknown }).reactions
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return null
+      }
+      const emoji = typeof (entry as { emoji?: string }).emoji === 'string' ? (entry as { emoji?: string }).emoji : null
+      if (!emoji) {
+        return null
+      }
+      const countValue = Number((entry as { count?: number }).count ?? 0)
+      const reactorsRaw = (entry as { reactors?: unknown }).reactors
+      const reactors = Array.isArray(reactorsRaw)
+        ? reactorsRaw.filter((value): value is string => typeof value === 'string')
+        : undefined
+      return {
+        emoji,
+        count: Number.isFinite(countValue) ? countValue : 0,
+        reactors,
+      }
+    })
+    .filter((entry): entry is ServerReaction => Boolean(entry))
+}
+
 const groupedEvents = computed(() => {
   const groups: Array<{
     date: string
@@ -172,6 +209,9 @@ const groupedEvents = computed(() => {
       status: TimelineStatus | undefined
       statusMessage: string | null
       statusMeta: ReturnType<typeof statusDescriptor>
+      reactions: ReactionSummary[]
+      eventId: string | null
+      channelId: string | null
     }>
   }> = []
 
@@ -185,6 +225,14 @@ const groupedEvents = computed(() => {
 
     const originServer =
       typeof entry.event.origin_server === 'string' ? entry.event.origin_server : null
+    const serverReactions = extractServerReactions(entry.event.content as Record<string, unknown>)
+    const reactions = reactionStore.resolveReactions(
+      entry.channel_id,
+      entry.event.event_id,
+      serverReactions,
+      props.currentUserId ?? null,
+    )
+
     const record = {
       id: entry.localId ?? `${entry.channel_id}-${entry.sequence}`,
       localId: entry.localId,
@@ -198,6 +246,9 @@ const groupedEvents = computed(() => {
       status: entry.status,
       statusMessage: entry.statusMessage ?? null,
       statusMeta: statusDescriptor(entry.status),
+      reactions,
+      eventId: entry.event.event_id ?? null,
+      channelId: entry.channel_id ?? null,
     }
 
     if (!latestGroup || latestGroup.date !== dateLabel) {
@@ -392,9 +443,48 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
               >
                 System event placeholder — richer rendering lands in Week 6.
               </p>
-              <div class="flex items-center gap-2 text-xs text-slate-500">
-                <UIcon name="i-heroicons-face-smile" class="h-4 w-4" />
-                <span>Reactions placeholder · emoji + counts coming soon</span>
+              <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <template v-if="message.reactions.length">
+                  <button
+                    v-for="reaction in message.reactions"
+                    :key="reaction.emoji"
+                    type="button"
+                    :class="reactionButtonClasses(reaction.reacted)"
+                    @click="handleReactionToggle(message, reaction.emoji, reaction.reacted)"
+                  >
+                    <span class="text-base leading-none">{{ reaction.emoji }}</span>
+                    <span class="text-[10px]">{{ reaction.count }}</span>
+                  </button>
+                </template>
+                <span v-else class="text-slate-500">No reactions yet</span>
+                <UPopover>
+                  <UButton
+                    size="xs"
+                    variant="ghost"
+                    color="neutral"
+                    icon="i-heroicons-face-smile"
+                    aria-label="Add reaction"
+                  >
+                    React
+                  </UButton>
+                  <template #panel="{ close }">
+                    <div class="flex flex-wrap gap-2 p-3">
+                      <UButton
+                        v-for="emoji in reactionPalette"
+                        :key="emoji"
+                        size="xs"
+                        variant="ghost"
+                        color="neutral"
+                        @click="
+                          handleReactionPaletteSelect(message, emoji);
+                          close()
+                        "
+                      >
+                        {{ emoji }}
+                      </UButton>
+                    </div>
+                  </template>
+                </UPopover>
                 <UButton
                   size="xs"
                   variant="ghost"
@@ -434,3 +524,40 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
     </div>
   </div>
 </template>
+const handleReactionToggle = (
+  message: {
+    channelId: string | null
+    eventId: string | null
+  },
+  emoji: string,
+  currentlyReacted: boolean,
+) => {
+  if (!message.channelId || !message.eventId) {
+    return
+  }
+  reactionStore
+    .toggleReaction({
+      channelId: message.channelId,
+      eventId: message.eventId,
+      emoji,
+      currentlyReacted,
+    })
+    .catch((err) => {
+      console.warn('Failed to toggle reaction', err)
+    })
+}
+
+const handleReactionPaletteSelect = (
+  message: { channelId: string | null; eventId: string | null; reactions: ReactionSummary[] },
+  emoji: string,
+) => {
+  const existing = message.reactions.find((reaction) => reaction.emoji === emoji)
+  handleReactionToggle(message, emoji, existing?.reacted ?? false)
+}
+
+const reactionButtonClasses = (active: boolean) => [
+  'flex items-center gap-1 rounded-2xl border px-2 py-1 text-xs font-medium transition',
+  active
+    ? 'border-sky-400/50 bg-sky-400/10 text-sky-100'
+    : 'border-white/10 bg-white/5 text-slate-300 hover:border-sky-400/30 hover:bg-slate-800/40',
+]

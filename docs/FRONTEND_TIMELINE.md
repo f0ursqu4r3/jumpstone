@@ -113,6 +113,9 @@ This companion roadmap focuses on the Vue 3 web client. It mirrors the backend c
 - [x] Evaluate component library extraction (design system package shared across marketing/admin).
   - [x] Documented the extraction strategy in `docs/UI_SYSTEM.md` and introduced `frontend/src/components/primitives/GuildSurfaceCard.vue` plus an index barrel so future packages can tree-shake shared primitives. `HomeView.vue` now consumes the new primitive as a showcase.
 - [ ] Implement rich reactions, message edits, and context menus.
+  - [x] Rich reactions — `frontend/src/stores/reactions.ts` merges server payloads with optimistic overrides (handling 404/501 fallbacks) while `AppMessageTimeline.vue` renders reaction chips, palette popovers, and toggles hooked into the store.
+  - [ ] Message edits with inline composer + diff preview.
+  - [ ] Context menu affordances for moderation actions.
 - [x] Add global search (placeholder until search API shipped).
   - [x] `AppGlobalSearchModal.vue` plus `useSearchStore` now hydrate queries via `/search/messages` when available, falling back to mock results (with telemetry breadcrumbs) so the UX is testable before the backend lands.
   - [x] `HomeView.vue` exposes a hero-level “Search” CTA that opens the modal, tracks last queries, and surfaces empty states + result metadata.

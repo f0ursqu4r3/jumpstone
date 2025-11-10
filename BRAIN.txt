@@ -44,6 +44,9 @@
   - The testing guide documents the handshake vector validation workflow alongside the accessibility audits added in Week 7.
 - **Global Search Placeholder (Week 10)**
   - `frontend/src/stores/search.ts` calls `GET /search/messages?q=` and falls back to mock data (with telemetry breadcrumbs) when the backend responds `404/501`. Backfill the Axum search endpoint so `AppGlobalSearchModal.vue` renders real results.
+- **Week 10 UI Enhancements**
+  - Shared primitives begin under `frontend/src/components/primitives/` (starting with `GuildSurfaceCard.vue`) with the extraction plan documented in `docs/UI_SYSTEM.md`.
+  - `frontend/src/stores/reactions.ts` merges server reaction payloads with local overrides (tolerating 404/501 fallbacks) so `AppMessageTimeline.vue` can render interactive reaction chips and palette popovers while awaiting backend APIs.
 
 ## Testing & Tooling
 - **Backend**: `cargo xtask test`, `cargo xtask ci`, `cargo xtask ci-metrics-smoke`; targeted messaging/federation suites documented in `docs/TESTING.md`.

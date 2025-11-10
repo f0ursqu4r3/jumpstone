@@ -535,6 +535,15 @@ const sessionMetadata = computed(() => [
   },
 ])
 
+const sessionUserId = computed(() => {
+  const userId = sessionProfile.value?.userId
+  if (userId && userId.length) {
+    return userId
+  }
+  const identifier = identifierRef.value
+  return identifier && identifier.length ? identifier : null
+})
+
 const sessionDeviceId = computed(() => sessionDeviceIdRef.value || '')
 const keyPackages = computed(() => keyPackagesRef.value ?? [])
 const keyPackagesLoading = computed(() => keyPackagesLoadingRef.value)
@@ -809,12 +818,14 @@ const searchModalOpen = ref(false)
         </div>
 
         <AppMessageTimeline
+          :channel-id="activeChannelId"
           :channel-name="activeChannelName"
           :events="filteredTimelineEvents"
           :loading="timelineLoading"
           :error="timelineError"
           :local-origin-host="localOriginHost || ''"
           :remote-servers="federationRemoteServers"
+          :current-user-id="sessionUserId"
           @refresh="refreshTimeline"
           @retry="handleRetryOptimistic"
         />
