@@ -10,7 +10,6 @@ import AppGuildCreateModal from '@/components/app/AppGuildCreateModal.vue'
 import AppGuildRail from '@/components/app/AppGuildRail.vue'
 import AppLoadingOverlay from '@/components/app/AppLoadingOverlay.vue'
 import AppTopbar from '@/components/app/AppTopbar.vue'
-import Button from '@/components/ui/Button.vue'
 import { extractErrorMessage } from '@/utils/errors'
 import {
   deriveGuildPermissions,
@@ -400,6 +399,8 @@ const resetCreateChannelError = () => {
         <AppTopbar
           :channel-name="activeChannel?.label || ''"
           :topic="activeChannel?.description || ''"
+          :show-mobile-nav-button="hasGuilds"
+          @request-mobile-nav="mobileSidebarOpen = true"
         />
         <main
           class="flex-1 overflow-hidden bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
@@ -437,24 +438,6 @@ const resetCreateChannelError = () => {
       <footer class="border-t border-white/5 bg-slate-950/80 px-6 py-3 text-xs text-slate-500">
         Prototype UI - Federation awareness not yet connected
       </footer>
-    </div>
-
-    <div
-      v-if="showAppShell && hasGuilds"
-      class="fixed left-4 top-4 z-40 flex items-center gap-2 lg:hidden"
-    >
-      <Button
-        icon="i-heroicons-bars-3"
-        color="neutral"
-        variant="ghost"
-        @click="mobileSidebarOpen = true"
-        aria-label="Open navigation"
-      />
-      <div
-        class="rounded-full bg-slate-900/80 px-3 py-1 text-sm font-semibold text-white shadow-lg shadow-slate-900/40 backdrop-blur"
-      >
-        #{{ activeChannel?.label || '' }}
-      </div>
     </div>
 
     <div

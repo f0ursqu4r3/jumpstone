@@ -250,6 +250,10 @@ const originFilterOptions = [
   { value: 'remote', label: 'Remote' },
 ]
 
+const setTimelineOriginFilter = (value: 'all' | 'local' | 'remote') => {
+  timelineOriginFilter.value = value
+}
+
 const isRemoteEvent = (event: (typeof timelineEvents.value)[number]) => {
   const origin = normalizeHost(event?.event.origin_server ?? null)
   if (!origin) {
@@ -349,36 +353,56 @@ const composerDisabled = computed(
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-2">
-    <header
-      class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/5 bg-slate-950/60 p-2"
-    >
-      <div class="flex items-center gap-2 text-sm text-slate-300">
-        <UIcon name="i-heroicons-funnel" class="h-4 w-4 text-slate-500" />
-        <span class="font-medium text-slate-100">Origin</span>
-        <span class="text-xs uppercase tracking-wide text-slate-500">Filter</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <URadioGroup
-          v-model="timelineOriginFilter"
-          :items="originFilterOptions"
-          size="xs"
-          class="max-w-xs"
-          :disabled="!activeChannelId"
-        />
-        <UTooltip text="Refresh timeline">
+  <div class="flex h-full min-h-0 flex-col gap-4">
+    <Teleport defer to="#messages-topbar-channel">
+      <div v-if="activeChannelId" class="flex items-center justify-center gap-2 h-full">
+        <UPopover>
           <UButton
-            icon="i-heroicons-arrow-path"
-            variant="ghost"
+            variant="link"
             color="neutral"
-            :loading="timelineLoading"
+            icon="i-heroicons-signal-16-solid"
+            size="xs"
+            class="cursor-pointer"
+            :label="`${timelineOriginFilter === 'all' ? 'All events' : timelineOriginFilter === 'local' ? 'Local' : 'Remote'}`"
             :disabled="!activeChannelId"
-            @click="refreshTimeline"
-            aria-label="Refresh messages"
           />
-        </UTooltip>
+          <template #content="{ close }">
+            <div class="w-48 space-y-1 p-2 text-sm text-slate-200">
+              <button
+                v-for="option in originFilterOptions"
+                :key="option.value"
+                type="button"
+                class="flex w-full items-center justify-between rounded px-2 py-1 text-left hover:bg-white/5"
+                @click="
+                  () => {
+                    setTimelineOriginFilter(option.value as 'all' | 'local' | 'remote')
+                    close()
+                  }
+                "
+              >
+                <span>{{ option.label }}</span>
+                <UIcon
+                  v-if="timelineOriginFilter === option.value"
+                  name="i-heroicons-check"
+                  class="h-4 w-4 text-sky-300"
+                />
+              </button>
+            </div>
+          </template>
+        </UPopover>
+        <!-- <UTooltip text="Refresh timeline">
+          <UButton
+        icon="i-heroicons-arrow-path"
+        variant="ghost"
+        color="neutral"
+        :loading="timelineLoading"
+        :disabled="!activeChannelId"
+        @click="refreshTimeline"
+        aria-label="Refresh messages"
+          />
+        </UTooltip> -->
       </div>
-    </header>
+    </Teleport>
 
     <UAlert
       v-if="degradedMessage"
@@ -413,7 +437,7 @@ const composerDisabled = computed(
       </template>
     </UAlert>
 
-    <div class="flex-1 overflow-hidden">
+    <div class="flex-1 min-h-0 overflow-hidden">
       <AppMessageTimeline
         class="h-full"
         :channel-id="activeChannelId"
