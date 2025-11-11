@@ -710,8 +710,8 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
 
           <ul class="space-y-6" role="list">
             <li
-              v-for="message in group.items"
-              :key="message.id"
+              v-for="(message, messageIndex) in group.items"
+              :key="message.localId ?? message.eventId ?? `${message.channelId ?? 'channel'}-${message.sequence}-${messageIndex}`"
               :class="computeItemClasses(message)"
               role="listitem"
               tabindex="0"

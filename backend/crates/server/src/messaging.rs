@@ -26,6 +26,7 @@ use openguild_storage::{
     GuildMembershipSummary, MessagingRepository, StoragePool, UserRepository,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use thiserror::Error;
 use tokio::{
     sync::{broadcast, Mutex, RwLock, Semaphore},
@@ -94,6 +95,7 @@ pub trait ChannelStore: Send + Sync {
     ) -> Result<Vec<ChannelEvent>, MessagingError>;
     async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError>;
     async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>, MessagingError>;
+    async fn user_ids_for_guild(&self, guild_id: Uuid) -> Result<Vec<Uuid>, MessagingError>;
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -190,6 +192,12 @@ impl ChannelStore for MessagingRepository {
 
     async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>, MessagingError> {
         MessagingRepository::user_ids_for_channel(self, channel_id)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn user_ids_for_guild(&self, guild_id: Uuid) -> Result<Vec<Uuid>, MessagingError> {
+        MessagingRepository::user_ids_for_guild(self, guild_id)
             .await
             .map_err(MessagingError::from)
     }
@@ -392,6 +400,17 @@ impl ChannelStore for InMemoryMessaging {
         Ok(users)
     }
 
+    async fn user_ids_for_guild(&self, guild_id: Uuid) -> Result<Vec<Uuid>, MessagingError> {
+        let memberships = self.guild_memberships.read().await;
+        let mut users = Vec::new();
+        for (user_id, guilds) in memberships.iter() {
+            if guilds.contains_key(&guild_id) {
+                users.push(*user_id);
+            }
+        }
+        Ok(users)
+    }
+
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -538,8 +557,13 @@ pub struct OutboundEvent {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NotificationEvent {
-    pub channel_id: Uuid,
-    pub sequence: i64,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<i64>,
     pub event: serde_json::Value,
 }
 
@@ -610,7 +634,24 @@ impl MessagingService {
         guild_id: Uuid,
         name: &str,
     ) -> Result<Channel, MessagingError> {
-        self.store.create_channel(guild_id, name).await
+        let channel = self.store.create_channel(guild_id, name).await?;
+
+        let notification = Arc::new(NotificationEvent {
+            kind: "channel_created".to_string(),
+            channel_id: Some(channel.channel_id),
+            guild_id: Some(channel.guild_id),
+            sequence: None,
+            event: json!({
+                "channel_id": channel.channel_id,
+                "guild_id": channel.guild_id,
+                "name": channel.name,
+                "created_at": channel.created_at,
+            }),
+        });
+        self.notify_guild_members(channel.guild_id, notification)
+            .await;
+
+        Ok(channel)
     }
 
     pub async fn list_channels(&self, guild_id: Uuid) -> Result<Vec<Channel>, MessagingError> {
@@ -645,9 +686,7 @@ impl MessagingService {
             channel_id,
             event: body,
         });
-        let send_result = self
-            .broadcast(channel_id, broadcast_event.clone())
-            .await;
+        let send_result = self.broadcast(channel_id, broadcast_event.clone()).await;
 
         #[cfg(feature = "metrics")]
         if let Some(metrics) = self.metrics() {
@@ -664,8 +703,10 @@ impl MessagingService {
         }
 
         let notification = Arc::new(NotificationEvent {
-            channel_id,
-            sequence: stored.sequence,
+            kind: "channel_message".to_string(),
+            channel_id: Some(channel_id),
+            guild_id: None,
+            sequence: Some(stored.sequence),
             event: broadcast_event.event.clone(),
         });
         self.notify_channel_members(channel_id, notification).await;
@@ -840,9 +881,31 @@ impl MessagingService {
                 if sender.receiver_count() == 0 {
                     continue;
                 }
-                if sender.send(notification.clone()).is_err() {
-                    // receiver dropped; cleaned up when socket closes
+                let _ = sender.send(notification.clone());
+            }
+        }
+    }
+
+    async fn notify_guild_members(&self, guild_id: Uuid, notification: Arc<NotificationEvent>) {
+        let user_ids = match self.store.user_ids_for_guild(guild_id).await {
+            Ok(ids) => ids,
+            Err(err) => {
+                tracing::debug!(
+                    ?err,
+                    guild_id = %guild_id,
+                    "failed to load guild members for notification delivery"
+                );
+                return;
+            }
+        };
+
+        let map = self.notification_channels.read().await;
+        for user_id in user_ids {
+            if let Some(sender) = map.get(&user_id) {
+                if sender.receiver_count() == 0 {
+                    continue;
                 }
+                let _ = sender.send(notification.clone());
             }
         }
     }

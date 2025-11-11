@@ -1555,8 +1555,8 @@ mod tests {
     use openguild_crypto::{generate_signing_key, verifying_key_from, SigningKey};
     use serde_json::{json, Value};
     use serial_test::serial;
-    use std::io::ErrorKind;
     use std::convert::TryInto;
+    use std::io::ErrorKind;
     use std::io::Write;
     use std::str;
     use std::sync::{Arc, Mutex};

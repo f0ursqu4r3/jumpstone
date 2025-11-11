@@ -152,9 +152,12 @@ export const useChannelStore = defineStore('channels', () => {
       return
     }
 
-    await fetchChannelsForGuild(activeGuildId.value).catch(() => undefined)
+    let scoped = channelsByGuild.value[activeGuildId.value] ?? []
+    if (!scoped.length || !scoped.some((channel) => channel.id === channelId)) {
+      await fetchChannelsForGuild(activeGuildId.value).catch(() => undefined)
+      scoped = channelsByGuild.value[activeGuildId.value] ?? []
+    }
 
-    const scoped = channelsByGuild.value[activeGuildId.value] ?? []
     if (!scoped.some((channel) => channel.id === channelId)) {
       error.value = `Unknown channel: ${channelId}`
       return
@@ -181,7 +184,7 @@ export const useChannelStore = defineStore('channels', () => {
     }
   }
 
-  function addOrUpdateChannel(record: ChannelRecord) {
+  function upsertChannelRecord(record: ChannelRecord) {
     const summary = mapChannelRecord(record)
     const guildChannels = channelsByGuild.value[summary.guildId] ?? []
     const index = guildChannels.findIndex(
@@ -218,7 +221,7 @@ export const useChannelStore = defineStore('channels', () => {
         },
       )
 
-      addOrUpdateChannel(payload)
+      upsertChannelRecord(payload)
       guildFetchTimestamps.value[guildId] = Date.now()
 
       return payload
@@ -254,7 +257,7 @@ export const useChannelStore = defineStore('channels', () => {
     setActiveChannel,
     fetchChannelsForGuild,
     createChannel,
-    addOrUpdateChannel,
     channelById,
+    upsertChannelRecord,
   }
 })

@@ -57,9 +57,11 @@ export interface MessageCreateResponse {
 }
 
 export interface NotificationEventEnvelope {
-  channel_id: string
-  sequence: number
-  event: TimelineEventPayload
+  kind: string
+  channel_id?: string
+  guild_id?: string
+  sequence?: number
+  event: Record<string, unknown>
 }
 
 export interface TimelineMessage {

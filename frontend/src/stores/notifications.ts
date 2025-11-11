@@ -3,8 +3,9 @@ import { computed, ref, watch } from 'vue'
 
 import { getRuntimeConfig } from '@/config/runtime'
 import { useConnectivityStore } from '@/stores/connectivity'
+import { useChannelStore } from '@/stores/channels'
 import { useSessionStore } from '@/stores/session'
-import type { NotificationEventEnvelope } from '@/types/messaging'
+import type { ChannelRecord, NotificationEventEnvelope } from '@/types/messaging'
 import { recordNetworkBreadcrumb } from '@/utils/telemetry'
 
 type NotificationsStatus = 'idle' | 'connecting' | 'connected' | 'paused' | 'error'
@@ -40,12 +41,7 @@ const parsePayload = (data: string | ArrayBuffer | Blob): NotificationEventEnvel
   }
   try {
     const parsed = JSON.parse(data) as NotificationEventEnvelope
-    if (
-      parsed &&
-      typeof parsed.channel_id === 'string' &&
-      typeof parsed.sequence === 'number' &&
-      parsed.event
-    ) {
+    if (parsed && typeof parsed.kind === 'string' && parsed.event) {
       return parsed
     }
   } catch {
@@ -57,6 +53,7 @@ const parsePayload = (data: string | ArrayBuffer | Blob): NotificationEventEnvel
 export const useNotificationStore = defineStore('notifications', () => {
   const connectivityStore = useConnectivityStore()
   const sessionStore = useSessionStore()
+  const channelStore = useChannelStore()
   const { online } = storeToRefs(connectivityStore)
 
   const state = ref<{
@@ -104,7 +101,10 @@ export const useNotificationStore = defineStore('notifications', () => {
     }
   }
 
-  const recordEvent = (event: NotificationEventEnvelope) => {
+  const recordChannelMessage = (event: NotificationEventEnvelope) => {
+    if (!event.channel_id || typeof event.sequence !== 'number') {
+      return
+    }
     const current = latestSequenceByChannel.value[event.channel_id] ?? 0
     if (event.sequence <= current) {
       return
@@ -115,12 +115,53 @@ export const useNotificationStore = defineStore('notifications', () => {
     }
   }
 
+  const normalizeChannelRecord = (value: Record<string, unknown>): ChannelRecord | null => {
+    const channelId = typeof value.channel_id === 'string' ? value.channel_id : null
+    const guildId = typeof value.guild_id === 'string' ? value.guild_id : null
+    const name = typeof value.name === 'string' ? value.name : null
+    const createdAt =
+      typeof value.created_at === 'string' ? value.created_at : new Date().toISOString()
+    if (!channelId || !guildId || !name) {
+      return null
+    }
+    return {
+      channel_id: channelId,
+      guild_id: guildId,
+      name,
+      created_at: createdAt,
+    }
+  }
+
+  const recordChannelCreated = (event: NotificationEventEnvelope) => {
+    if (!event.event || typeof event.event !== 'object') {
+      return
+    }
+    const record = normalizeChannelRecord(event.event as Record<string, unknown>)
+    if (!record) {
+      return
+    }
+    channelStore.upsertChannelRecord(record)
+  }
+
+  const handleNotificationEvent = (event: NotificationEventEnvelope) => {
+    switch (event.kind) {
+      case 'channel_message':
+        recordChannelMessage(event)
+        break
+      case 'channel_created':
+        recordChannelCreated(event)
+        break
+      default:
+        break
+    }
+  }
+
   const handleMessage = (payload: string | ArrayBuffer | Blob) => {
     const parsed = parsePayload(payload)
     if (!parsed) {
       return
     }
-    recordEvent(parsed)
+    handleNotificationEvent(parsed)
   }
 
   const teardownSocket = (intent: 'manual' | 'pause' | null = 'manual') => {
