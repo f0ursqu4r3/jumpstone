@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import TimelineMessageCard from '@/components/timeline/TimelineMessageCard.vue'
@@ -314,6 +314,8 @@ const editDraft = ref('')
 const editOriginal = ref('')
 const editSaving = ref(false)
 const editError = ref<string | null>(null)
+const timelineContainer = ref<HTMLElement | null>(null)
+const isPinnedToBottom = ref(true)
 
 const normalizedLocalHost = computed(() => {
   if (!props.localOriginHost) {
@@ -584,6 +586,53 @@ const handleReactionPaletteSelect = (
   handleReactionToggle(message, emoji, existing?.reacted ?? false)
 }
 
+const SCROLL_PIN_THRESHOLD_PX = 48
+
+const handleScroll = () => {
+  const el = timelineContainer.value
+  if (!el) {
+    return
+  }
+  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
+  isPinnedToBottom.value = remaining <= SCROLL_PIN_THRESHOLD_PX
+}
+
+const scrollToBottom = () => {
+  const el = timelineContainer.value
+  if (!el) {
+    return
+  }
+  el.scrollTop = el.scrollHeight
+}
+
+watch(
+  () => props.events.length,
+  (current, previous) => {
+    if (current === previous) {
+      return
+    }
+    nextTick(() => {
+      if (isPinnedToBottom.value) {
+        scrollToBottom()
+      }
+    })
+  },
+  { flush: 'post' },
+)
+
+watch(
+  () => props.loading,
+  (loading) => {
+    if (!loading) {
+      nextTick(() => {
+        if (isPinnedToBottom.value) {
+          scrollToBottom()
+        }
+      })
+    }
+  },
+)
+
 const copyMetadata = async (payload: { id: string; origin?: string | null }) => {
   const content = JSON.stringify(payload, null, 2)
   try {
@@ -641,7 +690,9 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
 
     <div
       v-else-if="hasEvents"
+      ref="timelineContainer"
       class="flex-1 overflow-y-auto rounded-lg border border-white/5 bg-slate-950/50 p-2 shadow-inner shadow-slate-950/40"
+      @scroll="handleScroll"
     >
       <div class="space-y-10">
         <div v-for="group in groupedEvents" :key="group.date" class="space-y-4">

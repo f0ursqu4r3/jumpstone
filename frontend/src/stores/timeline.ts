@@ -296,9 +296,12 @@ export const useTimelineStore = defineStore('timeline', () => {
 
     const updated: TimelineEntry = {
       ...target,
-      pendingSequence: sequence,
+      sequence,
+      optimistic: false,
+      localId: undefined,
+      pendingSequence: null,
       ackedAt: Date.now(),
-      status: 'sent',
+      status: undefined,
       statusMessage: null,
     }
 
