@@ -48,7 +48,6 @@ const {
 const {
   profile: profileRef,
   profileLoading: profileLoadingRef,
-  displayName: displayNameRef,
   identifier: identifierRef,
   isAuthenticated: isAuthenticatedRef,
 } = storeToRefs(sessionStore)
@@ -194,8 +193,6 @@ const handleTyping = ({ channelId, preview }: { channelId: string | null; previe
 }
 
 const sessionProfile = computed(() => profileRef.value)
-const sessionDisplayName = computed(() => displayNameRef.value || identifierRef.value || 'Member')
-const sessionUsername = computed(() => sessionProfile.value?.username ?? identifierRef.value ?? '—')
 
 const apiBaseHost = computed(() => {
   const base = runtimeConfig.public.apiBaseUrl
@@ -352,18 +349,10 @@ const composerDisabled = computed(
 </script>
 
 <template>
-  <div class="space-y-4">
-    <header class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs uppercase tracking-wide text-slate-500">Channel</p>
-        <h1 class="text-2xl font-semibold text-white">
-          {{ activeChannelName ? `#${activeChannelName}` : 'Messages' }}
-        </h1>
-        <p class="text-xs text-slate-500">
-          Signed in as <span class="font-medium text-slate-200">{{ sessionDisplayName }}</span> ({{
-            sessionUsername
-          }}) on {{ sessionServerName }}
-        </p>
+  <div class="flex h-full flex-col gap-4">
+    <header class="flex flex-wrap items-center justify-end gap-3">
+      <div class="text-xs uppercase tracking-wide text-slate-500">
+        Origin filter
       </div>
       <div class="flex items-center gap-3">
         <URadioGroup
@@ -418,20 +407,23 @@ const composerDisabled = computed(
       </template>
     </UAlert>
 
-    <AppMessageTimeline
-      :channel-id="activeChannelId"
-      :channel-name="activeChannelName"
-      :events="filteredTimelineEvents"
-      :loading="timelineLoading"
-      :error="timelineError"
-      :local-origin-host="localOriginHost || ''"
-      :remote-servers="federationRemoteServers"
-      :current-user-id="sessionUserId"
-      :current-user-role="guildPermissions.role"
-      :current-user-permissions="guildPermissions"
-      @refresh="refreshTimeline"
-      @retry="handleRetryOptimistic"
-    />
+    <div class="flex-1 overflow-hidden">
+      <AppMessageTimeline
+        class="h-full"
+        :channel-id="activeChannelId"
+        :channel-name="activeChannelName"
+        :events="filteredTimelineEvents"
+        :loading="timelineLoading"
+        :error="timelineError"
+        :local-origin-host="localOriginHost || ''"
+        :remote-servers="federationRemoteServers"
+        :current-user-id="sessionUserId"
+        :current-user-role="guildPermissions.role"
+        :current-user-permissions="guildPermissions"
+        @refresh="refreshTimeline"
+        @retry="handleRetryOptimistic"
+      />
+    </div>
 
     <div
       v-if="typingPreview"

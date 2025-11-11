@@ -189,43 +189,6 @@ const formatTimeLabel = (value: Date) => {
   }
 }
 
-const formatRoleLabel = (value?: string | null) => {
-  if (!value) {
-    return null
-  }
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return null
-  }
-  return trimmed
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(' ')
-}
-
-const viewerRoleLabel = computed(() => formatRoleLabel(viewerRole.value))
-const viewerPermissionBadges = computed(() => {
-  const snapshot = viewerPermissions.value
-  if (!snapshot) {
-    return []
-  }
-  const badges: string[] = []
-  if (snapshot.canSendMessages) {
-    badges.push('Send messages')
-  }
-  if (snapshot.canCreateChannels) {
-    badges.push('Create channels')
-  }
-  if (snapshot.canManageGuild) {
-    badges.push('Manage guild')
-  }
-  return badges
-})
-const showViewerPermissionSummary = computed(
-  () => Boolean(viewerRoleLabel.value) || viewerPermissionBadges.value.length > 0,
-)
-
 const statusDescriptor = (status?: TimelineStatus | null) => {
   switch (status) {
     case 'pending':
@@ -601,48 +564,8 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
 </script>
 
 <template>
-  <div class="space-y-6">
-    <header class="flex items-start justify-between gap-4">
-      <div>
-        <p class="text-sm font-semibold text-slate-400">Channel timeline</p>
-        <h2 class="text-2xl font-semibold text-white">#{{ channelName || 'select-a-channel' }}</h2>
-      </div>
-      <UButton
-        icon="i-heroicons-arrow-path"
-        color="neutral"
-        variant="ghost"
-        :loading="loading"
-        @click="emit('refresh')"
-        aria-label="Refresh timeline"
-      />
-    </header>
-
-    <div
-      v-if="showViewerPermissionSummary"
-      class="flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-slate-900/40 px-3 py-2 text-xs text-slate-300"
-    >
-      <span v-if="viewerRoleLabel" class="inline-flex items-center gap-1 text-white">
-        <UIcon name="i-heroicons-identification" class="h-4 w-4 text-slate-400" />
-        <span class="font-semibold">{{ viewerRoleLabel }}</span>
-        <span class="text-slate-500">role</span>
-      </span>
-      <span
-        v-if="viewerPermissionBadges.length"
-        class="inline-flex flex-wrap items-center gap-1 text-slate-300"
-      >
-        <UIcon name="i-heroicons-shield-check" class="h-4 w-4 text-slate-400" />
-        <UBadge
-          v-for="badge in viewerPermissionBadges"
-          :key="badge"
-          size="xs"
-          color="neutral"
-          variant="soft"
-          :label="badge"
-        />
-      </span>
-    </div>
-
-    <div v-if="loading && !hasEvents" class="space-y-4">
+  <div class="flex h-full flex-col gap-6">
+    <div v-if="loading && !hasEvents" class="flex-1 overflow-y-auto space-y-4 pr-1">
       <div v-for="index in 6" :key="index" class="flex gap-3">
         <USkeleton class="h-10 w-10 rounded-full" />
         <div class="flex-1 space-y-2">
@@ -653,89 +576,92 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
       </div>
     </div>
 
-    <UAlert
-      v-else-if="error"
-      color="warning"
-      variant="soft"
-      icon="i-heroicons-chat-bubble-left-ellipsis"
-      :description="error"
-      title="Timeline unavailable"
-    >
-      <template #actions>
-        <UButton size="xs" variant="ghost" color="neutral" @click="emit('refresh')">
-          Retry
-        </UButton>
-      </template>
-    </UAlert>
+    <div v-else-if="error" class="flex-1 overflow-y-auto pr-1">
+      <UAlert
+        color="warning"
+        variant="soft"
+        icon="i-heroicons-chat-bubble-left-ellipsis"
+        :description="error"
+        title="Timeline unavailable"
+      >
+        <template #actions>
+          <UButton size="xs" variant="ghost" color="neutral" @click="emit('refresh')">
+            Retry
+          </UButton>
+        </template>
+      </UAlert>
+    </div>
 
     <div
       v-else-if="hasEvents"
-      class="space-y-10 rounded-3xl border border-white/5 bg-slate-950/50 p-6 shadow-inner shadow-slate-950/40"
+      class="flex-1 overflow-y-auto rounded-3xl border border-white/5 bg-slate-950/50 p-6 shadow-inner shadow-slate-950/40"
     >
-      <div v-for="group in groupedEvents" :key="group.date" class="space-y-4">
-        <div class="flex items-center gap-3">
-          <div
-            class="h-px flex-1 bg-linear-to-r from-transparent via-slate-700/50 to-transparent"
-          />
-          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {{ group.date }}
-          </span>
-          <div
-            class="h-px flex-1 bg-linear-to-r from-transparent via-slate-700/50 to-transparent"
-          />
-        </div>
-
-        <ul class="space-y-6" role="list">
-          <li
-            v-for="message in group.items"
-            :key="message.id"
-            :class="computeItemClasses(message)"
-            role="listitem"
-            tabindex="0"
-            :aria-label="describeMessage(message)"
-          >
+      <div class="space-y-10">
+        <div v-for="group in groupedEvents" :key="group.date" class="space-y-4">
+          <div class="flex items-center gap-3">
             <div
-              class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold uppercase text-slate-200"
+              class="h-px flex-1 bg-linear-to-r from-transparent via-slate-700/50 to-transparent"
+            />
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {{ group.date }}
+            </span>
+            <div
+              class="h-px flex-1 bg-linear-to-r from-transparent via-slate-700/50 to-transparent"
+            />
+          </div>
+
+          <ul class="space-y-6" role="list">
+            <li
+              v-for="message in group.items"
+              :key="message.id"
+              :class="computeItemClasses(message)"
+              role="listitem"
+              tabindex="0"
+              :aria-label="describeMessage(message)"
             >
-              {{ message.sender.slice(0, 2) }}
-            </div>
-            <div class="flex-1 space-y-2">
-              <TimelineMessageCard
-                :message="message"
-                :reaction-palette="reactionPalette"
-                :is-editing="isEditingMessage(message.id)"
-                :edit-draft="editDraft"
-                :edit-original="editOriginal"
-                :edit-has-changes="editHasChanges"
-                :edit-saving="editSaving"
-                :edit-error="editError"
-                :reaction-button-classes="reactionButtonClasses"
-                :can-edit-message="canEditMessage"
-                :can-report-message="canReportMessage"
-                :viewer-role="viewerRole"
-                :viewer-permissions="viewerPermissions"
-                @retry="(localId) => emit('retry', localId)"
-                @edit="beginEdit(message)"
-                @cancel-edit="cancelEdit"
-                @save-edit="handleEditSave(message)"
-                @update:editDraft="(value) => (editDraft = value)"
-                @toggle-reaction="
-                  (payload) =>
-                    handleReactionToggle(message, payload.emoji, payload.currentlyReacted)
-                "
-                @select-reaction="(emoji) => handleReactionPaletteSelect(message, emoji)"
-                @copy-meta="() => copyMetadata({ id: message.id, origin: message.originServer })"
-                @report="() => handleReportMessage(message)"
-              />
-            </div>
-          </li>
-        </ul>
+              <div
+                class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold uppercase text-slate-200"
+              >
+                {{ message.sender.slice(0, 2) }}
+              </div>
+              <div class="flex-1 space-y-2">
+                <TimelineMessageCard
+                  :message="message"
+                  :reaction-palette="reactionPalette"
+                  :is-editing="isEditingMessage(message.id)"
+                  :edit-draft="editDraft"
+                  :edit-original="editOriginal"
+                  :edit-has-changes="editHasChanges"
+                  :edit-saving="editSaving"
+                  :edit-error="editError"
+                  :reaction-button-classes="reactionButtonClasses"
+                  :can-edit-message="canEditMessage"
+                  :can-report-message="canReportMessage"
+                  :viewer-role="viewerRole"
+                  :viewer-permissions="viewerPermissions"
+                  @retry="(localId) => emit('retry', localId)"
+                  @edit="beginEdit(message)"
+                  @cancel-edit="cancelEdit"
+                  @save-edit="handleEditSave(message)"
+                  @update:editDraft="(value) => (editDraft = value)"
+                  @toggle-reaction="
+                    (payload) =>
+                      handleReactionToggle(message, payload.emoji, payload.currentlyReacted)
+                  "
+                  @select-reaction="(emoji) => handleReactionPaletteSelect(message, emoji)"
+                  @copy-meta="() => copyMetadata({ id: message.id, origin: message.originServer })"
+                  @report="() => handleReportMessage(message)"
+                />
+              </div>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
 
     <div
       v-else
-      class="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-white/10 bg-slate-950/40 p-10 text-center"
+      class="flex flex-1 flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-white/10 bg-slate-950/40 p-10 text-center"
     >
       <UIcon name="i-heroicons-chat-bubble-oval-left-ellipsis" class="h-10 w-10 text-slate-600" />
       <div class="space-y-1">

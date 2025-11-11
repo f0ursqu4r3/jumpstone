@@ -8,8 +8,8 @@ import AppChannelCreateModal from '@/components/app/AppChannelCreateModal.vue'
 import AppChannelSidebar from '@/components/app/AppChannelSidebar.vue'
 import AppGuildCreateModal from '@/components/app/AppGuildCreateModal.vue'
 import AppGuildRail from '@/components/app/AppGuildRail.vue'
-import AppTopbar from '@/components/app/AppTopbar.vue'
 import AppLoadingOverlay from '@/components/app/AppLoadingOverlay.vue'
+import AppTopbar from '@/components/app/AppTopbar.vue'
 import Button from '@/components/ui/Button.vue'
 import { extractErrorMessage } from '@/utils/errors'
 import {
@@ -402,9 +402,9 @@ const resetCreateChannelError = () => {
           :topic="activeChannel?.description || ''"
         />
         <main
-          class="flex-1 overflow-y-auto bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
+          class="flex-1 overflow-hidden bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
         >
-          <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-10">
+          <div class="mx-auto flex h-full w-full flex-col px-4 py-6 sm:px-6 lg:px-10">
             <slot />
           </div>
         </main>
