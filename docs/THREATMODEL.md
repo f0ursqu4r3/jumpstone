@@ -36,7 +36,7 @@ This living document enumerates assets, adversaries, attack surfaces, and mitiga
 | Clickjacking, response sniffing | Global CSP (`default-src 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` applied at the gateway. | Review compatibility once UI embeds server responses. |
 | Metrics exposure | Metrics listener can bind to separate interface; documentation instructs operators to ensure restricted network access. | Add auth/ACL story for multi-tenant deployments. |
 | Session token theft | Access tokens signed with ed25519; refresh tokens bound to device metadata. | Enforce token rotation telemetry + anomaly detection. |
-| MLS bootstrap phishing / token theft | `HomeView.vue` displays explicit device/server metadata, MLS copy actions log breadcrumbs via `recordBreadcrumb`, and `VITE_FEATURE_MLS_READINESS` gates the UI until operators opt in. Handshake verification timestamps persist locally so stale prompts stand out. | Add signed bootstrap instructions + clipboard hardening (auto-clear, warning modals) once MLS enrolment APIs land. |
+| MLS bootstrap phishing / token theft | `DashboardView.vue` displays explicit device/server metadata, MLS copy actions log breadcrumbs via `recordBreadcrumb`, and `VITE_FEATURE_MLS_READINESS` gates the UI until operators opt in. Handshake verification timestamps persist locally so stale prompts stand out. | Add signed bootstrap instructions + clipboard hardening (auto-clear, warning modals) once MLS enrolment APIs land. |
 
 ### Outstanding Work
 

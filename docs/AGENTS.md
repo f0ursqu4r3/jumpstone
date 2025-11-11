@@ -22,7 +22,7 @@ This repo is actively developed by multiple AI/RA helpers. Use this guide to get
 ## Recent Highlights
 
 - **Security & Accessibility (Weeks 6‑7):** Role‑aware gating (`frontend/src/utils/permissions.ts`), device inventory (`frontend/src/stores/devices.ts`), storage audit (`frontend/src/utils/storage.ts`), axe regression test (`frontend/tests/accessibility.test.ts`).
-- **Federation Awareness (Week 8):** `useFederationStore` hydrates remote context + MLS handshake vectors; `HomeView.vue` shows trust alerts, remote server lists, origin filters, and admin-only tooling; `AppMessageTimeline.vue` badges remote events and exposes “Copy meta”.
+- **Federation Awareness (Week 8):** `useFederationStore` hydrates remote context + MLS handshake vectors; `DashboardView.vue` shows trust alerts, remote server lists, origin filters, and admin-only tooling; `AppMessageTimeline.vue` badges remote events and exposes “Copy meta”.
 
 ## Next Up (Week 9 Roadmap)
 
@@ -43,7 +43,7 @@ See the Week 9 section in `docs/FRONTEND_TIMELINE.md` for granular acceptance c
 
 - **Reference hierarchy:** Timeline → BRAIN → README/TESTING; keep them in sync when you land work.
 - **Telemetry:** Use `recordNetworkBreadcrumb` (see `frontend/src/utils/telemetry.ts`) for meaningful logging, especially around federation / MLS flows.
-- **Clipboard helpers:** Reuse the guards in `HomeView.vue` / `AppMessageTimeline.vue` when adding new copy-to-clipboard surfaces.
+- **Clipboard helpers:** Reuse the guards in `DashboardView.vue` / `AppMessageTimeline.vue` when adding new copy-to-clipboard surfaces.
 - **Feature flags:** Add new flags via `frontend/src/config/features.ts` and document them in `docs/FRONTEND_TIMELINE.md`.
 
 Happy shipping! Keep milestone status boxes checked/unchecked as you progress so the next agent knows exactly where to pick up.

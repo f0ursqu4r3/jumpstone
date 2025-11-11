@@ -33,14 +33,14 @@
 - **Messaging & Realtime (Week 5)**
   - `AppMessageComposer.vue` delivers multi-line input, optimistic queueing, and connectivity banners; `useMessageComposerStore` manages optimistic events, retry queues, and backend validation (using the authenticated user ID for POSTs).
   - `useRealtimeStore` adds exponential backoff, heartbeats, visibility-aware pause/resume, typing-preview emission (WebSocket first, HTTP fallback), and Sentry breadcrumbs.
-  - Home dashboard (`HomeView.vue`) wires in realtime status, typing previews, retry hooks, and degraded connectivity alerts. Lighthouse performance budgets live at `frontend/lighthouse.budgets.json`.
+  - Home dashboard (`DashboardView.vue`) wires in realtime status, typing previews, retry hooks, and degraded connectivity alerts. Lighthouse performance budgets live at `frontend/lighthouse.budgets.json`.
 - **Security & Accessibility (Weeks 6–7)**
-  - Role-aware permissions live in `frontend/src/utils/permissions.ts`; `DefaultLayout.vue` and `AppChannelSidebar.vue` gate channel creation with user guidance, while `HomeView.vue` blocks the composer for read-only members and surfaces an admin-only panel behind `VITE_FEATURE_ADMIN_PANEL`.
+  - Role-aware permissions live in `frontend/src/utils/permissions.ts`; `MessagesLayout.vue` and `AppChannelSidebar.vue` gate channel creation with user guidance, while `DashboardView.vue` blocks the composer for read-only members and surfaces an admin-only panel behind `VITE_FEATURE_ADMIN_PANEL`.
   - Device inventory hydrates via `frontend/src/stores/devices.ts`, falling back to mock data until `/sessions/devices` lands. Session persistence now uses `frontend/src/utils/storage.ts` to audit storage capabilities, exposing `storageAudit` in the session overview.
   - Accessibility upgrades include focusable timeline items and an axe-core regression test (`frontend/tests/accessibility.test.ts`); keyboard/screen-reader/manual plans captured in `docs/TESTING.md`.
 - **Federation Awareness (Week 8)**
   - `frontend/src/stores/federation.ts` tracks per-guild remote contexts, logs Sentry breadcrumbs on failures, and fetches MLS handshake vectors for the admin console.
-  - `HomeView.vue` now shows remote trust alerts, a federation settings card (remote hosts + handshake vectors), and an origin filter for the timeline; `AppMessageTimeline.vue` badges remote events and exposes a “Copy meta” action for support workflows.
+  - `DashboardView.vue` now shows remote trust alerts, a federation settings card (remote hosts + handshake vectors), and an origin filter for the timeline; `AppMessageTimeline.vue` badges remote events and exposes a “Copy meta” action for support workflows.
   - The testing guide documents the handshake vector validation workflow alongside the accessibility audits added in Week 7.
 - **Global Search Placeholder (Week 10)**
   - `frontend/src/stores/search.ts` calls `GET /search/messages?q=` and falls back to mock data (with telemetry breadcrumbs) when the backend responds `404/501`. Backfill the Axum search endpoint so `AppGlobalSearchModal.vue` renders real results.

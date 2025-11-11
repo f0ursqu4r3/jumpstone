@@ -35,7 +35,7 @@ const timelineEntries = [
     author: 'Lia Chen',
     time: 'Today · 09:15',
     summary:
-      'HomeView now fetches `/mls/key-packages`, badges rotation timestamps, and lets operators copy HPKE + signature keys with telemetry breadcrumbs.',
+      'DashboardView now fetches `/mls/key-packages`, badges rotation timestamps, and lets operators copy HPKE + signature keys with telemetry breadcrumbs.',
     tag: 'Week 9',
   },
   {

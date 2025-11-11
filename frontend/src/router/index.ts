@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
-import HomeView from '~/views/HomeView.vue'
+import DashboardView from '~/views/DashboardView.vue'
 import LoginView from '~/views/LoginView.vue'
+import MessagesView from '~/views/MessagesView.vue'
 import RegisterView from '~/views/RegisterView.vue'
 import RoadmapView from '~/views/RoadmapView.vue'
 import StyleguideView from '~/views/StyleguideView.vue'
@@ -14,7 +15,16 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView,
+      component: MessagesView,
+      meta: {
+        layout: 'messages',
+        requiresAuth: true,
+      },
+    },
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: DashboardView,
       meta: {
         requiresAuth: true,
       },

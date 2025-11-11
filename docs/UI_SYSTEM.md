@@ -27,7 +27,7 @@ This document captures the Week 10 evaluation work for extracting our shared c
 
 - `frontend/src/components/primitives/GuildSurfaceCard.vue`: baseline card wrapper with consistent padding/typography.
 - `frontend/src/components/primitives/index.ts`: exports `GuildSurfaceCard` plus re-exports of Nuxt UI utilities.
-- `HomeView.vue`: showcase usage by swapping one of the existing cards to use `GuildSurfaceCard`.
+- `DashboardView.vue`: showcase usage by swapping one of the existing cards to use `GuildSurfaceCard`.
 
 ## Next Steps
 
