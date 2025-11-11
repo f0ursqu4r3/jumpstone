@@ -93,6 +93,7 @@ pub trait ChannelStore: Send + Sync {
         limit: i64,
     ) -> Result<Vec<ChannelEvent>, MessagingError>;
     async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError>;
+    async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>, MessagingError>;
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -183,6 +184,12 @@ impl ChannelStore for MessagingRepository {
 
     async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError> {
         MessagingRepository::channel_exists(self, channel_id)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>, MessagingError> {
+        MessagingRepository::user_ids_for_channel(self, channel_id)
             .await
             .map_err(MessagingError::from)
     }
@@ -374,6 +381,17 @@ impl ChannelStore for InMemoryMessaging {
         Ok(self.channels.read().await.contains_key(&channel_id))
     }
 
+    async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>, MessagingError> {
+        let memberships = self.channel_memberships.read().await;
+        let mut users = Vec::new();
+        for (user_id, channels) in memberships.iter() {
+            if channels.contains_key(&channel_id) {
+                users.push(*user_id);
+            }
+        }
+        Ok(users)
+    }
+
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -502,6 +520,7 @@ impl ChannelStore for InMemoryMessaging {
 pub struct MessagingService {
     store: Arc<dyn ChannelStore>,
     broadcasters: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Arc<OutboundEvent>>>>>,
+    notification_channels: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Arc<NotificationEvent>>>>>,
     semaphore: Arc<Semaphore>,
     message_rate_limits: Arc<RateLimiter>,
     ip_rate_limits: Arc<RateLimiter>,
@@ -514,6 +533,13 @@ pub struct MessagingService {
 pub struct OutboundEvent {
     pub sequence: i64,
     pub channel_id: Uuid,
+    pub event: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NotificationEvent {
+    pub channel_id: Uuid,
+    pub sequence: i64,
     pub event: serde_json::Value,
 }
 
@@ -531,6 +557,7 @@ impl MessagingService {
         Self {
             store,
             broadcasters: Arc::new(RwLock::new(HashMap::new())),
+            notification_channels: Arc::new(RwLock::new(HashMap::new())),
             semaphore: Arc::new(Semaphore::new(MAX_WS_CONNECTIONS)),
             message_rate_limits: Arc::new(RateLimiter::new(
                 MAX_MESSAGES_PER_USER_PER_WINDOW,
@@ -618,7 +645,9 @@ impl MessagingService {
             channel_id,
             event: body,
         });
-        let send_result = self.broadcast(channel_id, broadcast_event).await;
+        let send_result = self
+            .broadcast(channel_id, broadcast_event.clone())
+            .await;
 
         #[cfg(feature = "metrics")]
         if let Some(metrics) = self.metrics() {
@@ -633,6 +662,13 @@ impl MessagingService {
         if let Err(err) = send_result {
             tracing::warn!(?err, channel_id = %channel_id, "failed to broadcast event");
         }
+
+        let notification = Arc::new(NotificationEvent {
+            channel_id,
+            sequence: stored.sequence,
+            event: broadcast_event.event.clone(),
+        });
+        self.notify_channel_members(channel_id, notification).await;
 
         Ok(stored)
     }
@@ -765,6 +801,52 @@ impl MessagingService {
             .subscribe()
     }
 
+    async fn notification_sender(
+        &self,
+        user_id: Uuid,
+    ) -> broadcast::Sender<Arc<NotificationEvent>> {
+        let mut write = self.notification_channels.write().await;
+        write
+            .entry(user_id)
+            .or_insert_with(|| broadcast::channel(BROADCAST_CAPACITY).0)
+            .clone()
+    }
+
+    async fn cleanup_notification_channel(&self, user_id: Uuid) {
+        let mut write = self.notification_channels.write().await;
+        if let Some(sender) = write.get(&user_id) {
+            if sender.receiver_count() == 0 {
+                write.remove(&user_id);
+            }
+        }
+    }
+
+    async fn notify_channel_members(&self, channel_id: Uuid, notification: Arc<NotificationEvent>) {
+        let user_ids = match self.store.user_ids_for_channel(channel_id).await {
+            Ok(ids) => ids,
+            Err(err) => {
+                tracing::debug!(
+                    ?err,
+                    channel_id = %channel_id,
+                    "failed to load channel members for notification delivery"
+                );
+                return;
+            }
+        };
+
+        let map = self.notification_channels.read().await;
+        for user_id in user_ids {
+            if let Some(sender) = map.get(&user_id) {
+                if sender.receiver_count() == 0 {
+                    continue;
+                }
+                if sender.send(notification.clone()).is_err() {
+                    // receiver dropped; cleaned up when socket closes
+                }
+            }
+        }
+    }
+
     pub async fn open_websocket(
         self: Arc<Self>,
         channel_id: Uuid,
@@ -798,6 +880,48 @@ impl MessagingService {
                     channel_id = %channel_id,
                     request_id = %request_id_label,
                     "websocket connection limit reached"
+                );
+                Response::builder()
+                    .status(StatusCode::TOO_MANY_REQUESTS)
+                    .body(axum::body::Body::from("connection limit reached"))
+                    .unwrap()
+            }
+        }
+    }
+
+    pub async fn open_notification_socket(
+        self: Arc<Self>,
+        user_id: Uuid,
+        request_id: Option<String>,
+        ws: WebSocketUpgrade,
+    ) -> Response {
+        let request_id_label = request_id.unwrap_or_else(|| "unknown".to_string());
+
+        match self.semaphore.clone().try_acquire_owned() {
+            Ok(permit) => {
+                let svc = self.clone();
+                let request_id_for_span = request_id_label.clone();
+                ws.on_upgrade(move |socket| {
+                    let span = tracing::info_span!(
+                        "websocket.notifications",
+                        user_id = %user_id,
+                        request_id = %request_id_for_span
+                    );
+                    async move {
+                        svc.run_notification_socket(user_id, socket, permit).await;
+                    }
+                    .instrument(span)
+                })
+            }
+            Err(_) => {
+                #[cfg(feature = "metrics")]
+                if let Some(metrics) = self.metrics() {
+                    metrics.increment_messaging_rejection("websocket_limit");
+                }
+                tracing::warn!(
+                    user_id = %user_id,
+                    request_id = %request_id_label,
+                    "notification websocket connection limit reached"
                 );
                 Response::builder()
                     .status(StatusCode::TOO_MANY_REQUESTS)
@@ -873,6 +997,56 @@ impl MessagingService {
                 }
             }
         }
+    }
+
+    async fn run_notification_socket(
+        self: Arc<Self>,
+        user_id: Uuid,
+        mut socket: WebSocket,
+        _permit: tokio::sync::OwnedSemaphorePermit,
+    ) {
+        let sender = self.notification_sender(user_id).await;
+        let mut rx = sender.subscribe();
+
+        loop {
+            tokio::select! {
+                result = rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            if timeout(
+                                SEND_TIMEOUT,
+                                socket.send(WsMessage::Text(serde_json::to_string(&*event).unwrap_or_default().into()))
+                            ).await.is_err() {
+                                tracing::warn!("notification websocket send timeout");
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                            let message = format!("lagged by {skipped} notification messages");
+                            let _ = socket.send(WsMessage::Close(Some(axum::extract::ws::CloseFrame {
+                                code: axum::extract::ws::close_code::POLICY,
+                                reason: message.into(),
+                            }))).await;
+                            break;
+                        }
+                        Err(_) => break,
+                    }
+                }
+                message = socket.recv() => {
+                    match message {
+                        Some(Ok(WsMessage::Close(_))) | None => break,
+                        Some(Ok(WsMessage::Ping(payload))) => {
+                            if socket.send(WsMessage::Pong(payload)).await.is_err() {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        self.cleanup_notification_channel(user_id).await;
     }
 }
 
@@ -1421,6 +1595,11 @@ pub struct ChannelSocketQuery {
     pub access_token: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct NotificationSocketQuery {
+    pub access_token: Option<String>,
+}
+
 pub async fn channel_socket(
     matched_path: MatchedPath,
     State(state): State<AppState>,
@@ -1508,6 +1687,78 @@ pub async fn channel_socket(
 
     Ok(messaging
         .open_websocket(channel_id, request_id_value, ws)
+        .await)
+}
+
+pub async fn notification_socket(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<NotificationSocketQuery>,
+    Extension(request_id): Extension<RequestId>,
+    ws: WebSocketUpgrade,
+) -> Result<Response, StatusCode> {
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    };
+
+    let mut auth_error: Option<StatusCode> = None;
+    let claims = match session::authenticate_bearer(&state, &headers) {
+        Ok(claims) => Some(claims),
+        Err(StatusCode::UNAUTHORIZED) => {
+            if let Some(token) = query
+                .access_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                match state.session().verify_access_token(token) {
+                    Ok(Some(claims)) => Some(claims),
+                    Ok(None) => {
+                        auth_error = Some(StatusCode::UNAUTHORIZED);
+                        None
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, "failed to verify notification socket access token");
+                        auth_error = Some(StatusCode::INTERNAL_SERVER_ERROR);
+                        None
+                    }
+                }
+            } else {
+                auth_error = Some(StatusCode::UNAUTHORIZED);
+                None
+            }
+        }
+        Err(status) => {
+            auth_error = Some(status);
+            None
+        }
+    };
+
+    let Some(claims) = claims else {
+        let status = auth_error.unwrap_or(StatusCode::UNAUTHORIZED);
+        if status == StatusCode::UNAUTHORIZED {
+            state.record_messaging_rejection("unauthorized");
+        }
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    let request_id_value = request_id
+        .header_value()
+        .to_str()
+        .ok()
+        .map(|value| value.to_string());
+
+    Ok(messaging
+        .open_notification_socket(claims.user_id, request_id_value, ws)
         .await)
 }
 

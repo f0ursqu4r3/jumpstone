@@ -228,6 +228,20 @@ impl MessagingRepository {
         Ok(events)
     }
 
+    pub async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>> {
+        let ids = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT user_id
+            FROM channel_memberships
+            WHERE channel_id = $1
+            "#,
+        )
+        .bind(channel_id)
+        .fetch_all(self.pool.pool())
+        .await?;
+        Ok(ids)
+    }
+
     pub async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,

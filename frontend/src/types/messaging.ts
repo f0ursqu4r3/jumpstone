@@ -56,6 +56,12 @@ export interface MessageCreateResponse {
   created_at: string
 }
 
+export interface NotificationEventEnvelope {
+  channel_id: string
+  sequence: number
+  event: TimelineEventPayload
+}
+
 export interface TimelineMessage {
   id: string
   localId?: string

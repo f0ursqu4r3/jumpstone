@@ -10,6 +10,7 @@ import { useConnectivityStore } from '@/stores/connectivity'
 import { useFederationStore } from '@/stores/federation'
 import { useGuildStore } from '@/stores/guilds'
 import { useMessageComposerStore } from '@/stores/messages'
+import { useNotificationStore } from '@/stores/notifications'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
@@ -27,6 +28,7 @@ const guildStore = useGuildStore()
 const timelineStore = useTimelineStore()
 const realtimeStore = useRealtimeStore()
 const messageComposerStore = useMessageComposerStore()
+const notificationStore = useNotificationStore()
 const sessionStore = useSessionStore()
 const federationStore = useFederationStore()
 const connectivityStore = useConnectivityStore()
@@ -51,7 +53,7 @@ const {
   identifier: identifierRef,
   isAuthenticated: isAuthenticatedRef,
 } = storeToRefs(sessionStore)
-const { degradedMessage: degradedMessageRef } = storeToRefs(connectivityStore)
+const { degradedMessage: degradedMessageRef, online: onlineRef } = storeToRefs(connectivityStore)
 
 const activeGuildId = computed(() => activeGuildRef.value?.id ?? null)
 const activeChannelId = computed(() => activeChannelIdRef.value ?? null)
@@ -110,6 +112,33 @@ watch(
     sessionStore.fetchProfile().catch((err) => {
       console.warn('Failed to hydrate session profile', err)
     })
+  },
+  { immediate: true },
+)
+
+watch(
+  () => isAuthenticatedRef.value,
+  (authenticated) => {
+    if (authenticated) {
+      notificationStore.connect()
+    } else {
+      notificationStore.disconnect()
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => onlineRef.value,
+  (online) => {
+    if (!isAuthenticatedRef.value) {
+      return
+    }
+    if (!online) {
+      notificationStore.pause()
+    } else {
+      notificationStore.connect()
+    }
   },
   { immediate: true },
 )
