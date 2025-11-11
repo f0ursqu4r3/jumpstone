@@ -29,8 +29,6 @@ const emit = defineEmits<{
   (event: 'retry', localId: string): void
 }>()
 
-const viewerRole = computed(() => props.currentUserRole ?? null)
-const viewerPermissions = computed(() => props.currentUserPermissions ?? null)
 const sessionStore = useSessionStore()
 const { profile: sessionProfile } = storeToRefs(sessionStore)
 
@@ -229,29 +227,26 @@ const statusDescriptor = (status?: TimelineStatus | null) => {
   }
 }
 
-const baseItemClass = 'relative flex gap-4 rounded-2xl border p-4 transition duration-200 ease-out'
+const baseItemClass = 'relative flex gap-4 rounded-lg px-3 py-2 transition duration-150 ease-out'
 
 const computeItemClasses = (message: { optimistic: boolean; status?: TimelineStatus }) => {
   if (!message.optimistic) {
-    return [
-      baseItemClass,
-      'border-transparent bg-white/5 hover:border-sky-500/20 hover:bg-sky-500/5',
-    ]
+    return [baseItemClass, 'bg-transparent hover:bg-white/5']
   }
 
   if (message.status === 'failed') {
-    return [baseItemClass, 'border-rose-500/40 bg-rose-500/10']
+    return [baseItemClass, 'bg-rose-500/10']
   }
 
   if (message.status === 'queued') {
-    return [baseItemClass, 'border-amber-300/40 bg-amber-500/10']
+    return [baseItemClass, 'bg-amber-500/10']
   }
 
   if (message.status === 'sent') {
-    return [baseItemClass, 'border-emerald-400/40 bg-emerald-500/10']
+    return [baseItemClass, 'bg-emerald-500/10']
   }
 
-  return [baseItemClass, 'border-sky-500/30 bg-sky-500/10']
+  return [baseItemClass, 'bg-sky-500/5']
 }
 
 const reactionStore = useReactionStore()
@@ -564,8 +559,8 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
-    <div v-if="loading && !hasEvents" class="flex-1 overflow-y-auto space-y-4 pr-1">
+  <div class="flex h-full flex-col gap-2">
+    <div v-if="loading && !hasEvents" class="flex-1 overflow-y-auto space-y-2 pr-1">
       <div v-for="index in 6" :key="index" class="flex gap-3">
         <USkeleton class="h-10 w-10 rounded-full" />
         <div class="flex-1 space-y-2">
@@ -594,7 +589,7 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
 
     <div
       v-else-if="hasEvents"
-      class="flex-1 overflow-y-auto rounded-3xl border border-white/5 bg-slate-950/50 p-6 shadow-inner shadow-slate-950/40"
+      class="flex-1 overflow-y-auto rounded-lg border border-white/5 bg-slate-950/50 p-2 shadow-inner shadow-slate-950/40"
     >
       <div class="space-y-10">
         <div v-for="group in groupedEvents" :key="group.date" class="space-y-4">
@@ -637,8 +632,6 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
                   :reaction-button-classes="reactionButtonClasses"
                   :can-edit-message="canEditMessage"
                   :can-report-message="canReportMessage"
-                  :viewer-role="viewerRole"
-                  :viewer-permissions="viewerPermissions"
                   @retry="(localId) => emit('retry', localId)"
                   @edit="beginEdit(message)"
                   @cancel-edit="cancelEdit"
@@ -661,7 +654,7 @@ const copyMetadata = async (payload: { id: string; origin?: string | null }) => 
 
     <div
       v-else
-      class="flex flex-1 flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-white/10 bg-slate-950/40 p-10 text-center"
+      class="flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/10 bg-slate-950/40 p-2 text-center"
     >
       <UIcon name="i-heroicons-chat-bubble-oval-left-ellipsis" class="h-10 w-10 text-slate-600" />
       <div class="space-y-1">

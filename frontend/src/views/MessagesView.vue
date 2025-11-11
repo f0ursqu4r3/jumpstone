@@ -349,28 +349,34 @@ const composerDisabled = computed(
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-4">
-    <header class="flex flex-wrap items-center justify-end gap-3">
-      <div class="text-xs uppercase tracking-wide text-slate-500">
-        Origin filter
+  <div class="flex h-full flex-col gap-2">
+    <header
+      class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/5 bg-slate-950/60 p-2"
+    >
+      <div class="flex items-center gap-2 text-sm text-slate-300">
+        <UIcon name="i-heroicons-funnel" class="h-4 w-4 text-slate-500" />
+        <span class="font-medium text-slate-100">Origin</span>
+        <span class="text-xs uppercase tracking-wide text-slate-500">Filter</span>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
         <URadioGroup
           v-model="timelineOriginFilter"
           :items="originFilterOptions"
-          size="sm"
+          size="xs"
           class="max-w-xs"
           :disabled="!activeChannelId"
         />
-        <UButton
-          icon="i-heroicons-arrow-path"
-          variant="ghost"
-          color="neutral"
-          :loading="timelineLoading"
-          :disabled="!activeChannelId"
-          @click="refreshTimeline"
-          aria-label="Refresh messages"
-        />
+        <UTooltip text="Refresh timeline">
+          <UButton
+            icon="i-heroicons-arrow-path"
+            variant="ghost"
+            color="neutral"
+            :loading="timelineLoading"
+            :disabled="!activeChannelId"
+            @click="refreshTimeline"
+            aria-label="Refresh messages"
+          />
+        </UTooltip>
       </div>
     </header>
 
@@ -427,7 +433,7 @@ const composerDisabled = computed(
 
     <div
       v-if="typingPreview"
-      class="flex flex-wrap items-center gap-2 rounded-2xl border border-sky-500/10 bg-sky-500/5 px-4 py-2 text-xs text-slate-300"
+      class="flex flex-wrap items-center gap-2 rounded-lg border border-sky-500/10 bg-sky-500/5 p-2 text-xs text-slate-300"
     >
       <UIcon name="i-heroicons-pencil-square" class="h-4 w-4 text-sky-300" />
       <span class="font-semibold text-sky-200">Draft preview</span>

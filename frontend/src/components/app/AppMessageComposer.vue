@@ -201,19 +201,19 @@ const retryFailures = () => {
 </script>
 
 <template>
-  <div class="space-y-3 rounded-3xl border border-white/5 bg-slate-950/70 p-4 shadow-inner shadow-slate-950/40">
-    <label class="flex flex-col gap-3 text-sm text-slate-200">
+  <div
+    class="space-y-2 rounded-lg border border-white/5 bg-slate-950/70 p-2 shadow-inner shadow-slate-950/40"
+  >
+    <label class="flex flex-col gap-2 text-sm text-slate-200">
       <span class="flex items-center justify-between">
-        <span class="font-semibold">
-          Message #{{ channelName || 'channel' }}
-        </span>
+        <span class="font-semibold"> Message #{{ channelName || 'channel' }} </span>
         <span class="text-xs text-slate-500">Shift + Enter for newline</span>
       </span>
       <textarea
         ref="textareaRef"
         v-model="message"
         :disabled="composerDisabled"
-        class="min-h-[3.5rem] max-h-72 w-full resize-none rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+        class="min-h-14 max-h-72 w-full resize-none rounded-lg border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-60"
         :placeholder="
           channelId
             ? `Message #${channelName || 'channel'} (Enter to send)`
@@ -242,7 +242,13 @@ const retryFailures = () => {
           />
         </UTooltip>
         <UTooltip text="Slash commands arriving with Week 6">
-          <UButton icon="i-heroicons-command-line" color="neutral" variant="ghost" size="sm" disabled />
+          <UButton
+            icon="i-heroicons-command-line"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            disabled
+          />
         </UTooltip>
       </div>
 
@@ -251,12 +257,7 @@ const retryFailures = () => {
           <UIcon name="i-heroicons-arrow-up-tray" class="h-4 w-4" />
           {{ queueCount }} queued
         </span>
-        <UButton
-          color="info"
-          :disabled="sendDisabled"
-          :loading="submitting"
-          @click="handleSubmit"
-        >
+        <UButton color="info" :disabled="sendDisabled" :loading="submitting" @click="handleSubmit">
           Send
         </UButton>
       </div>

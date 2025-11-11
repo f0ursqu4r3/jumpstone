@@ -404,7 +404,7 @@ const resetCreateChannelError = () => {
         <main
           class="flex-1 overflow-hidden bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
         >
-          <div class="mx-auto flex h-full w-full flex-col px-4 py-6 sm:px-6 lg:px-10">
+          <div class="mx-auto flex h-full w-full flex-col p-2">
             <slot />
           </div>
         </main>
