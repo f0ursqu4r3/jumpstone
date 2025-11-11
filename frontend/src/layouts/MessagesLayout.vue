@@ -350,6 +350,10 @@ const submitCreateChannel = async (name: string) => {
 const resetCreateChannelError = () => {
   createChannelError.value = null
 }
+
+const openMobileSidebar = () => {
+  mobileSidebarOpen.value = true
+}
 </script>
 
 <template>
@@ -376,7 +380,14 @@ const resetCreateChannelError = () => {
       @open-guild-settings="handleOpenGuildMenu"
     />
 
-    <USlideover v-if="showAppShell && hasGuilds" v-model="mobileSidebarOpen" side="left">
+    <USlideover
+      v-if="showAppShell && hasGuilds"
+      v-model:open="mobileSidebarOpen"
+      side="left"
+      :ui="{
+        content: 'w-[18rem]',
+      }"
+    >
       <template #content>
         <div class="flex h-full w-[18rem] flex-col bg-slate-950">
           <AppChannelSidebar
@@ -400,7 +411,7 @@ const resetCreateChannelError = () => {
           :channel-name="activeChannel?.label || ''"
           :topic="activeChannel?.description || ''"
           :show-mobile-nav-button="hasGuilds"
-          @request-mobile-nav="mobileSidebarOpen = true"
+          @request-mobile-nav="openMobileSidebar"
         />
         <main
           class="flex-1 overflow-hidden bg-linear-to-b from-slate-950 via-slate-950 to-slate-950/80"
