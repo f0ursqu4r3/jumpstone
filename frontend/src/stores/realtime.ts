@@ -11,6 +11,8 @@ import { recordNetworkBreadcrumb } from '@/utils/telemetry'
 
 export type RealtimeStatus = 'idle' | 'connecting' | 'connected' | 'paused' | 'error'
 
+type CloseIntent = 'switch' | 'disconnect' | 'pause'
+
 interface RealtimeState {
   channelId: string | null
   status: RealtimeStatus
@@ -63,11 +65,12 @@ const resolveBaseUrl = () => {
 }
 
 const buildSocketUrl = (channelId: string, token: string) => {
-  const base = resolveBaseUrl()
-  const url = new URL(`/channels/${channelId}/ws`, base)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  url.searchParams.set('access_token', token)
-  return url
+  const base = new URL(resolveBaseUrl())
+  const normalizedPath = base.pathname.replace(/\/$/, '')
+  base.pathname = `${normalizedPath}/channels/${channelId}/ws`
+  base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
+  base.searchParams.set('access_token', token)
+  return base
 }
 
 export const useRealtimeStore = defineStore('realtime', () => {
@@ -85,6 +88,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
   const heartbeatTimer = ref<ReturnType<typeof setInterval> | null>(null)
   const visibilityPauseTimer = ref<ReturnType<typeof setTimeout> | null>(null)
   const pausedReason = ref<'visibility' | 'network' | null>(null)
+  const pendingCloseIntent = ref<CloseIntent | null>(null)
   const typingPreviewTimestamps = new Map<string, number>()
 
   const connectivityStore = useConnectivityStore()
@@ -113,15 +117,17 @@ export const useRealtimeStore = defineStore('realtime', () => {
     }
   }
 
-  const cleanupSocket = () => {
+  const cleanupSocket = (intent: CloseIntent | null = null) => {
     const socket = socketRef.value
     if (socket && socket.readyState === WebSocket.OPEN) {
+      pendingCloseIntent.value = intent
       try {
         socket.close(1000, 'client navigation')
       } catch (err) {
         console.warn('Failed to close websocket cleanly', err)
       }
     } else if (socket && socket.readyState === WebSocket.CONNECTING) {
+      pendingCloseIntent.value = intent
       try {
         socket.close()
       } catch {
@@ -233,7 +239,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
       return
     }
 
-    cleanupSocket()
+    cleanupSocket('switch')
     clearReconnectTimer()
 
     const connectionId = createConnectionId()
@@ -309,6 +315,25 @@ export const useRealtimeStore = defineStore('realtime', () => {
     socket.addEventListener('close', (event) => {
       clearHeartbeat()
       socketRef.value = null
+      const intent = pendingCloseIntent.value
+      pendingCloseIntent.value = null
+
+      if (intent === 'disconnect') {
+        return
+      }
+
+      if (intent === 'switch') {
+        return
+      }
+
+      if (intent === 'pause') {
+        updateState({
+          status: 'paused',
+          lastError: null,
+        })
+        return
+      }
+
       if (pausedReason.value === 'visibility' || !online.value) {
         updateState({
           status: 'paused',
@@ -381,7 +406,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
 
   const disconnect = () => {
     clearReconnectTimer()
-    cleanupSocket()
+    cleanupSocket('disconnect')
     updateState({
       channelId: null,
       status: 'idle',
@@ -397,7 +422,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
     }
     pausedReason.value = reason
     clearReconnectTimer()
-    cleanupSocket()
+    cleanupSocket('pause')
     updateState({
       status: 'paused',
     })
