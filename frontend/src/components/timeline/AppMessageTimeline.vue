@@ -117,7 +117,7 @@ const userDirectory = computed(() => {
   return buildDirectoryMap(source ?? null)
 })
 
-const resolveSenderName = (senderId: string | undefined | null) => {
+const resolveDirectoryLabel = (senderId: string | undefined | null) => {
   if (!senderId) {
     return null
   }
@@ -131,6 +131,61 @@ const resolveSenderName = (senderId: string | undefined | null) => {
     return null
   }
   return entry.displayName ?? entry.username ?? null
+}
+
+type AuthorSnapshot = {
+  id: string | null
+  username: string | null
+  displayName: string | null
+}
+
+const extractAuthorSnapshot = (event: TimelineEntry): AuthorSnapshot | null => {
+  const payload = event.event.content
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+  const rawAuthor = (payload as { author?: unknown }).author
+  if (!rawAuthor || typeof rawAuthor !== 'object') {
+    return null
+  }
+  const candidate = rawAuthor as {
+    id?: string
+    user_id?: string
+    username?: string
+    display_name?: string
+    displayName?: string
+  }
+  const id = normalizeId(candidate.id) ?? normalizeId(candidate.user_id) ?? null
+  const username = normalizeId(candidate.username) ?? null
+  const displayName =
+    normalizeId(candidate.display_name) ?? normalizeId(candidate.displayName) ?? null
+
+  if (!id && !username && !displayName) {
+    return null
+  }
+
+  return {
+    id,
+    username,
+    displayName,
+  }
+}
+
+const resolveSenderMetadata = (
+  event: TimelineEntry,
+): { senderId: string; label: string } => {
+  const author = extractAuthorSnapshot(event)
+  const rawSenderId = typeof event.event.sender === 'string' ? event.event.sender : ''
+  const senderIdCandidate = author?.id ?? rawSenderId
+  const senderId = senderIdCandidate && senderIdCandidate.length ? senderIdCandidate : rawSenderId
+  const directoryLabel = resolveDirectoryLabel(senderId)
+  const labelCandidate =
+    author?.displayName ?? author?.username ?? directoryLabel ?? senderId ?? 'Unknown user'
+  const label = labelCandidate && labelCandidate.length ? labelCandidate : 'Unknown user'
+  return {
+    senderId,
+    label,
+  }
 }
 
 const resolveContent = (event: TimelineEntry) => {
@@ -345,14 +400,11 @@ const groupedEvents = computed(() => {
       props.currentUserId ?? null,
     )
 
+    const { senderId, label: senderLabel } = resolveSenderMetadata(entry)
     const isAuthor =
       typeof props.currentUserId === 'string' &&
       props.currentUserId.length > 0 &&
-      entry.event.sender === props.currentUserId
-
-    const senderId = typeof entry.event.sender === 'string' ? entry.event.sender : ''
-    const senderName = resolveSenderName(senderId) ?? senderId
-    const senderLabel = senderName && senderName.length ? senderName : 'Unknown user'
+      (senderId === props.currentUserId || entry.event.sender === props.currentUserId)
 
     const record: TimelineMessage & {
       status?: TimelineStatus | undefined

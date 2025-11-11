@@ -8,6 +8,7 @@ import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
 import type {
   ChannelEventEnvelope,
+  MessageAuthorSnapshot,
   MessageComposeRequest,
   MessageCreateResponse,
 } from '@/types/messaging'
@@ -30,6 +31,7 @@ const createLocalEvent = (
   channelId: string,
   sender: string,
   content: string,
+  author?: MessageAuthorSnapshot | null,
 ): Omit<ChannelEventEnvelope, 'sequence'> => ({
   channel_id: channelId,
   event: {
@@ -43,7 +45,7 @@ const createLocalEvent = (
     sender,
     origin_server: null,
     origin_ts: Date.now(),
-    content: { content },
+    content: author ? { content, author } : { content },
     prev_events: [],
     auth_events: [],
     signatures: {},
@@ -76,6 +78,27 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
 
   const currentSenderId = computed(() => profile.value?.userId ?? '')
   const optimisticSenderLabel = computed(() => displayName.value || identifier.value || 'You')
+  const optimisticAuthor = computed<MessageAuthorSnapshot | null>(() => {
+    const profileValue = profile.value
+    const identifierValue = identifier.value
+    const userId = profileValue?.userId ?? identifierValue ?? ''
+    if (!userId) {
+      return null
+    }
+    const usernameSource =
+      (profileValue?.username && profileValue.username.trim().length
+        ? profileValue.username
+        : identifierValue) ?? userId
+    const displayNameValue =
+      profileValue?.displayName && profileValue.displayName.trim().length
+        ? profileValue.displayName.trim()
+        : null
+    return {
+      id: userId,
+      username: usernameSource,
+      ...(displayNameValue ? { display_name: displayNameValue } : {}),
+    }
+  })
 
   const api = () => useApiClient()
 
@@ -213,6 +236,7 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
       channelId,
       optimisticSenderLabel.value,
       trimmedContent,
+      optimisticAuthor.value,
     )
     const localId = timelineStore.addOptimisticEvent(channelId, optimisticEnvelope)
 

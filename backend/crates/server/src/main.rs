@@ -1550,7 +1550,7 @@ mod tests {
     use base64::Engine;
     use chrono::Utc;
     use futures::StreamExt;
-    use openguild_core::EventBuilder;
+    use openguild_core::{messaging::MessageAuthorSnapshot, EventBuilder};
     use openguild_crypto::{generate_signing_key, verifying_key_from, SigningKey};
     use serde_json::{json, Value};
     use serial_test::serial;
@@ -1610,6 +1610,15 @@ mod tests {
             .expect("login succeeds")
             .expect("login response");
         (harness, format!("Bearer {}", login.access_token), user_id)
+    }
+
+    fn author_snapshot(id: impl Into<String>) -> MessageAuthorSnapshot {
+        let value = id.into();
+        MessageAuthorSnapshot {
+            id: value.clone(),
+            username: value,
+            display_name: None,
+        }
     }
 
     fn app_state_with_default_session(
@@ -2670,12 +2679,13 @@ mod tests {
             .await
             .expect("channel creation");
         let (session_harness, auth_header, user_id) = session_with_logged_in_user().await;
+        let author = author_snapshot(user_id.to_string());
         messaging
-            .append_message(channel.channel_id, &user_id.to_string(), "first")
+            .append_message(channel.channel_id, &author, "first")
             .await
             .expect("first message stored");
         messaging
-            .append_message(channel.channel_id, &user_id.to_string(), "second")
+            .append_message(channel.channel_id, &author, "second")
             .await
             .expect("second message stored");
 
@@ -3171,8 +3181,9 @@ mod tests {
         );
         let (mut socket, _) = connect_async(request).await.unwrap();
 
+        let author = author_snapshot("@user:example.org");
         messaging
-            .append_message(channel.channel_id, "@user:example.org", "hi there")
+            .append_message(channel.channel_id, &author, "hi there")
             .await
             .unwrap();
 
@@ -3524,12 +3535,13 @@ mod tests {
             .await
             .expect("channel creation");
         let user_id = Uuid::new_v4().to_string();
+        let author = author_snapshot(user_id.clone());
         messaging
-            .append_message(channel.channel_id, &user_id, "first")
+            .append_message(channel.channel_id, &author, "first")
             .await
             .expect("first message");
         messaging
-            .append_message(channel.channel_id, &user_id, "second")
+            .append_message(channel.channel_id, &author, "second")
             .await
             .expect("second message");
 
@@ -3692,8 +3704,9 @@ mod tests {
             .create_channel(guild.guild_id, "general")
             .await
             .unwrap();
+        let author = author_snapshot("@user:example.org");
         messaging
-            .append_message(channel.channel_id, "@user:example.org", "hi there")
+            .append_message(channel.channel_id, &author, "hi there")
             .await
             .unwrap();
 

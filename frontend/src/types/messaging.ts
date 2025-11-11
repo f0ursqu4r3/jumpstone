@@ -11,6 +11,20 @@ export interface ChannelRecord {
   created_at: string
 }
 
+export interface MessageAuthorSnapshot {
+  id?: string
+  user_id?: string
+  username?: string
+  display_name?: string
+  displayName?: string
+}
+
+export type MessageContentPayload = Record<string, unknown> & {
+  content?: string
+  body?: string
+  author?: MessageAuthorSnapshot
+}
+
 export interface TimelineEventPayload {
   schema_version: number
   event_id: string
@@ -19,7 +33,7 @@ export interface TimelineEventPayload {
   sender: string
   origin_server: string | null
   origin_ts: number
-  content: Record<string, unknown>
+  content: MessageContentPayload
   prev_events?: unknown[]
   auth_events?: unknown[]
   signatures?: Record<string, unknown>

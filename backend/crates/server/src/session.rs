@@ -116,6 +116,7 @@ pub struct AccessTokenClaims {
     #[allow(dead_code)]
     pub session_id: Uuid,
     pub user_id: Uuid,
+    pub username: Option<String>,
     #[allow(dead_code)]
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
@@ -151,7 +152,7 @@ impl SessionContext {
             None => return Ok(None),
         };
 
-        let record = self.build_record(user.user_id);
+        let record = self.build_record(user.user_id, user.username.clone());
         let access_token = self.signer.sign(&record)?;
         self.repository.persist_session(&record).await?;
 
@@ -190,7 +191,18 @@ impl SessionContext {
             .touch_refresh_session(refresh_id, Utc::now())
             .await?;
 
-        let session_record = self.build_record(stored.user_id);
+        let username = match self.authenticator.lookup_username(stored.user_id).await {
+            Ok(value) => value,
+            Err(err) => {
+                tracing::debug!(
+                    ?err,
+                    user_id = %stored.user_id,
+                    "failed to lookup username while refreshing session"
+                );
+                None
+            }
+        };
+        let session_record = self.build_record(stored.user_id, username);
         let access_token = self.signer.sign(&session_record)?;
         self.repository.persist_session(&session_record).await?;
 
@@ -248,12 +260,13 @@ impl SessionContext {
         Ok(true)
     }
 
-    fn build_record(&self, user_id: Uuid) -> SessionRecord {
+    fn build_record(&self, user_id: Uuid, username: Option<String>) -> SessionRecord {
         let issued_at = Utc::now();
         let expires_at = issued_at + self.ttl;
         SessionRecord {
             session_id: Uuid::new_v4(),
             user_id,
+            username,
             issued_at,
             expires_at,
         }
@@ -401,6 +414,7 @@ impl SessionSigner {
         Ok(AccessTokenClaims {
             session_id: claims.session_id,
             user_id: claims.user_id,
+            username: claims.username,
             issued_at: claims.issued_at,
             expires_at: claims.expires_at,
         })
@@ -411,6 +425,8 @@ impl SessionSigner {
 pub struct SessionRecord {
     pub session_id: Uuid,
     pub user_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -419,6 +435,8 @@ pub struct SessionRecord {
 struct SessionClaims<'a> {
     session_id: &'a Uuid,
     user_id: &'a Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    username: Option<&'a str>,
     issued_at: &'a DateTime<Utc>,
     expires_at: &'a DateTime<Utc>,
 }
@@ -428,6 +446,7 @@ impl<'a> From<&'a SessionRecord> for SessionClaims<'a> {
         Self {
             session_id: &value.session_id,
             user_id: &value.user_id,
+            username: value.username.as_deref(),
             issued_at: &value.issued_at,
             expires_at: &value.expires_at,
         }
@@ -438,6 +457,7 @@ impl<'a> From<&'a SessionRecord> for SessionClaims<'a> {
 struct SessionClaimsOwned {
     session_id: Uuid,
     user_id: Uuid,
+    username: Option<String>,
     issued_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 }
@@ -452,11 +472,17 @@ pub struct LoginAttempt {
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
     pub user_id: Uuid,
+    pub username: Option<String>,
 }
 
 #[async_trait]
 pub trait SessionAuthenticator: Send + Sync {
     async fn authenticate(&self, attempt: &LoginAttempt) -> Result<Option<AuthenticatedUser>>;
+
+    async fn lookup_username(&self, user_id: Uuid) -> Result<Option<String>> {
+        let _ = user_id;
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -505,9 +531,22 @@ impl SessionAuthenticator for InMemorySessionStore {
         match accounts.get(&attempt.identifier) {
             Some(record) if record.secret == attempt.secret => Ok(Some(AuthenticatedUser {
                 user_id: record.user_id,
+                username: Some(attempt.identifier.clone()),
             })),
             _ => Ok(None),
         }
+    }
+
+    async fn lookup_username(&self, user_id: Uuid) -> Result<Option<String>> {
+        let accounts = self.accounts.read().await;
+        let username = accounts.iter().find_map(|(identifier, record)| {
+            if record.user_id == user_id {
+                Some(identifier.clone())
+            } else {
+                None
+            }
+        });
+        Ok(username)
     }
 }
 
@@ -613,7 +652,10 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
         )
         .await
         {
-            Ok(user_id) => Ok(Some(AuthenticatedUser { user_id })),
+            Ok(user_id) => Ok(Some(AuthenticatedUser {
+                user_id,
+                username: Some(attempt.identifier.clone()),
+            })),
             Err(err) => {
                 if let Some(creds) = err.downcast_ref::<CredentialError>() {
                     match creds {
@@ -626,6 +668,11 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                 }
             }
         }
+    }
+
+    async fn lookup_username(&self, user_id: Uuid) -> Result<Option<String>> {
+        let record = UserRepository::find_user_by_id(self.pool.pool(), user_id).await?;
+        Ok(record.map(|entry| entry.username))
     }
 }
 

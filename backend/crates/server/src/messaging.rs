@@ -17,10 +17,13 @@ use axum::{
     response::Response,
     Extension, Json,
 };
-use openguild_core::{event::CanonicalEvent, messaging::MessagePayload};
+use openguild_core::{
+    event::CanonicalEvent,
+    messaging::{MessageAuthorSnapshot, MessagePayload},
+};
 use openguild_storage::{
     Channel, ChannelEvent, ChannelMembership, ChannelMembershipSummary, Guild, GuildMembership,
-    GuildMembershipSummary, MessagingRepository, StoragePool,
+    GuildMembershipSummary, MessagingRepository, StoragePool, UserRepository,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -590,16 +593,17 @@ impl MessagingService {
     pub async fn append_message(
         &self,
         channel_id: Uuid,
-        sender: &str,
+        author: &MessageAuthorSnapshot,
         content: &str,
     ) -> Result<ChannelEvent, MessagingError> {
         let payload = MessagePayload {
             content: content.to_owned(),
+            author: Some(author.clone()),
         };
         let event = payload.to_event(
             &self.origin_server,
             &channel_id.to_string(),
-            sender,
+            &author.id,
             Vec::new(),
         );
         let body =
@@ -908,6 +912,45 @@ pub struct PostMessageResponse {
     pub sequence: i64,
     pub event_id: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn resolve_message_author(
+    state: &AppState,
+    user_id: Uuid,
+    username_hint: Option<String>,
+) -> MessageAuthorSnapshot {
+    let fallback_id = user_id.to_string();
+    let fallback_username = username_hint
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback_id.clone());
+    let fallback = MessageAuthorSnapshot {
+        id: fallback_id.clone(),
+        username: fallback_username,
+        display_name: None,
+    };
+
+    let Some(pool) = state.storage_pool() else {
+        return fallback;
+    };
+
+    match UserRepository::find_user_by_id(pool.pool(), user_id).await {
+        Ok(Some(record)) => MessageAuthorSnapshot {
+            id: record.user_id.to_string(),
+            username: record.username,
+            display_name: None,
+        },
+        Ok(None) => fallback,
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                user_id = %user_id,
+                "failed to resolve message author metadata"
+            );
+            fallback
+        }
+    }
 }
 
 pub async fn create_guild(
@@ -1220,18 +1263,16 @@ pub async fn post_message(
 
     let client_ip = client_ip_from_headers(&headers);
 
-    let sender = if requested_sender.is_empty() {
-        sender_claim.clone()
-    } else {
-        if requested_sender != sender_claim {
-            state.record_messaging_rejection("sender_mismatch");
-            let status = StatusCode::FORBIDDEN;
-            #[cfg(feature = "metrics")]
-            state.record_http_request(matched_path.as_str(), status.as_u16());
-            return Err(status);
-        }
-        sender_claim.clone()
-    };
+    if !requested_sender.is_empty() && requested_sender != sender_claim {
+        state.record_messaging_rejection("sender_mismatch");
+        let status = StatusCode::FORBIDDEN;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
+    let author_snapshot =
+        resolve_message_author(&state, claims.user_id, claims.username.clone()).await;
 
     if !messaging.check_ip_rate(&client_ip).await {
         state.record_messaging_rejection("ip_rate_limit");
@@ -1241,7 +1282,7 @@ pub async fn post_message(
         return Err(status);
     }
 
-    if !messaging.check_message_rate(&sender).await {
+    if !messaging.check_message_rate(&author_snapshot.id).await {
         state.record_messaging_rejection("message_rate_limit");
         let status = StatusCode::TOO_MANY_REQUESTS;
         #[cfg(feature = "metrics")]
@@ -1250,7 +1291,7 @@ pub async fn post_message(
     }
 
     match messaging
-        .append_message(channel_id, sender.as_str(), content)
+        .append_message(channel_id, &author_snapshot, content)
         .await
     {
         Ok(event) => {
