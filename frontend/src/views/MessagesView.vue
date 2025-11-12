@@ -63,7 +63,34 @@ const typingPreview = ref<string | null>(null)
 let typingPreviewTimer: ReturnType<typeof setTimeout> | null = null
 const loadedChannels = new Set<string>()
 
+const timelineEvents = computed(() => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return []
+  }
+  return eventsByChannelRef.value[channelId] ?? []
+})
+
+const timelineLoading = computed(() => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return false
+  }
+  return Boolean(loadingByChannelRef.value[channelId])
+})
+
+const timelineError = computed(() => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return null
+  }
+  return errorByChannelRef.value[channelId] ?? null
+})
+
 const markActiveChannelRead = () => {
+  if (!isAuthenticatedRef.value) {
+    return
+  }
   const channelId = activeChannelIdRef.value
   if (!channelId) {
     return
@@ -183,30 +210,6 @@ onBeforeUnmount(() => {
     clearTimeout(typingPreviewTimer)
     typingPreviewTimer = null
   }
-})
-
-const timelineEvents = computed(() => {
-  const channelId = activeChannelIdRef.value
-  if (!channelId) {
-    return []
-  }
-  return eventsByChannelRef.value[channelId] ?? []
-})
-
-const timelineLoading = computed(() => {
-  const channelId = activeChannelIdRef.value
-  if (!channelId) {
-    return false
-  }
-  return Boolean(loadingByChannelRef.value[channelId])
-})
-
-const timelineError = computed(() => {
-  const channelId = activeChannelIdRef.value
-  if (!channelId) {
-    return null
-  }
-  return errorByChannelRef.value[channelId] ?? null
 })
 
 const refreshTimeline = async () => {
