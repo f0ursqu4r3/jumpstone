@@ -22,8 +22,8 @@ use openguild_core::{
     messaging::{MessageAuthorSnapshot, MessagePayload},
 };
 use openguild_storage::{
-    Channel, ChannelEvent, ChannelMembership, ChannelMembershipSummary, Guild, GuildMembership,
-    GuildMembershipSummary, MessagingRepository, StoragePool, UserRepository,
+    Channel, ChannelEvent, ChannelMembership, ChannelMembershipSummary, ChannelUnreadState, Guild,
+    GuildMembership, GuildMembershipSummary, MessagingRepository, StoragePool, UserRepository,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -96,6 +96,20 @@ pub trait ChannelStore: Send + Sync {
     async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError>;
     async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>, MessagingError>;
     async fn user_ids_for_guild(&self, guild_id: Uuid) -> Result<Vec<Uuid>, MessagingError>;
+    async fn latest_sequence_for_channel(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<i64, MessagingError>;
+    async fn update_last_read_sequence(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<(), MessagingError>;
+    async fn user_channel_unread(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelUnreadState>, MessagingError>;
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -202,6 +216,32 @@ impl ChannelStore for MessagingRepository {
             .map_err(MessagingError::from)
     }
 
+    async fn latest_sequence_for_channel(&self, channel_id: Uuid) -> Result<i64, MessagingError> {
+        MessagingRepository::latest_sequence_for_channel(self, channel_id)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn update_last_read_sequence(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<(), MessagingError> {
+        MessagingRepository::update_last_read_sequence(self, channel_id, user_id, sequence)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn user_channel_unread(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelUnreadState>, MessagingError> {
+        MessagingRepository::user_channel_unread(self, user_id)
+            .await
+            .map_err(MessagingError::from)
+    }
+
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -257,7 +297,6 @@ impl ChannelStore for MessagingRepository {
     }
 }
 
-#[derive(Default)]
 struct InMemoryMessaging {
     guilds: RwLock<HashMap<Uuid, Guild>>,
     channels: RwLock<HashMap<Uuid, Channel>>,
@@ -265,7 +304,23 @@ struct InMemoryMessaging {
     events: RwLock<HashMap<Uuid, Vec<ChannelEvent>>>,
     guild_memberships: RwLock<HashMap<Uuid, HashMap<Uuid, InMemoryGuildMembership>>>,
     channel_memberships: RwLock<HashMap<Uuid, HashMap<Uuid, InMemoryChannelMembership>>>,
+    channel_reads: RwLock<HashMap<(Uuid, Uuid), i64>>,
     sequence: AtomicI64,
+}
+
+impl Default for InMemoryMessaging {
+    fn default() -> Self {
+        Self {
+            guilds: RwLock::new(HashMap::new()),
+            channels: RwLock::new(HashMap::new()),
+            guild_index: RwLock::new(HashMap::new()),
+            events: RwLock::new(HashMap::new()),
+            guild_memberships: RwLock::new(HashMap::new()),
+            channel_memberships: RwLock::new(HashMap::new()),
+            channel_reads: RwLock::new(HashMap::new()),
+            sequence: AtomicI64::new(0),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -409,6 +464,58 @@ impl ChannelStore for InMemoryMessaging {
             }
         }
         Ok(users)
+    }
+
+    async fn latest_sequence_for_channel(&self, channel_id: Uuid) -> Result<i64, MessagingError> {
+        let events = self.events.read().await;
+        let latest = events
+            .get(&channel_id)
+            .and_then(|list| list.iter().map(|event| event.sequence).max())
+            .unwrap_or(0);
+        Ok(latest)
+    }
+
+    async fn update_last_read_sequence(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<(), MessagingError> {
+        let mut reads = self.channel_reads.write().await;
+        let entry = reads.entry((channel_id, user_id)).or_insert(0);
+        if sequence > *entry {
+            *entry = sequence;
+        }
+        Ok(())
+    }
+
+    async fn user_channel_unread(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelUnreadState>, MessagingError> {
+        let channels = self.channel_memberships.read().await;
+        let Some(memberships) = channels.get(&user_id) else {
+            return Ok(Vec::new());
+        };
+
+        let events = self.events.read().await;
+        let reads = self.channel_reads.read().await;
+
+        let mut states = Vec::new();
+        for (channel_id, _) in memberships {
+            let latest = events
+                .get(channel_id)
+                .and_then(|list| list.iter().map(|event| event.sequence).max())
+                .unwrap_or(0);
+            let last_read = *reads.get(&(*channel_id, user_id)).unwrap_or(&0);
+            states.push(ChannelUnreadState {
+                channel_id: *channel_id,
+                last_read_sequence: last_read,
+                latest_sequence: latest,
+            });
+        }
+
+        Ok(states)
     }
 
     async fn upsert_guild_membership(
@@ -658,6 +765,13 @@ impl MessagingService {
         self.store.list_channels_for_guild(guild_id).await
     }
 
+    pub async fn latest_sequence_for_channel(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<i64, MessagingError> {
+        self.store.latest_sequence_for_channel(channel_id).await
+    }
+
     pub async fn append_message(
         &self,
         channel_id: Uuid,
@@ -801,6 +915,24 @@ impl MessagingService {
         user_id: Uuid,
     ) -> Result<Vec<ChannelMembershipSummary>, MessagingError> {
         self.store.channel_memberships_for_user(user_id).await
+    }
+
+    pub async fn update_last_read_sequence(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<(), MessagingError> {
+        self.store
+            .update_last_read_sequence(channel_id, user_id, sequence)
+            .await
+    }
+
+    pub async fn user_channel_unread(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelUnreadState>, MessagingError> {
+        self.store.user_channel_unread(user_id).await
     }
 
     async fn broadcast(
@@ -1149,6 +1281,19 @@ pub struct PostMessageResponse {
     pub sequence: i64,
     pub event_id: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChannelReadUpdate {
+    pub sequence: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChannelUnreadEntry {
+    pub channel_id: Uuid,
+    pub last_read_sequence: i64,
+    pub latest_sequence: i64,
+    pub unread: i64,
 }
 
 async fn resolve_message_author(
@@ -1653,6 +1798,145 @@ pub async fn list_events(
     }
 }
 
+#[cfg_attr(not(feature = "metrics"), allow(unused_variables))]
+pub async fn mark_channel_read(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Json(body): Json<ChannelReadUpdate>,
+) -> Result<Json<ChannelUnreadEntry>, StatusCode> {
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    };
+
+    let claims = match session::authenticate_bearer(&state, &headers) {
+        Ok(claims) => claims,
+        Err(status) => {
+            if status == StatusCode::UNAUTHORIZED {
+                state.record_messaging_rejection("unauthorized");
+            }
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+    };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    match messaging.channel_exists(channel_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let status = StatusCode::NOT_FOUND;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+        Err(err) => {
+            tracing::error!(?err, channel_id = %channel_id, "failed to verify channel");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+    }
+
+    let latest_sequence = match messaging.latest_sequence_for_channel(channel_id).await {
+        Ok(seq) => seq,
+        Err(err) => {
+            tracing::error!(?err, channel_id = %channel_id, "failed to resolve latest sequence");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+    };
+
+    let requested = body.sequence.unwrap_or(latest_sequence);
+    let sequence = requested.clamp(0, latest_sequence);
+
+    if let Err(err) = messaging
+        .update_last_read_sequence(channel_id, claims.user_id, sequence)
+        .await
+    {
+        tracing::error!(?err, channel_id = %channel_id, user_id = %claims.user_id, "failed to update last read sequence");
+        let status = StatusCode::INTERNAL_SERVER_ERROR;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    }
+
+    let entry = ChannelUnreadEntry {
+        channel_id,
+        last_read_sequence: sequence,
+        latest_sequence,
+        unread: (latest_sequence - sequence).max(0),
+    };
+
+    #[cfg(feature = "metrics")]
+    state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
+
+    Ok(Json(entry))
+}
+
+#[cfg_attr(not(feature = "metrics"), allow(unused_variables))]
+pub async fn list_unread_states(
+    matched_path: MatchedPath,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ChannelUnreadEntry>>, StatusCode> {
+    let Some(messaging) = state.messaging() else {
+        let status = StatusCode::SERVICE_UNAVAILABLE;
+        #[cfg(feature = "metrics")]
+        state.record_http_request(matched_path.as_str(), status.as_u16());
+        return Err(status);
+    };
+
+    let claims = match session::authenticate_bearer(&state, &headers) {
+        Ok(claims) => claims,
+        Err(status) => {
+            if status == StatusCode::UNAUTHORIZED {
+                state.record_messaging_rejection("unauthorized");
+            }
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+    };
+
+    #[cfg(not(feature = "metrics"))]
+    let _ = matched_path;
+
+    let states = match messaging.user_channel_unread(claims.user_id).await {
+        Ok(states) => states,
+        Err(err) => {
+            tracing::error!(?err, user_id = %claims.user_id, "failed to load unread states");
+            let status = StatusCode::INTERNAL_SERVER_ERROR;
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
+        }
+    };
+
+    #[cfg(feature = "metrics")]
+    state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
+
+    Ok(Json(
+        states
+            .into_iter()
+            .map(|state| ChannelUnreadEntry {
+                channel_id: state.channel_id,
+                last_read_sequence: state.last_read_sequence,
+                latest_sequence: state.latest_sequence,
+                unread: (state.latest_sequence - state.last_read_sequence).max(0),
+            })
+            .collect(),
+    ))
+}
 #[derive(Debug, Deserialize)]
 pub struct ChannelSocketQuery {
     pub access_token: Option<String>,

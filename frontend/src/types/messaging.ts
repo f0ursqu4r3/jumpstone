@@ -64,6 +64,13 @@ export interface NotificationEventEnvelope {
   event: Record<string, unknown>
 }
 
+export interface ChannelUnreadState {
+  channel_id: string
+  last_read_sequence: number
+  latest_sequence: number
+  unread: number
+}
+
 export interface TimelineMessage {
   id: string
   localId?: string

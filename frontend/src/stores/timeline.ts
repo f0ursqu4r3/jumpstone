@@ -441,6 +441,8 @@ export const useTimelineStore = defineStore('timeline', () => {
   const timelineFor = (channelId: string) =>
     computed<TimelineEntry[]>(() => eventsByChannel.value[channelId] ?? [])
 
+  const getCommittedSequence = (channelId: string) => committedSequenceForChannel(channelId)
+
   return {
     eventsByChannel,
     loadingByChannel,
@@ -460,5 +462,6 @@ export const useTimelineStore = defineStore('timeline', () => {
     timelineFor,
     isLoading,
     errorForChannel,
+    getCommittedSequence,
   }
 })

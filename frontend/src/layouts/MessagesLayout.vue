@@ -92,6 +92,7 @@ const channels = computed(() =>
     icon:
       channel.icon ??
       (channel.kind === 'voice' ? 'i-heroicons-speaker-wave' : 'i-heroicons-hashtag'),
+    unread: channelStore.unreadCount(channel.id),
   })),
 )
 

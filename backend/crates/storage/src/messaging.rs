@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use sqlx::FromRow;
+use sqlx::{FromRow, Row};
 use uuid::Uuid;
 
 use crate::StoragePool;
@@ -70,6 +70,13 @@ pub struct ChannelMembershipSummary {
     pub channel_name: String,
     pub role: String,
     pub joined_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChannelUnreadState {
+    pub channel_id: Uuid,
+    pub last_read_sequence: i64,
+    pub latest_sequence: i64,
 }
 
 impl MessagingRepository {
@@ -254,6 +261,82 @@ impl MessagingRepository {
         .fetch_all(self.pool.pool())
         .await?;
         Ok(ids)
+    }
+
+    pub async fn latest_sequence_for_channel(&self, channel_id: Uuid) -> Result<i64> {
+        let value = sqlx::query_scalar::<_, Option<i64>>(
+            r#"
+            SELECT MAX(sequence)
+            FROM channel_events
+            WHERE channel_id = $1
+            "#,
+        )
+        .bind(channel_id)
+        .fetch_optional(self.pool.pool())
+        .await?
+        .flatten()
+        .unwrap_or(0);
+        Ok(value)
+    }
+
+    pub async fn update_last_read_sequence(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO channel_read_state (channel_id, user_id, last_read_sequence)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (channel_id, user_id)
+            DO UPDATE
+            SET last_read_sequence = GREATEST(channel_read_state.last_read_sequence, EXCLUDED.last_read_sequence),
+                updated_at = NOW()
+            "#,
+        )
+        .bind(channel_id)
+        .bind(user_id)
+        .bind(sequence)
+        .execute(self.pool.pool())
+        .await?;
+        Ok(())
+    }
+
+    pub async fn user_channel_unread(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ChannelUnreadState>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                cm.channel_id,
+                COALESCE(crs.last_read_sequence, 0) AS last_read_sequence,
+                COALESCE(le.latest_sequence, 0) AS latest_sequence
+            FROM channel_memberships cm
+            LEFT JOIN channel_read_state crs
+                ON crs.channel_id = cm.channel_id
+               AND crs.user_id = $1
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(MAX(sequence), 0) AS latest_sequence
+                FROM channel_events
+                WHERE channel_id = cm.channel_id
+            ) le ON TRUE
+            WHERE cm.user_id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(self.pool.pool())
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ChannelUnreadState {
+                channel_id: row.get("channel_id"),
+                last_read_sequence: row.get::<i64, _>("last_read_sequence"),
+                latest_sequence: row.get::<i64, _>("latest_sequence"),
+            })
+            .collect())
     }
 
     pub async fn upsert_guild_membership(

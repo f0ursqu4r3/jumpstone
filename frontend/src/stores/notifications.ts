@@ -113,6 +113,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       ...latestSequenceByChannel.value,
       [event.channel_id]: event.sequence,
     }
+    channelStore.updateLatestSequence(event.channel_id, event.sequence)
   }
 
   const normalizeChannelRecord = (value: Record<string, unknown>): ChannelRecord | null => {

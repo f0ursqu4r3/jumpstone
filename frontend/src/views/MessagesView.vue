@@ -63,6 +63,19 @@ const typingPreview = ref<string | null>(null)
 let typingPreviewTimer: ReturnType<typeof setTimeout> | null = null
 const loadedChannels = new Set<string>()
 
+const markActiveChannelRead = () => {
+  const channelId = activeChannelIdRef.value
+  if (!channelId) {
+    return
+  }
+  const sequence = timelineStore.getCommittedSequence(channelId)
+  if (sequence !== null && typeof sequence !== 'undefined') {
+    channelStore.markChannelReadRemote(channelId, sequence).catch((err) => {
+      console.warn('Failed to persist read state', err)
+    })
+  }
+}
+
 watch(
   () => activeChannelIdRef.value,
   async (channelId) => {
@@ -78,6 +91,14 @@ watch(
     } catch (err) {
       console.warn('Failed to load channel timeline', err)
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [activeChannelIdRef.value, timelineEvents.value.length],
+  () => {
+    markActiveChannelRead()
   },
   { immediate: true },
 )
@@ -124,6 +145,19 @@ watch(
     } else {
       notificationStore.disconnect()
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => isAuthenticatedRef.value,
+  (authenticated) => {
+    if (!authenticated) {
+      return
+    }
+    channelStore.syncUnreadState().catch((err) => {
+      console.warn('Failed to sync unread counts', err)
+    })
   },
   { immediate: true },
 )

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 
 import { useApiClient } from '@/composables/useApiClient'
 import { extractErrorMessage } from '@/utils/errors'
-import type { ChannelRecord } from '~/types/messaging'
+import type { ChannelRecord, ChannelUnreadState } from '~/types/messaging'
 
 export type ChannelKind = 'text' | 'voice'
 
@@ -47,6 +47,8 @@ export const useChannelStore = defineStore('channels', () => {
   const lastFetchedAt = ref<number | null>(null)
   const inFlightFetches = new Map<string, Promise<void>>()
   const guildFetchTimestamps = ref<Record<string, number>>({})
+  const latestSequenceByChannel = ref<Record<string, number>>({})
+  const lastReadSequenceByChannel = ref<Record<string, number>>({})
 
   const channelsForGuild = computed(() => {
     if (!activeGuildId.value) {
@@ -165,6 +167,7 @@ export const useChannelStore = defineStore('channels', () => {
 
     activeChannelId.value = channelId
     error.value = null
+    markChannelRead(channelId)
   }
 
   function ensureActiveChannelForGuild(guildId: string) {
@@ -204,6 +207,86 @@ export const useChannelStore = defineStore('channels', () => {
 
     if (summary.guildId === activeGuildId.value) {
       ensureActiveChannelForGuild(summary.guildId)
+    }
+  }
+
+  function updateLatestSequence(channelId: string, sequence: number) {
+    const current = latestSequenceByChannel.value[channelId] ?? 0
+    if (sequence <= current) {
+      return
+    }
+    latestSequenceByChannel.value = {
+      ...latestSequenceByChannel.value,
+      [channelId]: sequence,
+    }
+  }
+
+  function markChannelRead(channelId: string, sequence?: number | null) {
+    const targetSequence =
+      typeof sequence === 'number'
+        ? sequence
+        : latestSequenceByChannel.value[channelId] ?? 0
+    const current = lastReadSequenceByChannel.value[channelId] ?? 0
+    if (targetSequence <= current) {
+      return
+    }
+    lastReadSequenceByChannel.value = {
+      ...lastReadSequenceByChannel.value,
+      [channelId]: targetSequence,
+    }
+  }
+
+  function unreadCount(channelId: string) {
+    const latest = latestSequenceByChannel.value[channelId] ?? 0
+    if (!latest) {
+      return 0
+    }
+    const read = lastReadSequenceByChannel.value[channelId] ?? 0
+    return Math.max(0, latest - read)
+  }
+
+  async function syncUnreadState() {
+    const api = useApiClient()
+    try {
+      const payload = await api<ChannelUnreadState[]>('/channels/unread')
+      payload.forEach((entry) => {
+        latestSequenceByChannel.value = {
+          ...latestSequenceByChannel.value,
+          [entry.channel_id]: entry.latest_sequence,
+        }
+        lastReadSequenceByChannel.value = {
+          ...lastReadSequenceByChannel.value,
+          [entry.channel_id]: entry.last_read_sequence,
+        }
+      })
+    } catch (err) {
+      console.warn('Failed to sync unread state', err)
+    }
+  }
+
+  async function markChannelReadRemote(channelId: string, sequence?: number | null) {
+    const targetSequence =
+      typeof sequence === 'number'
+        ? sequence
+        : latestSequenceByChannel.value[channelId] ?? 0
+    const current = lastReadSequenceByChannel.value[channelId] ?? 0
+    if (targetSequence <= current) {
+      return
+    }
+
+    markChannelRead(channelId, targetSequence)
+
+    const api = useApiClient()
+    try {
+      await api(`/channels/${channelId}/read`, {
+        method: 'POST',
+        body: JSON.stringify({ sequence: targetSequence }),
+        headers: {
+          'content-type': 'application/json',
+        },
+      })
+    } catch (err) {
+      console.warn('Failed to persist read state', err)
     }
   }
 
@@ -259,5 +342,10 @@ export const useChannelStore = defineStore('channels', () => {
     createChannel,
     channelById,
     upsertChannelRecord,
+    updateLatestSequence,
+    markChannelRead,
+    unreadCount,
+    syncUnreadState,
+    markChannelReadRemote,
   }
 })
