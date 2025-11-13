@@ -36,7 +36,7 @@ use serde::Serialize;
 use std::{
     future::Future,
     pin::Pin,
-    task::{Context, Poll},
+    task::{Context as TaskContext, Poll},
 };
 use std::{
     net::SocketAddr,
@@ -1266,7 +1266,7 @@ struct MetricsRecorderService<S> {
 #[cfg(feature = "metrics")]
 impl<S, B> tower::Service<axum::http::Request<B>> for MetricsRecorderService<S>
 where
-    S: tower::Service<axum::http::Request<B>>,
+    S: tower::Service<axum::http::Request<B>, Response = axum::response::Response>,
     S::Future: Send + 'static,
     B: Send + 'static,
 {
@@ -1274,7 +1274,7 @@ where
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut TaskContext<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
