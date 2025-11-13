@@ -79,7 +79,11 @@ export const useChannelStore = defineStore('channels', () => {
     return Date.now() - lastFetched < FETCH_TTL_MS
   }
 
-  async function fetchChannelsForGuild(guildId: string, force = false) {
+  async function fetchChannelsForGuild(
+    guildId: string,
+    force = false,
+    options?: { silent?: boolean },
+  ) {
     if (!guildId) {
       return
     }
@@ -93,7 +97,10 @@ export const useChannelStore = defineStore('channels', () => {
     }
 
     const api = useApiClient()
-    loading.value = true
+    const silent = Boolean(options?.silent)
+    if (!silent) {
+      loading.value = true
+    }
     error.value = null
 
     const request = (async () => {
@@ -117,7 +124,9 @@ export const useChannelStore = defineStore('channels', () => {
         error.value = extractErrorMessage(err) || 'Failed to load channels'
         throw err
       } finally {
-        loading.value = false
+        if (!silent) {
+          loading.value = false
+        }
         inFlightFetches.delete(guildId)
       }
     })()

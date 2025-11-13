@@ -303,10 +303,28 @@ impl MessagingRepository {
         Ok(())
     }
 
-    pub async fn user_channel_unread(
+    pub async fn ensure_read_state(
         &self,
+        channel_id: Uuid,
         user_id: Uuid,
-    ) -> Result<Vec<ChannelUnreadState>> {
+        sequence: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO channel_read_state (channel_id, user_id, last_read_sequence)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (channel_id, user_id) DO NOTHING
+            "#,
+        )
+        .bind(channel_id)
+        .bind(user_id)
+        .bind(sequence)
+        .execute(self.pool.pool())
+        .await?;
+        Ok(())
+    }
+
+    pub async fn user_channel_unread(&self, user_id: Uuid) -> Result<Vec<ChannelUnreadState>> {
         let rows = sqlx::query(
             r#"
             SELECT

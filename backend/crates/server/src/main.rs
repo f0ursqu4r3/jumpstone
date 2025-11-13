@@ -1115,7 +1115,10 @@ fn build_app(state: AppState) -> Router {
             post(messaging::post_message),
         )
         .route("/channels/{channel_id}/events", get(messaging::list_events))
-        .route("/channels/{channel_id}/read", post(messaging::mark_channel_read))
+        .route(
+            "/channels/{channel_id}/read",
+            post(messaging::mark_channel_read),
+        )
         .route("/channels/unread", get(messaging::list_unread_states))
         .route("/channels/{channel_id}/ws", get(messaging::channel_socket))
         .route("/notifications/ws", get(messaging::notification_socket));

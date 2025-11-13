@@ -96,11 +96,14 @@ pub trait ChannelStore: Send + Sync {
     async fn channel_exists(&self, channel_id: Uuid) -> Result<bool, MessagingError>;
     async fn user_ids_for_channel(&self, channel_id: Uuid) -> Result<Vec<Uuid>, MessagingError>;
     async fn user_ids_for_guild(&self, guild_id: Uuid) -> Result<Vec<Uuid>, MessagingError>;
-    async fn latest_sequence_for_channel(
+    async fn latest_sequence_for_channel(&self, channel_id: Uuid) -> Result<i64, MessagingError>;
+    async fn update_last_read_sequence(
         &self,
         channel_id: Uuid,
-    ) -> Result<i64, MessagingError>;
-    async fn update_last_read_sequence(
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<(), MessagingError>;
+    async fn ensure_read_state(
         &self,
         channel_id: Uuid,
         user_id: Uuid,
@@ -229,6 +232,17 @@ impl ChannelStore for MessagingRepository {
         sequence: i64,
     ) -> Result<(), MessagingError> {
         MessagingRepository::update_last_read_sequence(self, channel_id, user_id, sequence)
+            .await
+            .map_err(MessagingError::from)
+    }
+
+    async fn ensure_read_state(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<(), MessagingError> {
+        MessagingRepository::ensure_read_state(self, channel_id, user_id, sequence)
             .await
             .map_err(MessagingError::from)
     }
@@ -486,6 +500,17 @@ impl ChannelStore for InMemoryMessaging {
         if sequence > *entry {
             *entry = sequence;
         }
+        Ok(())
+    }
+
+    async fn ensure_read_state(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        sequence: i64,
+    ) -> Result<(), MessagingError> {
+        let mut reads = self.channel_reads.write().await;
+        reads.entry((channel_id, user_id)).or_insert(sequence);
         Ok(())
     }
 
@@ -910,6 +935,31 @@ impl MessagingService {
             .await
     }
 
+    pub async fn ensure_channel_access(
+        &self,
+        channel_id: Uuid,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<(), MessagingError> {
+        let _ = self
+            .upsert_channel_membership(channel_id, user_id, role)
+            .await?;
+        let latest = match self.latest_sequence_for_channel(channel_id).await {
+            Ok(sequence) => sequence,
+            Err(err) => {
+                tracing::debug!(
+                    ?err,
+                    channel_id = %channel_id,
+                    "failed to resolve latest sequence while bootstrapping membership"
+                );
+                0
+            }
+        };
+        self.store
+            .ensure_read_state(channel_id, user_id, latest)
+            .await
+    }
+
     pub async fn channel_memberships_for_user(
         &self,
         user_id: Uuid,
@@ -1027,11 +1077,22 @@ impl MessagingService {
                     guild_id = %guild_id,
                     "failed to load guild members for notification delivery"
                 );
-                return;
+                Vec::new()
             }
         };
 
         let map = self.notification_channels.read().await;
+
+        if user_ids.is_empty() {
+            for sender in map.values() {
+                if sender.receiver_count() == 0 {
+                    continue;
+                }
+                let _ = sender.send(notification.clone());
+            }
+            return;
+        }
+
         for user_id in user_ids {
             if let Some(sender) = map.get(&user_id) {
                 if sender.receiver_count() == 0 {
@@ -1467,14 +1528,17 @@ pub async fn create_channel(
         return Err(status);
     };
 
-    if let Err(status) = session::authenticate_bearer(&state, &headers) {
-        if status == StatusCode::UNAUTHORIZED {
-            state.record_messaging_rejection("unauthorized");
+    let claims = match session::authenticate_bearer(&state, &headers) {
+        Ok(claims) => claims,
+        Err(status) => {
+            if status == StatusCode::UNAUTHORIZED {
+                state.record_messaging_rejection("unauthorized");
+            }
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
         }
-        #[cfg(feature = "metrics")]
-        state.record_http_request(matched_path.as_str(), status.as_u16());
-        return Err(status);
-    }
+    };
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
@@ -1505,6 +1569,17 @@ pub async fn create_channel(
 
     match messaging.create_channel(guild_id, name).await {
         Ok(channel) => {
+            if let Err(err) = messaging
+                .ensure_channel_access(channel.channel_id, claims.user_id, "moderator")
+                .await
+            {
+                tracing::debug!(
+                    ?err,
+                    channel_id = %channel.channel_id,
+                    user_id = %claims.user_id,
+                    "failed to bootstrap channel membership for creator"
+                );
+            }
             #[cfg(feature = "metrics")]
             state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
             Ok(Json(CreateChannelResponse {
@@ -1543,20 +1618,36 @@ pub async fn list_channels(
         return Err(status);
     };
 
-    if let Err(status) = session::authenticate_bearer(&state, &headers) {
-        if status == StatusCode::UNAUTHORIZED {
-            state.record_messaging_rejection("unauthorized");
+    let claims = match session::authenticate_bearer(&state, &headers) {
+        Ok(claims) => claims,
+        Err(status) => {
+            if status == StatusCode::UNAUTHORIZED {
+                state.record_messaging_rejection("unauthorized");
+            }
+            #[cfg(feature = "metrics")]
+            state.record_http_request(matched_path.as_str(), status.as_u16());
+            return Err(status);
         }
-        #[cfg(feature = "metrics")]
-        state.record_http_request(matched_path.as_str(), status.as_u16());
-        return Err(status);
-    }
+    };
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
 
     match messaging.list_channels(guild_id).await {
         Ok(channels) => {
+            for channel in &channels {
+                if let Err(err) = messaging
+                    .ensure_channel_access(channel.channel_id, claims.user_id, "member")
+                    .await
+                {
+                    tracing::debug!(
+                        ?err,
+                        channel_id = %channel.channel_id,
+                        user_id = %claims.user_id,
+                        "failed to bootstrap channel membership from list"
+                    );
+                }
+            }
             #[cfg(feature = "metrics")]
             state.record_http_request(matched_path.as_str(), StatusCode::OK.as_u16());
             Ok(Json(
@@ -2199,5 +2290,82 @@ pub fn init_messaging_service(
         MessagingService::new_with_pool(pool, origin)
     } else {
         MessagingService::new_in_memory(origin)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openguild_core::messaging::MessageAuthorSnapshot;
+
+    #[tokio::test]
+    async fn ensure_channel_access_enrolls_membership_and_reads() {
+        let service = MessagingService::new_in_memory("local.test".to_string());
+        let guild = service.create_guild("Notifications").await.unwrap();
+        let channel = service
+            .create_channel(guild.guild_id, "general")
+            .await
+            .unwrap();
+        let user_id = Uuid::new_v4();
+        let author = MessageAuthorSnapshot {
+            id: user_id.to_string(),
+            username: "tester".into(),
+            display_name: None,
+        };
+
+        service
+            .append_message(channel.channel_id, &author, "hello world")
+            .await
+            .unwrap();
+
+        assert!(service
+            .user_channel_unread(user_id)
+            .await
+            .unwrap()
+            .is_empty());
+
+        service
+            .ensure_channel_access(channel.channel_id, user_id, "member")
+            .await
+            .unwrap();
+
+        let unread = service.user_channel_unread(user_id).await.unwrap();
+        assert_eq!(unread.len(), 1);
+        let entry = &unread[0];
+        assert_eq!(entry.channel_id, channel.channel_id);
+        assert_eq!(entry.latest_sequence, entry.last_read_sequence);
+    }
+
+    #[tokio::test]
+    async fn guild_notifications_broadcast_when_membership_unknown() {
+        let service = MessagingService::new_in_memory("local.test".to_string());
+        let guild = service.create_guild("Guild").await.unwrap();
+        let channel = service
+            .create_channel(guild.guild_id, "updates")
+            .await
+            .unwrap();
+
+        let user_id = Uuid::new_v4();
+        let sender = service.notification_sender(user_id).await;
+        let mut rx = sender.subscribe();
+
+        let notification = Arc::new(NotificationEvent {
+            kind: "channel_created".to_string(),
+            channel_id: Some(channel.channel_id),
+            guild_id: Some(guild.guild_id),
+            sequence: None,
+            event: json!({
+                "channel_id": channel.channel_id,
+                "guild_id": guild.guild_id,
+                "name": channel.name,
+            }),
+        });
+
+        service
+            .notify_guild_members(guild.guild_id, notification)
+            .await;
+
+        let delivered = rx.recv().await.expect("notification delivered");
+        assert_eq!(delivered.kind, "channel_created");
     }
 }

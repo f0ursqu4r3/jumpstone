@@ -188,10 +188,7 @@ const groupedChannels = computed(() => {
             New channel
           </Button>
         </UTooltip>
-        <p
-          v-if="createChannelDisabledMessage"
-          class="mt-2 text-xs text-amber-200/70"
-        >
+        <p v-if="createChannelDisabledMessage" class="mt-2 text-xs text-amber-200/70">
           {{ createChannelDisabledMessage }}
         </p>
       </div>
@@ -216,25 +213,22 @@ const groupedChannels = computed(() => {
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
             {{ group.label }}
           </p>
-          <ul>
+          <ul class="flex flex-col gap-1">
             <li v-for="channel in group.children" :key="channel.id">
               <button
                 type="button"
-                class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                class="flex w-full items-center justify-between rounded-md px-3 py-1 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 cursor-pointer"
                 :class="[
                   channel.active
                     ? 'bg-slate-800 text-white shadow-inner shadow-sky-500/10'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                    : 'text-slate-500 hover:bg-slate-800 hover:text-white',
                 ]"
                 @click="emit('select-channel', channel.id)"
               >
                 <div class="flex items-center gap-2 text-left">
                   <UIcon :name="channel.icon" class="size-4 shrink-0" />
                   <div class="flex flex-col text-left">
-                    <span>{{ channel.label }}</span>
-                    <span v-if="channel.description" class="text-xs text-slate-500">
-                      {{ channel.description }}
-                    </span>
+                    <span>{{ channel.label.replace(/^#/g, '') }}</span>
                   </div>
                 </div>
                 <div v-if="channel.badge">

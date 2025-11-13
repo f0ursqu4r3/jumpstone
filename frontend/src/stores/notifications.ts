@@ -1,5 +1,5 @@
 import { defineStore, storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import { getRuntimeConfig } from '@/config/runtime'
 import { useConnectivityStore } from '@/stores/connectivity'
@@ -71,6 +71,7 @@ export const useNotificationStore = defineStore('notifications', () => {
   const reconnectTimer = ref<ReturnType<typeof setTimeout> | null>(null)
   const shouldConnect = ref(false)
   const closeIntent = ref<'manual' | 'pause' | null>(null)
+  const guildRefreshInFlight = new Map<string, Promise<void>>()
 
   const status = computed(() => state.value.status)
 
@@ -133,6 +134,30 @@ export const useNotificationStore = defineStore('notifications', () => {
     }
   }
 
+  const refreshGuildChannels = (guildId: string | undefined | null) => {
+    const normalized = typeof guildId === 'string' && guildId.length ? guildId : null
+    if (!normalized) {
+      return
+    }
+
+    if (guildRefreshInFlight.has(normalized)) {
+      return guildRefreshInFlight.get(normalized)
+    }
+
+    const refreshPromise = (
+      channelStore.fetchChannelsForGuild(normalized, true, { silent: true }) ?? Promise.resolve()
+    )
+      .catch((err) => {
+        console.warn('Failed to refresh channels after notification', err)
+      })
+      .finally(() => {
+        guildRefreshInFlight.delete(normalized)
+      })
+
+    guildRefreshInFlight.set(normalized, refreshPromise)
+    return refreshPromise
+  }
+
   const recordChannelCreated = (event: NotificationEventEnvelope) => {
     if (!event.event || typeof event.event !== 'object') {
       return
@@ -142,6 +167,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       return
     }
     channelStore.upsertChannelRecord(record)
+    void refreshGuildChannels(record.guild_id)
   }
 
   const handleNotificationEvent = (event: NotificationEventEnvelope) => {
