@@ -119,10 +119,7 @@ fn run_ci_metrics_smoke(workspace_root: &PathBuf) -> bool {
         }
     };
 
-    let result = match Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-    {
+    let result = match Client::builder().timeout(Duration::from_secs(5)).build() {
         Ok(client) => {
             let base_url = format!("http://{bind_addr}");
             let ready_url = format!("{base_url}/{READY_PATH}");
@@ -196,11 +193,7 @@ fn verify_metrics(client: &Client, url: &str) -> bool {
     }
 }
 
-
-fn run_commands<const N: usize>(
-    workspace_root: &PathBuf,
-    commands: [(&str, &[&str]); N],
-) -> bool {
+fn run_commands<const N: usize>(workspace_root: &PathBuf, commands: [(&str, &[&str]); N]) -> bool {
     for (program, args) in commands {
         let status = Command::new(program)
             .args(args)
@@ -210,7 +203,10 @@ fn run_commands<const N: usize>(
         match status {
             Ok(status) if status.success() => {}
             Ok(status) => {
-                eprintln!("command '{program} {}' failed with {status}", args.join(" "));
+                eprintln!(
+                    "command '{program} {}' failed with {status}",
+                    args.join(" ")
+                );
                 return false;
             }
             Err(err) => {
