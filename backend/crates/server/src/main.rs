@@ -1154,7 +1154,7 @@ fn build_app(state: AppState) -> Router {
     let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
 
     let trace_layer = TraceLayer::new_for_http()
-        .make_span_with(HttpSpanMaker::default())
+        .make_span_with(HttpSpanMaker)
         .on_response(HttpOnResponse::new());
 
     let builder = ServiceBuilder::new()
@@ -1318,8 +1318,8 @@ where
             .and_then(|value| value.to_str().ok())
             .unwrap_or("unknown");
 
-        span.record("status_code", &tracing::field::display(status));
-        span.record("latency_ms", &tracing::field::display(latency_ms));
+        span.record("status_code", tracing::field::display(status));
+        span.record("latency_ms", tracing::field::display(latency_ms));
 
         tracing::debug!(
             parent: span,
@@ -1347,7 +1347,7 @@ fn build_subscriber(
     json: bool,
     env_filter: EnvFilter,
 ) -> Box<dyn tracing::Subscriber + Send + Sync> {
-    build_subscriber_inner(json, env_filter, || std::io::stderr())
+    build_subscriber_inner(json, env_filter, std::io::stderr)
 }
 
 #[derive(Default)]
@@ -1454,7 +1454,7 @@ where
         Box::new(
             tracing_subscriber::registry()
                 .with(env_filter)
-                .with(RequestIdStorageLayer::default())
+                .with(RequestIdStorageLayer)
                 .with(
                     tracing_subscriber::fmt::layer()
                         .json()
@@ -1468,7 +1468,7 @@ where
         Box::new(
             tracing_subscriber::registry()
                 .with(env_filter)
-                .with(RequestIdStorageLayer::default())
+                .with(RequestIdStorageLayer)
                 .with(
                     tracing_subscriber::fmt::layer()
                         .event_format(RequestIdEventFormat::new(format))

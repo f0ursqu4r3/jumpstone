@@ -21,32 +21,18 @@ pub enum ConfigError {
     InvalidMlsConfig(String),
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Default)]
 pub enum LogFormat {
+    #[default]
     Compact,
     Json,
 }
 
-impl Default for LogFormat {
-    fn default() -> Self {
-        LogFormat::Compact
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct MetricsConfig {
     pub enabled: bool,
     pub bind_addr: Option<String>,
-}
-
-impl Default for MetricsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            bind_addr: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -67,18 +53,10 @@ impl Default for MessagingConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct FederationConfig {
     pub trusted_servers: Vec<FederatedServerConfig>,
-}
-
-impl Default for FederationConfig {
-    fn default() -> Self {
-        Self {
-            trusted_servers: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -88,7 +66,7 @@ pub struct FederatedServerConfig {
     pub verifying_key: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct SessionConfig {
     /// Base64-encoded ed25519 signing key (32 bytes) used for session token signing.
@@ -96,15 +74,6 @@ pub struct SessionConfig {
     pub active_signing_key: Option<String>,
     /// Optional fallback verifying keys (base64) that remain valid during key rotation.
     pub fallback_verifying_keys: Vec<String>,
-}
-
-impl Default for SessionConfig {
-    fn default() -> Self {
-        Self {
-            active_signing_key: None,
-            fallback_verifying_keys: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -192,7 +161,7 @@ impl ServerConfig {
     }
 
     pub fn log_format(&self) -> LogFormat {
-        self.log_format.clone()
+        self.log_format
     }
 
     pub fn server_name(&self) -> &str {

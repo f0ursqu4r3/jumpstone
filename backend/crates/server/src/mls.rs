@@ -96,7 +96,7 @@ impl StoredKeyPackage {
         }
     }
 
-    fn into_new_package(&self) -> NewMlsKeyPackage {
+    fn to_new_package(&self) -> NewMlsKeyPackage {
         let signing_key = URL_SAFE_NO_PAD.encode(self.signing.to_bytes());
         let verifying_key = URL_SAFE_NO_PAD.encode(verifying_key_from(&self.signing).to_bytes());
         let hpke_public_key = URL_SAFE_NO_PAD.encode(self.hpke_public);
@@ -154,7 +154,7 @@ impl MlsKeyStore {
         for identity in remaining {
             let package = StoredKeyPackage::generate(&identity, &ciphersuite);
             store
-                .record_package(&package.into_new_package())
+                .record_package(&package.to_new_package())
                 .await
                 .with_context(|| format!("persisting MLS package for '{identity}'"))?;
             packages.insert(identity.clone(), package);
@@ -216,7 +216,7 @@ impl MlsKeyStore {
         let new_package = StoredKeyPackage::generate(identity, &self.ciphersuite);
         if let Some(store) = &self.persistence {
             store
-                .record_package(&new_package.into_new_package())
+                .record_package(&new_package.to_new_package())
                 .await
                 .map_err(|err| MlsError::Persistence(err.to_string()))?;
         }
@@ -240,11 +240,12 @@ pub async fn list_key_packages(
         return Err(status);
     };
 
-    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+    session::authenticate_bearer(&state, &headers).inspect_err(|status| {
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
-        return Err(status);
-    }
+        #[cfg(not(feature = "metrics"))]
+        let _ = status;
+    })?;
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
@@ -269,11 +270,12 @@ pub async fn rotate_key_package(
         return Err(status);
     };
 
-    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+    session::authenticate_bearer(&state, &headers).inspect_err(|status| {
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
-        return Err(status);
-    }
+        #[cfg(not(feature = "metrics"))]
+        let _ = status;
+    })?;
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;
@@ -313,11 +315,12 @@ pub async fn handshake_test_vectors(
         return Err(status);
     };
 
-    if let Err(status) = session::authenticate_bearer(&state, &headers) {
+    session::authenticate_bearer(&state, &headers).inspect_err(|status| {
         #[cfg(feature = "metrics")]
         state.record_http_request(matched_path.as_str(), status.as_u16());
-        return Err(status);
-    }
+        #[cfg(not(feature = "metrics"))]
+        let _ = status;
+    })?;
 
     #[cfg(not(feature = "metrics"))]
     let _ = matched_path;

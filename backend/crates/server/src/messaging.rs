@@ -113,6 +113,7 @@ pub trait ChannelStore: Send + Sync {
         &self,
         user_id: Uuid,
     ) -> Result<Vec<ChannelUnreadState>, MessagingError>;
+    #[cfg_attr(not(test), allow(dead_code))]
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -256,6 +257,7 @@ impl ChannelStore for MessagingRepository {
             .map_err(MessagingError::from)
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -527,7 +529,7 @@ impl ChannelStore for InMemoryMessaging {
         let reads = self.channel_reads.read().await;
 
         let mut states = Vec::new();
-        for (channel_id, _) in memberships {
+        for channel_id in memberships.keys() {
             let latest = events
                 .get(channel_id)
                 .and_then(|list| list.iter().map(|event| event.sequence).max())
@@ -543,6 +545,7 @@ impl ChannelStore for InMemoryMessaging {
         Ok(states)
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
@@ -906,6 +909,7 @@ impl MessagingService {
         self.store.channel_exists(channel_id).await
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn upsert_guild_membership(
         &self,
         guild_id: Uuid,
