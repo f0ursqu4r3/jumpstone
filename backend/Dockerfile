@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM rust:1.82-bookworm AS builder
+FROM rust:trixie AS builder
 
 WORKDIR /workspace
 
