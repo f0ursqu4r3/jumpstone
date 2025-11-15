@@ -31,7 +31,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 futures = "0.3"
 tower = { version = "0.5.2", features = ["util"] }
-tower-http = { version = "0.6.6", features = ["request-id", "trace", "propagate-header", "set-header"] }
+tower-http = { version = "0.6.6", features = ["request-id", "trace", "propagate-header", "set-header", "cors"] }
 rand = "0.9.2"
 
 [dev-dependencies]

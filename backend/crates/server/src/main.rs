@@ -21,7 +21,7 @@ use anyhow::{anyhow, Result};
 use axum::{
     body::HttpBody,
     extract::{MatchedPath, Path, Query, State},
-    http::{header::HeaderName, HeaderMap, HeaderValue},
+    http::{header::HeaderName, HeaderMap, HeaderValue, Method},
     routing::{get, post},
     Json, Router,
 };
@@ -48,13 +48,14 @@ use tokio::sync::Notify;
 use tokio::{net::TcpListener, signal};
 use tower::ServiceBuilder;
 use tower_http::{
+    cors::{AllowOrigin, Any, CorsLayer},
     propagate_header::PropagateHeaderLayer,
     request_id::{MakeRequestUuid, RequestId, SetRequestIdLayer},
     set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 use tracing::field::{Field, Visit};
-use tracing::{error, info, Event, Subscriber};
+use tracing::{error, info, warn, Event, Subscriber};
 use tracing_subscriber::fmt::{
     format::Format as FmtFormat, format::Writer as FmtWriter, writer::MakeWriter, FmtContext,
     FormatEvent, FormatFields,
@@ -1152,6 +1153,7 @@ fn build_app(state: AppState) -> Router {
     router = router.nest("/client/v1", client_v1_routes);
 
     let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
+    let cors_layer = build_cors_layer(state.config.as_ref(), request_id_header.clone());
 
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(HttpSpanMaker)
@@ -1176,7 +1178,8 @@ fn build_app(state: AppState) -> Router {
         ))
         .layer(PropagateHeaderLayer::new(request_id_header.clone()))
         .layer(trace_layer)
-        .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid));
+        .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid))
+        .layer(cors_layer);
 
     #[cfg(feature = "metrics")]
     let builder = builder.layer(MetricsRecorderLayer::new(metrics_ctx.clone()));
@@ -1186,6 +1189,49 @@ fn build_app(state: AppState) -> Router {
     let router = router.layer(instrumentation_layers);
 
     router.with_state(state)
+}
+
+fn build_cors_layer(config: &ServerConfig, request_id_header: HeaderName) -> CorsLayer {
+    let allow_origin = resolve_cors_allowed_origins(&config.cors.allowed_origins);
+
+    CorsLayer::new()
+        .allow_origin(allow_origin)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers(Any)
+        .expose_headers([request_id_header])
+}
+
+fn resolve_cors_allowed_origins(origins: &[String]) -> AllowOrigin {
+    if origins.is_empty() || origins.iter().any(|origin| origin == "*") {
+        return AllowOrigin::any();
+    }
+
+    let mut values = Vec::with_capacity(origins.len());
+    for origin in origins {
+        match HeaderValue::from_str(origin) {
+            Ok(value) => values.push(value),
+            Err(err) => {
+                warn!(
+                    %origin,
+                    ?err,
+                    "ignoring invalid CORS origin in configuration"
+                );
+            }
+        }
+    }
+
+    if values.is_empty() {
+        AllowOrigin::any()
+    } else {
+        AllowOrigin::list(values)
+    }
 }
 
 #[derive(Clone, Default)]

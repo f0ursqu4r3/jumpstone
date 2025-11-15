@@ -35,6 +35,12 @@ pub struct MetricsConfig {
     pub bind_addr: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[serde(default)]
+pub struct CorsConfig {
+    pub allowed_origins: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct MessagingConfig {
@@ -85,6 +91,7 @@ pub struct ServerConfig {
     pub port: u16,
     pub log_format: LogFormat,
     pub metrics: MetricsConfig,
+    pub cors: CorsConfig,
     pub messaging: MessagingConfig,
     pub federation: FederationConfig,
     pub mls: MlsConfig,
@@ -101,6 +108,7 @@ impl Default for ServerConfig {
             port: 8080,
             log_format: LogFormat::Compact,
             metrics: MetricsConfig::default(),
+            cors: CorsConfig::default(),
             messaging: MessagingConfig::default(),
             federation: FederationConfig::default(),
             mls: MlsConfig::default(),
@@ -372,6 +380,7 @@ mod tests {
         assert!(config.database_url.is_none());
         assert!(config.session.active_signing_key.is_none());
         assert!(config.session.fallback_verifying_keys.is_empty());
+        assert!(config.cors.allowed_origins.is_empty());
     }
 
     #[test]
