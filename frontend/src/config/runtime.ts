@@ -4,13 +4,35 @@ export interface RuntimeConfig {
   }
 }
 
+const sanitizeExplicitBase = (raw?: string | null): string | null => {
+  if (!raw) {
+    return null
+  }
+  const trimmed = raw.trim().replace(/\/+$/, '')
+  if (!trimmed.length) {
+    return null
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed
+  }
+  if (trimmed.startsWith('//')) {
+    return `https:${trimmed}`
+  }
+  if (trimmed.startsWith('/')) {
+    return trimmed
+  }
+
+  // Treat bare hostnames like "api.example.com" as HTTPS URLs.
+  return `https://${trimmed}`
+}
+
 export const getRuntimeConfig = (): RuntimeConfig => {
-  const explicitBase = import.meta.env.VITE_API_BASE_URL?.toString().trim()
+  const explicitBase = sanitizeExplicitBase(import.meta.env.VITE_API_BASE_URL)
 
   let apiBaseUrl: string
 
   if (explicitBase && explicitBase.length) {
-    apiBaseUrl = explicitBase.replace(/\/+$/, '')
+    apiBaseUrl = explicitBase
   } else if (import.meta.env.DEV) {
     apiBaseUrl = '/api'
   } else {
