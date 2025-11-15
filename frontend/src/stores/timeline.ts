@@ -27,19 +27,85 @@ export interface TimelineEntry extends ChannelEventEnvelope {
   ackedAt?: number | null
 }
 
+const extractMessageText = (content: unknown): string | null => {
+  if (!content || typeof content !== 'object') {
+    return null
+  }
+  const payload = content as { content?: unknown; body?: unknown; text?: unknown }
+  const source =
+    typeof payload.content === 'string'
+      ? payload.content
+      : typeof payload.body === 'string'
+        ? payload.body
+        : typeof payload.text === 'string'
+          ? payload.text
+          : null
+
+  if (typeof source !== 'string') {
+    return null
+  }
+
+  const trimmed = source.trim()
+  return trimmed.length ? trimmed : ''
+}
+
+const extractAuthorId = (content: unknown): string | null => {
+  if (!content || typeof content !== 'object') {
+    return null
+  }
+  const rawAuthor = (content as { author?: unknown }).author
+  if (!rawAuthor || typeof rawAuthor !== 'object') {
+    return null
+  }
+  const candidate = rawAuthor as { id?: unknown; user_id?: unknown }
+  const id =
+    typeof candidate.id === 'string' && candidate.id.trim().length
+      ? candidate.id.trim()
+      : typeof candidate.user_id === 'string' && candidate.user_id.trim().length
+        ? candidate.user_id.trim()
+        : null
+  return id && id.length ? id : null
+}
+
+const safeStringify = (value: unknown): string | null => {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
+}
+
 const isSameContent = (a: ChannelEventEnvelope, b: ChannelEventEnvelope) => {
   if (a.event.event_type !== b.event.event_type) {
     return false
   }
-  if (a.event.sender !== b.event.sender) {
+
+  const senderA = typeof a.event.sender === 'string' ? a.event.sender.trim() : ''
+  const senderB = typeof b.event.sender === 'string' ? b.event.sender.trim() : ''
+  if (senderA !== senderB) {
     return false
   }
 
-  try {
-    return JSON.stringify(a.event.content) === JSON.stringify(b.event.content)
-  } catch {
+  const aText = extractMessageText(a.event.content)
+  const bText = extractMessageText(b.event.content)
+  const aAuthor = extractAuthorId(a.event.content)
+  const bAuthor = extractAuthorId(b.event.content)
+
+  if (aAuthor && bAuthor && aAuthor !== bAuthor) {
     return false
   }
+
+  if (aText !== null || bText !== null) {
+    return (aText ?? '') === (bText ?? '')
+  }
+
+  const serializedA = safeStringify(a.event.content)
+  const serializedB = safeStringify(b.event.content)
+  if (serializedA && serializedB) {
+    return serializedA === serializedB
+  }
+
+  return false
 }
 
 export const useTimelineStore = defineStore('timeline', () => {
@@ -339,7 +405,11 @@ export const useTimelineStore = defineStore('timeline', () => {
     replaceChannelEvents(channelId, next)
   }
 
-  function markOptimisticPending(channelId: string, localId: string, message: string | null = null) {
+  function markOptimisticPending(
+    channelId: string,
+    localId: string,
+    message: string | null = null,
+  ) {
     const existing = eventsByChannel.value[channelId]
     if (!existing) {
       return
@@ -422,7 +492,7 @@ export const useTimelineStore = defineStore('timeline', () => {
       return
     }
     const nextContent = {
-      ...(target.event.content ?? {}),
+      ...target.event.content,
       content,
     }
     const updated: TimelineEntry = {

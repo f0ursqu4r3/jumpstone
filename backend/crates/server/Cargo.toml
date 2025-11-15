@@ -4,6 +4,7 @@ version = "0.0.1"
 edition = "2021"
 description = "HTTP and WebSocket gateway for the OpenGuild homeserver"
 license = "AGPL-3.0-or-later"
+default-run = "openguild-server"
 
 [features]
 default = []

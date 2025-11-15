@@ -71,8 +71,9 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
   const { online } = storeToRefs(connectivityStore)
   const { profile, displayName, identifier, isAuthenticated } = storeToRefs(sessionStore)
 
-  const queuedCount = computed(() =>
-    queue.value.filter((entry) => entry.status === 'queued' || entry.status === 'failed').length,
+  const queuedCount = computed(
+    () =>
+      queue.value.filter((entry) => entry.status === 'queued' || entry.status === 'failed').length,
   )
   const hasFailures = computed(() => queue.value.some((entry) => entry.status === 'failed'))
 
@@ -102,7 +103,7 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
 
   const api = () => useApiClient()
 
-  const trimContent = (value: string) => value.replace(/\s+$/, '')
+  const trimContent = (value: string) => value.trim()
 
   const validateContent = (content: string) => {
     const trimmed = content.trim()
@@ -154,17 +155,14 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
         content: entry.content,
       }
 
-      const response = await api()<MessageCreateResponse>(
-        `/channels/${entry.channelId}/messages`,
-        {
-          method: 'POST',
-          body: JSON.stringify(payload),
-          headers: {
-            'content-type': 'application/json',
-            'x-request-id': requestId,
-          },
+      const response = await api()<MessageCreateResponse>(`/channels/${entry.channelId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': requestId,
         },
-      )
+      })
 
       timelineStore.markOptimisticSequence(entry.channelId, entry.optimisticId, response.sequence)
       removeFromQueue(entry.id)
@@ -173,8 +171,7 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
       return true
     } catch (err) {
       const message =
-        extractErrorMessage(err) ||
-        'Message failed to send. Check your connection and try again.'
+        extractErrorMessage(err) || 'Message failed to send. Check your connection and try again.'
       applyFailure(entry, message)
       const hasResponse = Boolean((err as { response?: unknown }).response)
       recordNetworkBreadcrumb('api', {
@@ -232,9 +229,10 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
     }
 
     const trimmedContent = trimContent(rawContent)
+    const optimisticSenderId = currentSenderId.value || optimisticSenderLabel.value
     const optimisticEnvelope = createLocalEvent(
       channelId,
-      optimisticSenderLabel.value,
+      optimisticSenderId,
       trimmedContent,
       optimisticAuthor.value,
     )
@@ -298,7 +296,11 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
         queue.value.forEach((entry) => {
           entry.status = 'queued'
           entry.error = null
-          timelineStore.markOptimisticQueued(entry.channelId, entry.optimisticId, 'Queued – offline')
+          timelineStore.markOptimisticQueued(
+            entry.channelId,
+            entry.optimisticId,
+            'Queued – offline',
+          )
         })
       }
     },
@@ -306,10 +308,12 @@ export const useMessageComposerStore = defineStore('message-composer', () => {
   )
 
   return {
+    // state
     queue,
     lastError,
     queuedCount,
     hasFailures,
+    // actions
     sendMessage,
     retryMessage,
     retryOptimistic,
