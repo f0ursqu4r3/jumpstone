@@ -415,6 +415,7 @@ const groupedEvents = computed(() => {
     } = {
       id: entry.localId ?? `${entry.channel_id}-${entry.sequence}`,
       localId: entry.localId,
+      sequence: entry.sequence,
       senderId,
       sender: senderLabel,
       time: timeLabel,

@@ -15,7 +15,25 @@ const normalizeRole = (role?: string | null): string => {
   return role.trim().toLowerCase()
 }
 
-const capabilityMatrix: Record<string, Omit<GuildPermissionSnapshot, 'role' | 'platformRoles'>> = {
+type RoleCapabilities = Pick<
+  GuildPermissionSnapshot,
+  'canSendMessages' | 'canCreateChannels' | 'canManageGuild'
+>
+
+const KNOWN_ROLES = [
+  'owner',
+  'admin',
+  'moderator',
+  'maintainer',
+  'member',
+  'contributor',
+  'viewer',
+  'guest',
+] as const
+
+type KnownRole = (typeof KNOWN_ROLES)[number]
+
+const capabilityMatrix: Record<KnownRole, RoleCapabilities> = {
   owner: {
     canSendMessages: true,
     canCreateChannels: true,
@@ -58,7 +76,7 @@ const capabilityMatrix: Record<string, Omit<GuildPermissionSnapshot, 'role' | 'p
   },
 }
 
-const rolePriority: Record<string, number> = {
+const rolePriority: Record<KnownRole, number> = {
   owner: 7,
   admin: 6,
   moderator: 5,
@@ -69,9 +87,12 @@ const rolePriority: Record<string, number> = {
   guest: 0,
 }
 
+const isKnownRole = (role: string): role is KnownRole =>
+  (KNOWN_ROLES as readonly string[]).includes(role)
+
 const roleRank = (role?: string | null): number => {
   const normalized = normalizeRole(role)
-  return rolePriority[normalized] ?? -1
+  return isKnownRole(normalized) ? rolePriority[normalized] : -1
 }
 
 const platformAdminMatchers = [/admin/, /owner/, /superuser/, /maintainer/] as const
@@ -101,7 +122,9 @@ export const deriveGuildPermissions = (
     platformAdminMatchers.some((matcher) => matcher.test(role)),
   )
 
-  const capabilities = capabilityMatrix[effectiveRole] ?? capabilityMatrix.member
+  const capabilities: RoleCapabilities = isKnownRole(effectiveRole)
+    ? capabilityMatrix[effectiveRole]!
+    : capabilityMatrix.member
 
   return {
     role: effectiveRole,

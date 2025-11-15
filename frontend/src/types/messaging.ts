@@ -74,6 +74,7 @@ export interface ChannelUnreadState {
 export interface TimelineMessage {
   id: string
   localId?: string
+  sequence?: number | null
   senderId: string
   sender: string
   time: string

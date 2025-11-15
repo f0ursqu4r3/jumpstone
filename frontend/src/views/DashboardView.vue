@@ -427,28 +427,28 @@ watch(
   { immediate: true },
 )
 
-const formatDuration = (totalSeconds: number | null | undefined) => {
-  if (typeof totalSeconds !== 'number' || !Number.isFinite(totalSeconds)) {
-    return '—'
-  }
+// const formatDuration = (totalSeconds: number | null | undefined) => {
+//   if (typeof totalSeconds !== 'number' || !Number.isFinite(totalSeconds)) {
+//     return '—'
+//   }
 
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = Math.floor(totalSeconds % 60)
+//   const hours = Math.floor(totalSeconds / 3600)
+//   const minutes = Math.floor((totalSeconds % 3600) / 60)
+//   const seconds = Math.floor(totalSeconds % 60)
 
-  const segments: string[] = []
-  if (hours) {
-    segments.push(`${hours}h`)
-  }
-  if (minutes) {
-    segments.push(`${minutes}m`)
-  }
-  if (!segments.length) {
-    segments.push(`${seconds}s`)
-  }
+//   const segments: string[] = []
+//   if (hours) {
+//     segments.push(`${hours}h`)
+//   }
+//   if (minutes) {
+//     segments.push(`${minutes}m`)
+//   }
+//   if (!segments.length) {
+//     segments.push(`${seconds}s`)
+//   }
 
-  return segments.join(' ')
-}
+//   return segments.join(' ')
+// }
 
 const sessionProfile = computed(() => profileRef.value)
 const sessionProfileLoading = computed(() => profileLoadingRef.value)
@@ -511,7 +511,7 @@ const guildPermissions = computed(() =>
   ),
 )
 const canSendMessages = computed(() => guildPermissions.value.canSendMessages)
-const canCreateChannels = computed(() => guildPermissions.value.canCreateChannels)
+// const canCreateChannels = computed(() => guildPermissions.value.canCreateChannels)
 const canViewAdminPanel = computed(
   () => featureFlags.adminPanel && guildPermissions.value.canManageGuild,
 )
@@ -588,9 +588,7 @@ const hasLocalKeyPackage = computed(() => {
   if (!keyPackages.value.length) {
     return false
   }
-  return candidates.some((candidate) =>
-    keyPackages.value.some((pkg) => pkg.identity === candidate),
-  )
+  return candidates.some((candidate) => keyPackages.value.some((pkg) => pkg.identity === candidate))
 })
 const missingKeyPackageIdentity = computed(() => {
   if (hasLocalKeyPackage.value) {
@@ -665,9 +663,7 @@ const copyRemoteServer = async (server: string) => {
 
 const handshakeLoading = computed(() => handshakeLoadingRef.value)
 const handshakeError = computed(() => handshakeErrorRef.value)
-const handshakePreview = computed(
-  () => (handshakeVectorsRef.value ?? []).slice(0, 2),
-)
+const handshakePreview = computed(() => (handshakeVectorsRef.value ?? []).slice(0, 2))
 const handshakeVerifiedAt = computed(() => federationStore.handshakeVerifiedAt)
 const handshakeVerifiedLabel = computed(() => formatDateTime(handshakeVerifiedAt.value))
 const handshakeNeedsReview = computed(() => {
@@ -681,7 +677,7 @@ const handshakeNeedsReview = computed(() => {
   }
   return Date.now() - parsed > HANDSHAKE_REVIEW_TTL_MS
 })
-const handshakeStatus = computed(() => ({
+const handshakeStatus = computed<{ color: 'warning' | 'success'; label: string }>(() => ({
   color: handshakeNeedsReview.value ? 'warning' : 'success',
   label: handshakeNeedsReview.value ? 'Needs verification' : 'Verified',
 }))
@@ -1187,9 +1183,7 @@ const searchModalOpen = ref(false)
 
           <div>
             <p class="text-xs uppercase tracking-wide text-slate-400">Handshake vectors</p>
-            <p class="text-[11px] text-slate-500">
-              Last verified {{ handshakeVerifiedLabel }}
-            </p>
+            <p class="text-[11px] text-slate-500">Last verified {{ handshakeVerifiedLabel }}</p>
             <div v-if="handshakeError" class="text-xs text-rose-200">{{ handshakeError }}</div>
             <div v-else-if="handshakeLoading" class="space-y-2">
               <USkeleton class="h-3 w-40 rounded" />
@@ -1218,10 +1212,7 @@ const searchModalOpen = ref(false)
         </div>
       </UCard>
 
-      <UCard
-        v-if="featureFlags.mlsReadiness"
-        class="border border-indigo-500/20 bg-indigo-500/5"
-      >
+      <UCard v-if="featureFlags.mlsReadiness" class="border border-indigo-500/20 bg-indigo-500/5">
         <template #header>
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1307,7 +1298,9 @@ const searchModalOpen = ref(false)
                   color="info"
                   variant="soft"
                   :label="
-                    pkg.rotated_at ? `Rotated ${formatDateTime(pkg.rotated_at)}` : 'Rotation pending'
+                    pkg.rotated_at
+                      ? `Rotated ${formatDateTime(pkg.rotated_at)}`
+                      : 'Rotation pending'
                   "
                 />
               </div>
@@ -1323,7 +1316,12 @@ const searchModalOpen = ref(false)
                     variant="ghost"
                     color="neutral"
                     class="mt-2"
-                    @click="copyKeyMaterial(pkg.signature_key, { identity: pkg.identity, field: 'signature_key' })"
+                    @click="
+                      copyKeyMaterial(pkg.signature_key, {
+                        identity: pkg.identity,
+                        field: 'signature_key',
+                      })
+                    "
                   >
                     Copy
                   </UButton>
@@ -1339,7 +1337,12 @@ const searchModalOpen = ref(false)
                     variant="ghost"
                     color="neutral"
                     class="mt-2"
-                    @click="copyKeyMaterial(pkg.hpke_public_key, { identity: pkg.identity, field: 'hpke_public_key' })"
+                    @click="
+                      copyKeyMaterial(pkg.hpke_public_key, {
+                        identity: pkg.identity,
+                        field: 'hpke_public_key',
+                      })
+                    "
                   >
                     Copy
                   </UButton>
