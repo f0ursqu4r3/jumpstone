@@ -28,40 +28,60 @@ const emit = defineEmits<{
   (event: 'report'): void
 }>()
 
-const formattedDraft = computed(() => props.editDraft || '—')
 const formattedOriginal = computed(() => props.editOriginal || '—')
+const isSystemEvent = computed(() => props.message.eventType !== 'message')
+const showActions = computed(() => props.message.isAuthor || props.canReportMessage())
+const originChip = computed(() => {
+  if (!props.message.originServer) {
+    return null
+  }
+  return {
+    label: props.message.remote ? `Remote · ${props.message.originServer}` : 'Local origin',
+    color: props.message.remote ? ('warning' as const) : ('neutral' as const),
+  }
+})
+const editingHint = computed(() =>
+  props.editHasChanges
+    ? 'Looks good—save to publish the update.'
+    : 'No changes yet. Edit your message and save to update the timeline.',
+)
 </script>
 
 <template>
-  <div class="space-y-2">
-    <div class="flex flex-wrap items-center gap-2">
-      <p class="text-sm font-semibold text-white">
-        {{ message.sender }}
-      </p>
-      <UBadge
-        v-if="message.eventType !== 'message'"
-        size="xs"
-        variant="soft"
-        color="neutral"
-        :label="message.eventType"
-      />
-      <UBadge
-        v-else-if="message.optimistic"
-        size="xs"
-        variant="soft"
-        color="info"
-        label="Optimistic"
-      />
-      <span class="text-xs text-slate-500">{{ message.time }}</span>
-      <UBadge
-        v-if="message.originServer"
-        size="xs"
-        :color="message.remote ? 'warning' : 'neutral'"
-        variant="soft"
-        :label="message.remote ? `Remote · ${message.originServer}` : 'Local origin'"
-      />
-      <span class="ml-auto" />
-      <UPopover v-if="message.isAuthor || canReportMessage()">
+  <article class="group space-y-4">
+    <header class="flex justify-between items-start gap-3">
+      <div class="flex min-w-0 space-y-1 gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="text-sm font-semibold text-white">
+            {{ message.sender }}
+          </p>
+          <UBadge
+            v-if="isSystemEvent"
+            size="xs"
+            variant="soft"
+            color="neutral"
+            :label="message.eventType"
+          />
+          <UBadge
+            v-else-if="message.optimistic"
+            size="xs"
+            variant="soft"
+            color="info"
+            label="Optimistic"
+          />
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span>{{ message.time }}</span>
+          <UBadge
+            v-if="originChip"
+            size="xs"
+            variant="soft"
+            :color="originChip.color"
+            :label="originChip.label"
+          />
+        </div>
+      </div>
+      <UPopover v-if="showActions">
         <UButton
           size="xs"
           variant="ghost"
@@ -101,42 +121,25 @@ const formattedOriginal = computed(() => props.editOriginal || '—')
           </div>
         </template>
       </UPopover>
-    </div>
+    </header>
 
-    <div v-if="isEditing" class="space-y-3">
+    <section v-if="isEditing" class="space-y-2">
       <textarea
         :value="editDraft"
         class="w-full rounded-xl border border-white/10 bg-slate-900/60 p-3 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-0"
         rows="3"
         @input="emit('update:editDraft', ($event.target as HTMLTextAreaElement).value)"
       />
-      <div
-        class="grid gap-3 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2"
+      <p
+        class="rounded-xl border border-white/5 bg-slate-900/40 p-2 text-xs text-slate-400 whitespace-pre-line wrap-break-word"
       >
-        <div class="space-y-1">
-          <p class="font-semibold uppercase tracking-wide text-slate-500">Original</p>
-          <p
-            class="rounded-xl border border-white/5 bg-slate-900/60 p-2 text-sm text-slate-300 whitespace-pre-line wrap-break-word"
-          >
-            {{ formattedOriginal }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="font-semibold uppercase tracking-wide text-slate-500">Revised preview</p>
-          <p
-            :class="[
-              'rounded-xl border p-2 text-sm whitespace-pre-line wrap-break-word',
-              editHasChanges
-                ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-100'
-                : 'border-white/5 bg-slate-900/60 text-slate-300',
-            ]"
-          >
-            {{ formattedDraft }}
-          </p>
-          <p class="text-[11px]" :class="editHasChanges ? 'text-emerald-300' : 'text-slate-500'">
-            {{ editHasChanges ? 'Looks good—save to publish the update.' : 'No changes yet.' }}
-          </p>
-        </div>
+        <span class="font-semibold text-slate-300">Original:</span> {{ formattedOriginal }}
+      </p>
+      <div class="flex flex-wrap items-center gap-3 text-xs">
+        <span :class="editHasChanges ? 'text-emerald-300' : 'text-slate-500'">
+          {{ editingHint }}
+        </span>
+        <span v-if="editError" class="text-rose-300">{{ editError }}</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <UButton size="xs" color="info" :loading="editSaving" @click="emit('save-edit')">
@@ -145,14 +148,13 @@ const formattedOriginal = computed(() => props.editOriginal || '—')
         <UButton size="xs" variant="ghost" color="neutral" @click="emit('cancel-edit')">
           Cancel
         </UButton>
-        <span v-if="editError" class="text-xs text-rose-300">{{ editError }}</span>
       </div>
-    </div>
+    </section>
     <p v-else class="text-sm text-slate-200 whitespace-pre-line wrap-break-word">
       {{ message.content }}
     </p>
 
-    <div v-if="message.optimistic" class="flex flex-wrap items-center gap-2 text-xs">
+    <section v-if="message.optimistic" class="flex flex-wrap items-center gap-2 text-xs">
       <UIcon
         :name="message.statusMeta.icon"
         :class="[
@@ -176,11 +178,12 @@ const formattedOriginal = computed(() => props.editOriginal || '—')
       >
         Retry
       </UButton>
-    </div>
-    <div v-else-if="message.eventType !== 'message'" class="text-xs text-slate-500">
+    </section>
+    <section v-else-if="isSystemEvent" class="text-xs text-slate-500">
       System event placeholder — richer rendering lands in Week 6.
-    </div>
-    <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+    </section>
+
+    <section class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
       <template v-if="message.reactions.length">
         <button
           v-for="reaction in message.reactions"
@@ -195,32 +198,36 @@ const formattedOriginal = computed(() => props.editOriginal || '—')
           <span class="text-[10px]">{{ reaction.count }}</span>
         </button>
       </template>
-      <span v-else class="text-slate-500">No reactions yet</span>
-      <UPopover>
-        <UButton
-          size="xs"
-          variant="ghost"
-          color="neutral"
-          icon="i-heroicons-face-smile"
-          aria-label="Add reaction"
-        >
-          React
-        </UButton>
-        <template #content="{ close }">
-          <div class="flex flex-wrap gap-2 p-3">
-            <UButton
-              v-for="emoji in reactionPalette"
-              :key="emoji"
-              size="xs"
-              variant="ghost"
-              color="neutral"
-              @click="(emit('select-reaction', emoji), close())"
-            >
-              {{ emoji }}
-            </UButton>
-          </div>
-        </template>
-      </UPopover>
+      <span v-else>No reactions yet</span>
+      <div
+        class="transition-opacity duration-150 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+      >
+        <UPopover>
+          <UButton
+            size="xs"
+            variant="ghost"
+            color="neutral"
+            icon="i-heroicons-face-smile"
+            aria-label="Add reaction"
+          >
+            React
+          </UButton>
+          <template #content="{ close }">
+            <div class="flex flex-wrap gap-2 p-3">
+              <UButton
+                v-for="emoji in reactionPalette"
+                :key="emoji"
+                size="xs"
+                variant="ghost"
+                color="neutral"
+                @click="(emit('select-reaction', emoji), close())"
+              >
+                {{ emoji }}
+              </UButton>
+            </div>
+          </template>
+        </UPopover>
+      </div>
       <UButton
         size="xs"
         variant="ghost"
@@ -230,6 +237,6 @@ const formattedOriginal = computed(() => props.editOriginal || '—')
       >
         Copy meta
       </UButton>
-    </div>
-  </div>
+    </section>
+  </article>
 </template>

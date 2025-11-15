@@ -17,6 +17,21 @@ COPY crates/storage/Cargo.toml crates/storage/Cargo.toml
 COPY crates/media/Cargo.toml crates/media/Cargo.toml
 COPY crates/crypto/Cargo.toml crates/crypto/Cargo.toml
 COPY crates/sfu-client/Cargo.toml crates/sfu-client/Cargo.toml
+COPY xtask/Cargo.toml xtask/Cargo.toml
+
+# Create placeholder targets so `cargo fetch` is happy even though the real
+# source tree has not been copied into the build context yet.
+RUN set -eux; \
+	for dir in core crypto media storage sfu-client; do \
+		mkdir -p "crates/${dir}/src"; \
+		printf "// placeholder for dependency caching\n" > "crates/${dir}/src/lib.rs"; \
+	done; \
+	for dir in server; do \
+		mkdir -p "crates/${dir}/src"; \
+		printf "fn main() {}\n" > "crates/${dir}/src/main.rs"; \
+	done; \
+	mkdir -p xtask/src; \
+	printf "fn main() {}\n" > xtask/src/main.rs
 RUN cargo fetch --locked
 
 # Bring in the remaining source files and build the release binary.
